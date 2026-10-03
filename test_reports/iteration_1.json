@@ -1,0 +1,24 @@
+{
+  "summary": "First-finish smoke tests. Backend: health, auth gate (401), bearer auth, measurements CRUD, size recommendations (top=S, bottom=S, shoes=38 EU), file upload/get, Gemini Nano Banana try-on generation, list/detail/delete tryon - all passing. Frontend: landing renders 'Atelier Fit', ENTER button triggers Emergent/Google OAuth redirect, protected routes (/dashboard /profile /studio /wardrobe) render with injected session_token cookie, Profile page shows 8 measurement inputs + Avatar3D SVG + live size suggestions.",
+  "tested_scope": ["frontend", "backend", "auth", "integration"],
+  "passed": [
+    "GET /api/ returns {service: VFit API, status: ok}",
+    "GET /api/auth/me returns 401 without session",
+    "GET /api/auth/me returns user with Bearer token",
+    "PUT /api/profile/measurements persists all fields",
+    "GET /api/profile/measurements returns saved values",
+    "GET /api/size/recommend?category=top|bottom|shoes returns correct mapping",
+    "POST /api/upload?kind=person|garment returns {path}; GET /api/files/{path} returns bytes with image/png",
+    "POST /api/tryon/generate successfully calls Gemini Nano Banana and returns tryon doc with result_path and recommended_size",
+    "GET /api/tryons, GET /api/tryons/{id}, DELETE /api/tryons/{id} all work",
+    "Landing hero 'Atelier Fit' renders; ENTER triggers OAuth navigation (lands on Google via Emergent flow)",
+    "Session cookie injection renders /dashboard, /profile, /studio, /wardrobe without redirect to landing",
+    "Profile shows measurements, Avatar3D SVG, suggested top/bottom/shoe sizes"
+  ],
+  "failed": [],
+  "action_items": [],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "retest_needed": false,
+  "full_testing_deferred": true,
+  "notes": "Test user created in Mongo: user_id=test-user-1791005840143, session_token=test_session_1791005840143. /app/auth_testing.md not present but test_credentials.md covers the auth testing approach."
+}
