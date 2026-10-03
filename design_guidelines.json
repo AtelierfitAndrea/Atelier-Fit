@@ -1,0 +1,128 @@
+{
+  "theme_strategy": "Light and Dark theme support. Default to Light Theme for an editorial, high-end boutique e-commerce feel (where products/clothes pop), with a sophisticated dark mode option.",
+  "typography": {
+    "headings": {
+      "font_family": "Playfair Display",
+      "fallback": "serif",
+      "style": "Elegant, high-contrast, editorial. Never use Inter for headings. Keep tracking tight (tracking-tighter) for large headings.",
+      "sizes": {
+        "h1": "text-4xl sm:text-5xl lg:text-6xl",
+        "h2": "text-2xl sm:text-3xl lg:text-4xl",
+        "h3": "text-xl sm:text-2xl",
+        "h4": "text-lg sm:text-xl"
+      }
+    },
+    "body": {
+      "font_family": "Manrope",
+      "fallback": "sans-serif",
+      "style": "Clean, highly legible geometric sans for data (measurements) and UI elements. Loose line height (leading-relaxed) for body paragraphs.",
+      "sizes": {
+        "base": "text-base",
+        "small": "text-sm",
+        "labels": "text-xs tracking-[0.2em] uppercase"
+      }
+    }
+  },
+  "colors": {
+    "light_mode": {
+      "background": "#FDFDFD",
+      "surface": "#FFFFFF",
+      "text_primary": "#0A0A0A",
+      "text_secondary": "#525252",
+      "border": "#E5E5E5",
+      "primary_accent": "#171717",
+      "secondary_accent": "#8C7355"
+    },
+    "dark_mode": {
+      "background": "#0A0A0C",
+      "surface": "#141416",
+      "text_primary": "#EDEDED",
+      "text_secondary": "#A3A3A3",
+      "border": "#262626",
+      "primary_accent": "#F5F5F5",
+      "secondary_accent": "#D4B895"
+    },
+    "rules": [
+      "Never use pure #000000 or pure #808080. Always tint greys.",
+      "Ensure WCAG AA contrast for text.",
+      "Never use full-screen gradients.",
+      "Forbidden colors: #7351B7, #1B93A4"
+    ]
+  },
+  "visual_enhancers": {
+    "surfaces": "Use crisp, rectangular surfaces (cardless or sharp edges, max 4px radius) for the fashion editorial look.",
+    "glassmorphism": "For sticky headers or modal overlays, use backdrop-blur-xl with a 1px delicate inner border.",
+    "borders": "Expose the skeleton for the dashboard/measurements area. Use 1px subtle borders to separate data points clearly.",
+    "shadows": "Minimal. Use subtle ambient shadows or crisp 1px borders instead of heavy drop shadows."
+  },
+  "components": {
+    "strategy": "Hybrid approach: pure HTML/Tailwind for creative landing/marketing sections, heavily customized Shadcn UI for the dashboard, forms, and uploads.",
+    "buttons": "Sharp edges or very slight rounding. Use high-contrast solid fill for primary, delicate 1px border for secondary. Add subtle scale/translate on hover.",
+    "forms_and_inputs": "Shadcn Form/Input components. Use generous padding. Inputs should have clear, minimalist borders.",
+    "upload_zone": "Large, elegant drag-and-drop areas for photo and clothing uploads. Use dashed borders that turn solid on drag-over.",
+    "image_gallery": "Masonry or Bento grid for the wardrobe and saved try-ons. Images must fill the container entirely using object-cover.",
+    "icons": "Use @phosphor-icons/react (Duotone weight) for a high-end, refined look."
+  },
+  "grids_and_layouts": {
+    "spacing": "Generous Spacing Philosophy: p-6, p-8, p-12. Avoid cramped UIs.",
+    "marketing_landing": "Asymmetrical layouts. Use wide gaps (gap-8 to gap-12). Overlapping elements for editorial tension.",
+    "dashboard_wardrobe": "High-density Grid (Mode B). grid-cols-1 md:grid-cols-3 lg:grid-cols-4. gap-4 or gap-6. Every pixel utilized.",
+    "alignment": "Left-align forms, inputs, and dense content. Headings can be aligned to create visual tension."
+  },
+  "motion": {
+    "interactions": "Smooth, refined micro-interactions. Hover states must change text color or background explicitly.",
+    "transitions": "Specific property transitions only (e.g., transition: transform 0.3s ease, opacity 0.3s ease). NO 'transition: all'.",
+    "page_load": "Subtle fade-in and slight upward translation (staggered) for wardrobe items and dashboard widgets.",
+    "accessibility": "Respect prefers-reduced-motion."
+  },
+  "accessibility": {
+    "contrast": "Minimum 4.5:1 for normal text, 3:1 for large text. Validate all colors.",
+    "focus": "Clear focus rings on inputs and buttons (e.g., focus:ring-2 focus:ring-primary_accent).",
+    "testing": "All interactive elements MUST include data-testid attribute (e.g., data-testid='upload-photo-btn')."
+  },
+  "media": {
+    "images": "Images are the core of this app. Use max-h-[80vh] for mobile image previews to prevent excessive scrolling.",
+    "overlays": "If text is over an image, use max bg-black/40 (or white/40 in light mode) for hero sections. Never obscure the fashion."
+  },
+  "image_urls": {
+    "landing_hero": {
+      "url": "https://images.unsplash.com/photo-1611042553484-d61f84d22784?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzMzJ8MHwxfHNlYXJjaHwxfHxmYXNoaW9uJTIwbW9kZWwlMjBzdHVkaW8lMjBwb3J0cmFpdHxlbnwwfHx8fDE3OTEwMDUwMDJ8MA&ixlib=rb-4.1.0&q=85",
+      "description": "Woman in white long sleeve shirt wearing brown hat - use for landing page main visual.",
+      "category": "Hero Background"
+    },
+    "user_avatar_placeholder": {
+      "url": "https://images.unsplash.com/photo-1606143412458-acc5f86de897?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzMzJ8MHwxfHNlYXJjaHw0fHxmYXNoaW9uJTIwbW9kZWwlMjBzdHVkaW8lMjBwb3J0cmFpdHxlbnwwfHx8fDE3OTEwMDUwMDJ8MA&ixlib=rb-4.1.0&q=85",
+      "description": "Woman in black spaghetti strap top - use as a placeholder for the user's uploaded photo.",
+      "category": "User Profile"
+    },
+    "wardrobe_item_1": {
+      "url": "https://images.unsplash.com/photo-1621198059871-0d5f9b449233?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDQ2MzR8MHwxfHNlYXJjaHw0fHxtaW5pbWFsaXN0JTIwY2xvdGhpbmclMjBmbGF0JTIwbGF5fGVufDB8fHx8MTc5MTAwNTAwMXww&ixlib=rb-4.1.0&q=85",
+      "description": "White knit sweater flat lay - use for clothing item upload placeholder or gallery.",
+      "category": "Wardrobe Gallery"
+    },
+    "wardrobe_item_2": {
+      "url": "https://images.unsplash.com/photo-1608379743498-ac08f6d022ba?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzMjd8MHwxfHNlYXJjaHw0fHxtb2Rlcm4lMjBzbmVha2VycyUyMGlzb2xhdGVkfGVufDB8fHx8MTc5MTAwNTAwMnww&ixlib=rb-4.1.0&q=85",
+      "description": "Black and white sneakers - use for shoe category placeholder.",
+      "category": "Wardrobe Gallery"
+    },
+    "wardrobe_item_3": {
+      "url": "https://images.unsplash.com/photo-1516257984-b1b4d707412e?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NTYxNzV8MHwxfHNlYXJjaHwyfHxzdHlsaXNoJTIwbWFuJTIwc3RyZWV0JTIwc3R5bGV8ZW58MHx8fHwxNzkxMDA1MDAyfDA&ixlib=rb-4.1.0&q=85",
+      "description": "Man modeling denim jacket - use as a male try-on result or gallery item.",
+      "category": "Try-on Results"
+    }
+  },
+  "instructions_to_main_agent": {
+    "setup": "Install Playfair Display and Manrope fonts. Install @phosphor-icons/react. Configure Tailwind to include these fonts and the custom color palette.",
+    "architecture": "Build a hybrid app. The public landing page should be heavily styled and editorial. The authenticated app (Dashboard, Profile, Try-on Studio) should use robust Shadcn forms and precise layouts.",
+    "data_flow": "Mock the Google Auth flow and AI image generation (Gemini Nano Banana). Ensure the UI clearly shows the transition from 'upload' to 'generating' to 'result'.",
+    "forms": "The body measurement form should be elegant. Group measurements logically (e.g., Upper Body, Lower Body) so it doesn't overwhelm the user."
+  },
+  "UNIVERSAL GUIDELINES FOR MAIN AGENT": {
+    "anti_ai_slop": "Do not make generic centered layouts, simplistic gradients, and uniform styling. Avoid the standard 'Vercel look'. Make it look like a high-end fashion magazine.",
+    "depth_and_layering": "Create depth through layered design elements with z-index hierarchy and glass-morphism effects.",
+    "css_rules": "Do NOT apply universal transitions (e.g., transition: all). Do NOT center align the app container (.App { text-align: center; }).",
+    "testing_attributes": "All interactive and key informational elements MUST include a data-testid attribute.",
+    "components": "Prioritize using pre-existing components from src/components/ui. Use sonner for toasts.",
+    "icons": "NEVER use emoji characters for icons. Use the specified icon library."
+  }
+}
