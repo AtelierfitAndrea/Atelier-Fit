@@ -15,7 +15,6 @@ export default function Dashboard() {
   const [weightStatus, setWeightStatus] = useState(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [nonce, setNonce] = useState(0);
-  const [justSaved, setJustSaved] = useState(false);
 
   const refresh = async () => {
     try {
@@ -32,10 +31,6 @@ export default function Dashboard() {
 
   useEffect(() => { refresh(); }, []);
 
-  const hasFreshWeight = justSaved || (weightStatus?.last_check_at && !weightStatus?.due);
-  const demoAccuracy = hasFreshWeight ? 85 : 10;
-  const demoReliable = hasFreshWeight;
-
   const hasMeasurements = measurements && Object.keys(measurements || {}).some((k) => k !== "updated_at" && measurements[k]);
   const stale = weightStatus?.last_check_at && weightStatus?.due;
   const bannerStyle = stale
@@ -43,7 +38,7 @@ export default function Dashboard() {
     : "bg-[#0A0A0A] hover:bg-[#8C7355] border-[#0A0A0A]";
 
   const onWeightSaved = () => {
-    setJustSaved(true);
+    // Server has recomputed the score — just ask the badge to re-fetch.
     setNonce((n) => n + 1);
     refresh();
   };
@@ -72,7 +67,7 @@ export default function Dashboard() {
       )}
 
       <div className="flex items-center gap-4 flex-wrap" data-testid="accuracy-row">
-        <AccuracyBadge nonce={nonce} accuracyOverride={demoAccuracy} reliableOverride={demoReliable} />
+        <AccuracyBadge nonce={nonce} />
         <button
           onClick={() => setModalOpen(true)}
           className="inline-flex items-center justify-center gap-3 bg-[#0A0A0A] text-white px-6 py-3 text-xs font-semibold tracking-[0.2em] uppercase border border-[#0A0A0A] hover:bg-[#8C7355] hover:border-[#8C7355] transition-colors duration-200"

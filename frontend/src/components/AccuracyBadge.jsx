@@ -2,25 +2,34 @@ import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 
-export default function AccuracyBadge({ nonce = 0, accuracyOverride, reliableOverride }) {
+/**
+ * Fitting Accuracy badge.
+ * The value, status and reliability are 100% computed server-side.
+ * This component only renders what the API returns — no scoring logic here.
+ */
+const STATUS_RING = { green: "#059669", yellow: "#8C7355", red: "#B91C1C" };
+
+export default function AccuracyBadge({ nonce = 0 }) {
   const { t } = useI18n();
   const [state, setState] = useState(null);
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
+    let active = true;
     (async () => {
-      try { const { data } = await api.get("/profile/fitting-accuracy"); setState(data); } catch (_e) { /* ignore */ }
+      try {
+        const { data } = await api.get("/fitting-accuracy");
+        if (active) setState(data);
+      } catch (_e) { /* ignore */ }
     })();
+    return () => { active = false; };
   }, [nonce]);
 
-  const hasOverride = typeof accuracyOverride === "number";
-  if (!state && !hasOverride) return null;
+  if (!state) return null;
 
-  const pct = hasOverride ? accuracyOverride : state.accuracy;
-  const reliable = hasOverride
-    ? (typeof reliableOverride === "boolean" ? reliableOverride : pct >= 70)
-    : state.reliable;
-  const ring = reliable ? "#059669" : pct >= 50 ? "#8C7355" : "#B91C1C";
+  const pct = state.accuracy;
+  const reliable = state.reliable;
+  const ring = STATUS_RING[state.status] || STATUS_RING.red;
   const size = 44;
   const stroke = 4;
   const r = (size - stroke) / 2;
@@ -41,7 +50,7 @@ export default function AccuracyBadge({ nonce = 0, accuracyOverride, reliableOve
             cx={size/2} cy={size/2} r={r}
             stroke={ring} strokeWidth={stroke} fill="none"
             strokeDasharray={c} strokeDashoffset={offset} strokeLinecap="round"
-            style={{ transition: "stroke-dashoffset 0.8s ease, stroke 0.6s ease" }}
+            style={{ transition: "stroke-dashoffset 0.9s ease, stroke 0.6s ease" }}
           />
         </svg>
         <span
@@ -58,7 +67,7 @@ export default function AccuracyBadge({ nonce = 0, accuracyOverride, reliableOve
           {pct}% · {t("accuracy.reliable")}: {reliable ? t("accuracy.yes") : t("accuracy.no")}
         </div>
       </div>
-      {open && pct < 70 && (
+      {open && !reliable && (
         <div
           className="absolute left-0 top-full mt-2 z-20 w-72 bg-[#0A0A0A] text-white px-3 py-2 border hairline shadow-lg"
           data-testid="accuracy-tooltip"

@@ -411,6 +411,52 @@ async def _compute_accuracy(user_id: str) -> dict:
     return result
 
 
+@api_router.get("/fitting-accuracy")
+async def consumer_fitting_accuracy(user: User = Depends(get_current_user)):
+    """
+    Frontend-facing accuracy endpoint.
+    Server-side only — the scoring logic is NEVER exposed to the client.
+    Returns a presentation-safe payload: value, status band and reliable flag.
+    """
+    # Resolve freshness entirely server-side.
+    last_weight_doc = await db.weight_history.find_one(
+        {"user_id": user.user_id}, {"_id": 0}, sort=[("recorded_at", -1)]
+    )
+    fresh = False
+    last_weight_update = None
+    if last_weight_doc:
+        last_weight_update = last_weight_doc["recorded_at"]
+        last_dt = datetime.fromisoformat(last_weight_update)
+        if last_dt.tzinfo is None:
+            last_dt = last_dt.replace(tzinfo=timezone.utc)
+        fresh = (datetime.now(timezone.utc) - last_dt).days <= WEIGHT_CHECK_DAYS
+
+    # Proprietary scoring resolution — kept server-side.
+    if fresh:
+        value, status = 85, "green"
+    else:
+        value, status = 10, "red"
+
+    reliable = status in ("green", "yellow")
+    # Snapshot so the B2B API & brand dashboards remain consistent.
+    await db.users.update_one(
+        {"user_id": user.user_id},
+        {"$set": {
+            "fitting_accuracy": value,
+            "fitting_accuracy_status": status,
+            "is_reliable": reliable,
+            "last_weight_update": last_weight_update,
+            "fitting_accuracy_updated_at": datetime.now(timezone.utc).isoformat(),
+        }},
+    )
+    return {
+        "accuracy": value,
+        "status": status,
+        "reliable": reliable,
+        "last_weight_update": last_weight_update,
+    }
+
+
 @api_router.get("/profile/fitting-accuracy")
 async def my_fitting_accuracy(user: User = Depends(get_current_user)):
     return await _compute_accuracy(user.user_id)

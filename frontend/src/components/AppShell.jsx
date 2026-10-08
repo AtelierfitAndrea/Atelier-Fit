@@ -58,6 +58,15 @@ export default function AppShell({ children }) {
         </div>
       </header>
       <main className="max-w-[1400px] mx-auto px-6 md:px-10 py-10">{children}</main>
+      <footer className="border-t hairline mt-16" data-testid="ip-footer">
+        <div
+          className="max-w-[1400px] mx-auto px-6 md:px-10 py-6 text-center"
+          style={{ fontSize: "10px", color: "#9CA3AF", letterSpacing: "0.05em" }}
+          translate="no"
+        >
+          Metodo Fitting Accuracy® — Sistema brevettato per la verifica dell&apos;affidabilità dell&apos;utente — Atelier Fit Proprietary Technology
+        </div>
+      </footer>
     </div>
   );
 }
