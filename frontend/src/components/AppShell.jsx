@@ -1,9 +1,12 @@
 import { Link, NavLink, useNavigate } from "react-router-dom";
 import { useAuth } from "@/lib/auth";
+import { useI18n } from "@/lib/i18n";
+import LanguageSwitcher from "@/components/LanguageSwitcher";
 import { SignOut, House, User as UserIcon, TShirt, Sparkle } from "@phosphor-icons/react";
 
 export default function AppShell({ children }) {
   const { user, logout } = useAuth();
+  const { t } = useI18n();
   const navigate = useNavigate();
 
   const navItem = ({ isActive }) =>
@@ -21,20 +24,23 @@ export default function AppShell({ children }) {
             data-testid="shell-brand"
           >
             <div className="w-5 h-5 bg-[#0A0A0A]" />
-            <span className="font-serif text-lg tracking-tight">Atelier Fit</span>
+            <span className="font-serif text-lg tracking-tight" translate="no">Atelier Fit</span>
+            <div className="ml-3">
+              <LanguageSwitcher />
+            </div>
           </div>
-          <nav className="hidden md:flex items-center gap-6">
+          <nav className="hidden md:flex items-center gap-6" translate="no">
             <NavLink to="/dashboard" className={navItem} data-testid="nav-dashboard">
-              <House size={14} weight="duotone" /> Home
+              <House size={14} weight="duotone" /> {t("nav.home")}
             </NavLink>
             <NavLink to="/studio" className={navItem} data-testid="nav-studio">
-              <Sparkle size={14} weight="duotone" /> Studio
+              <Sparkle size={14} weight="duotone" /> {t("nav.studio")}
             </NavLink>
             <NavLink to="/wardrobe" className={navItem} data-testid="nav-wardrobe">
-              <TShirt size={14} weight="duotone" /> Wardrobe
+              <TShirt size={14} weight="duotone" /> {t("nav.wardrobe")}
             </NavLink>
             <NavLink to="/profile" className={navItem} data-testid="nav-profile">
-              <UserIcon size={14} weight="duotone" /> Profile
+              <UserIcon size={14} weight="duotone" /> {t("nav.profile")}
             </NavLink>
           </nav>
           <div className="flex items-center gap-4">

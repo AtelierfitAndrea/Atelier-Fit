@@ -1,12 +1,9 @@
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
+import { useI18n } from "@/lib/i18n";
 
-/**
- * Compact Fitting Accuracy badge with circular progress — for Dashboard header.
- * If `accuracyOverride` / `reliableOverride` are provided, those values are used
- * (useful for the Dashboard demo flow).
- */
 export default function AccuracyBadge({ nonce = 0, accuracyOverride, reliableOverride }) {
+  const { t } = useI18n();
   const [state, setState] = useState(null);
   const [open, setOpen] = useState(false);
 
@@ -36,7 +33,6 @@ export default function AccuracyBadge({ nonce = 0, accuracyOverride, reliableOve
       onMouseEnter={() => setOpen(true)}
       onMouseLeave={() => setOpen(false)}
       data-testid="accuracy-badge"
-      translate="no"
     >
       <div className="relative" style={{ width: size, height: size }}>
         <svg width={size} height={size} className="rotate-[-90deg]">
@@ -57,9 +53,9 @@ export default function AccuracyBadge({ nonce = 0, accuracyOverride, reliableOve
         </span>
       </div>
       <div className="pr-1" translate="no">
-        <div className="label-caps" translate="no">Fitting Accuracy</div>
+        <div className="label-caps">{t("accuracy.label")}</div>
         <div className="text-sm font-medium" style={{ color: ring, transition: "color 0.6s ease" }}>
-          <span translate="no">{pct}% · Affidabile: {reliable ? "SÌ" : "NO"}</span>
+          {pct}% · {t("accuracy.reliable")}: {reliable ? t("accuracy.yes") : t("accuracy.no")}
         </div>
       </div>
       {open && pct < 70 && (
@@ -67,8 +63,8 @@ export default function AccuracyBadge({ nonce = 0, accuracyOverride, reliableOve
           className="absolute left-0 top-full mt-2 z-20 w-72 bg-[#0A0A0A] text-white px-3 py-2 border hairline shadow-lg"
           data-testid="accuracy-tooltip"
         >
-          <div className="label-caps !text-white/80">Attenzione</div>
-          <div className="text-sm leading-snug mt-1">Profilo non affidabile per reso garantito. Completa misure e aggiorna il peso.</div>
+          <div className="label-caps !text-white/80">{t("accuracy.tooltipTitle")}</div>
+          <div className="text-sm leading-snug mt-1">{t("accuracy.tooltipBody")}</div>
         </div>
       )}
     </div>

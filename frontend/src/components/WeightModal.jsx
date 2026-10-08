@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
+import { useI18n } from "@/lib/i18n";
 import { X } from "@phosphor-icons/react";
 
 export default function WeightModal({ open, onClose, onSaved }) {
+  const { t } = useI18n();
   const [weight, setWeight] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -13,16 +15,15 @@ export default function WeightModal({ open, onClose, onSaved }) {
 
   const save = async () => {
     const w = Number(weight);
-    if (!w || w < 25 || w > 300) { toast.error("Inserisci un peso valido in kg"); return; }
+    if (!w || w < 25 || w > 300) { toast.error(t("weight.invalid")); return; }
     setSaving(true);
-    // Optimistic — update the UI immediately so the animation plays
-    toast.success("Peso aggiornato!");
+    toast.success(t("weight.saved"));
     onSaved?.();
     onClose();
     try {
       await api.post("/profile/weight-history", { weight_kg: w });
     } catch {
-      toast.error("Salvataggio sul server non riuscito");
+      toast.error(t("weight.serverError"));
     } finally {
       setSaving(false);
     }
@@ -37,19 +38,17 @@ export default function WeightModal({ open, onClose, onSaved }) {
       <div className="bg-white border hairline w-full max-w-md mx-4 p-6" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between">
           <div>
-            <div className="label-caps">Controllo peso</div>
-            <h3 className="font-serif text-2xl mt-1">Aggiorna il tuo peso</h3>
+            <div className="label-caps">{t("weight.banner")}</div>
+            <h3 className="font-serif text-2xl mt-1">{t("weight.modalTitle")}</h3>
           </div>
           <button onClick={onClose} className="text-neutral-500 hover:text-black" data-testid="weight-modal-close">
             <X size={20} weight="bold" />
           </button>
         </div>
-        <p className="text-sm text-neutral-600 mt-2">
-          Serve per mantenere taglie accurate e profilo affidabile per i brand partner.
-        </p>
+        <p className="text-sm text-neutral-600 mt-2">{t("weight.modalHint")}</p>
         <div className="mt-6">
           <label className="block">
-            <span className="label-caps block mb-2">Peso (kg)</span>
+            <span className="label-caps block mb-2">{t("weight.field")}</span>
             <div className="flex items-center border hairline focus-within:border-[#0A0A0A] transition-colors">
               <input
                 autoFocus
@@ -68,9 +67,9 @@ export default function WeightModal({ open, onClose, onSaved }) {
         </div>
         <div className="mt-6 flex gap-3">
           <button onClick={save} disabled={saving} className="btn-primary flex-1" data-testid="weight-modal-save">
-            {saving ? "Salvo..." : "Salva"}
+            {saving ? "…" : t("weight.save")}
           </button>
-          <button onClick={onClose} className="btn-ghost">Annulla</button>
+          <button onClick={onClose} className="btn-ghost">{t("weight.cancel")}</button>
         </div>
       </div>
     </div>
