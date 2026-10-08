@@ -6,7 +6,9 @@ export default function TryonCounter() {
   const { t } = useI18n();
   const { status, openPaywall } = useSubscription();
   if (!status) return null;
-  const unlimited = status.plan === "SINGLE" || status.plan === "FAMILY" || status.honeymoon_active;
+  // During honeymoon, the hero shows the 3 pricing cards instead of a badge.
+  if (status.honeymoon_active) return null;
+  const unlimited = status.plan === "SINGLE" || status.plan === "FAMILY";
   const remaining = status.tryons_remaining;
   const blocked = status.is_blocked;
   return (
@@ -15,7 +17,7 @@ export default function TryonCounter() {
         <>
           <InfIcon size={16} weight="duotone" className="text-[#8C7355]" />
           <span className="text-sm font-medium" translate="no">
-            {status.honeymoon_active ? t("sub.honeymoonUnlimited") : t("sub.plans." + status.plan.toLowerCase())}
+            {t("sub.plans." + status.plan.toLowerCase())}
           </span>
         </>
       ) : blocked ? (

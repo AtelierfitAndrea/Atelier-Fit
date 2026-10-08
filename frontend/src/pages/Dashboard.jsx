@@ -8,6 +8,7 @@ import AccuracyBadge from "@/components/AccuracyBadge";
 import WeightModal from "@/components/WeightModal";
 import HoneymoonBanner from "@/components/HoneymoonBanner";
 import TryonCounter from "@/components/TryonCounter";
+import PricingCards from "@/components/PricingCards";
 import { useSubscription } from "@/lib/subscription";
 
 export default function Dashboard() {
@@ -82,6 +83,8 @@ export default function Dashboard() {
           {t("accuracy.updateNow")} <ArrowRight size={14} weight="bold" />
         </button>
       </div>
+
+      <PricingCards />
 
       <section className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-end">
         <div className="lg:col-span-8">
