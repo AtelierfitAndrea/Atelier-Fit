@@ -38,16 +38,16 @@ export default function Dashboard() {
           <div className="flex items-center gap-3">
             <Warning size={18} weight="fill" />
             <div>
-              <div className="label-caps !text-white/80">Weight check</div>
+              <div className="label-caps !text-white/80">Controllo peso</div>
               <div className="font-serif text-lg leading-tight">
                 {weightStatus.last_check_at
-                  ? `It has been ${Math.max(60, 60 + weightStatus.days_overdue)} days — time for your 2-month weight check`
-                  : "Record your weight to keep every fitting accurate — we'll check in every 2 months"}
+                  ? "Aggiorna il tuo peso per mantenere il fit perfetto"
+                  : "Registra il tuo peso per iniziare — lo aggiorneremo insieme ogni 2 mesi"}
               </div>
             </div>
           </div>
           <div className="flex items-center gap-2 label-caps !text-white/90">
-            <Scales size={16} weight="fill" /> Record now →
+            <Scales size={16} weight="fill" /> Aggiorna ora →
           </div>
         </Link>
       )}

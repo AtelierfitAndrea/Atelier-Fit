@@ -340,6 +340,55 @@ async def delete_weight_entry(entry_id: str, user: User = Depends(get_current_us
     return {"deleted": res.deleted_count}
 
 
+# ----- Fitting Accuracy -----
+# 5 required fields (-20% each if missing) + extra -30% if last weight update > 60 days
+ACCURACY_FIELDS = ["height_cm", "weight_kg", "chest_cm", "waist_cm", "hips_cm"]
+
+
+async def _compute_accuracy(user_id: str) -> dict:
+    m = await db.measurements.find_one({"user_id": user_id}, {"_id": 0}) or {}
+    last_weight_doc = await db.weight_history.find_one(
+        {"user_id": user_id}, {"_id": 0}, sort=[("recorded_at", -1)]
+    )
+    last_weight_update = last_weight_doc["recorded_at"] if last_weight_doc else m.get("updated_at") if m.get("weight_kg") else None
+
+    missing = [f for f in ACCURACY_FIELDS if not m.get(f)]
+    accuracy = 100 - 20 * len(missing)
+
+    weight_stale = False
+    if m.get("weight_kg") and last_weight_update:
+        last_dt = datetime.fromisoformat(last_weight_update)
+        if last_dt.tzinfo is None:
+            last_dt = last_dt.replace(tzinfo=timezone.utc)
+        if (datetime.now(timezone.utc) - last_dt).days > WEIGHT_CHECK_DAYS:
+            weight_stale = True
+            accuracy -= 30
+
+    accuracy = max(0, min(100, accuracy))
+    return {
+        "accuracy": accuracy,
+        "last_weight_update": last_weight_update,
+        "reliable": accuracy >= 80,
+        "missing_fields": missing,
+        "weight_stale": weight_stale,
+    }
+
+
+@api_router.get("/profile/fitting-accuracy")
+async def my_fitting_accuracy(user: User = Depends(get_current_user)):
+    return await _compute_accuracy(user.user_id)
+
+
+@api_router.get("/fitting-accuracy/{user_id}")
+async def public_fitting_accuracy(user_id: str):
+    """Public endpoint used by Shopify brands to decide if free returns apply."""
+    exists = await db.users.find_one({"user_id": user_id}, {"_id": 0, "user_id": 1})
+    if not exists:
+        raise HTTPException(status_code=404, detail="User not found")
+    return await _compute_accuracy(user_id)
+
+
+
 
 # ----- File upload / serve -----
 @api_router.post("/upload")

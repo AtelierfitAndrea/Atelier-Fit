@@ -3,27 +3,29 @@ import { toast } from "sonner";
 import { api } from "@/lib/api";
 import Avatar3D from "@/components/Avatar3D";
 import WeightTracker from "@/components/WeightTracker";
+import FittingAccuracy from "@/components/FittingAccuracy";
 
 const FIELDS = [
-  { group: "Upper", items: [
-    { k: "height_cm", l: "Height", u: "cm" },
-    { k: "shoulder_cm", l: "Shoulder", u: "cm" },
-    { k: "chest_cm", l: "Chest", u: "cm" },
+  { group: "Parte Superiore", items: [
+    { k: "height_cm", l: "Altezza", u: "cm" },
+    { k: "shoulder_cm", l: "Spalle", u: "cm" },
+    { k: "chest_cm", l: "Torace", u: "cm" },
   ]},
-  { group: "Lower", items: [
-    { k: "waist_cm", l: "Waist", u: "cm" },
-    { k: "hips_cm", l: "Hips", u: "cm" },
-    { k: "inseam_cm", l: "Inseam", u: "cm" },
+  { group: "Parte Inferiore", items: [
+    { k: "waist_cm", l: "Vita", u: "cm" },
+    { k: "hips_cm", l: "Fianchi", u: "cm" },
+    { k: "inseam_cm", l: "Cavallo", u: "cm" },
   ]},
-  { group: "Other", items: [
-    { k: "weight_kg", l: "Weight", u: "kg" },
-    { k: "foot_cm", l: "Foot length", u: "cm" },
+  { group: "Altro", items: [
+    { k: "weight_kg", l: "Peso", u: "kg" },
+    { k: "foot_cm", l: "Lunghezza piede", u: "cm" },
   ]},
 ];
 
 export default function Profile() {
   const [m, setM] = useState({ gender: "female" });
   const [saving, setSaving] = useState(false);
+  const [accuracyNonce, setAccuracyNonce] = useState(0);
 
   useEffect(() => {
     (async () => {
@@ -42,9 +44,10 @@ export default function Profile() {
     try {
       const payload = Object.fromEntries(Object.entries(m).filter(([_, v]) => v !== "" && v !== null && v !== undefined));
       await api.put("/profile/measurements", payload);
-      toast.success("Measurements saved");
+      toast.success("Misure salvate");
+      setAccuracyNonce((n) => n + 1);
     } catch {
-      toast.error("Could not save");
+      toast.error("Salvataggio non riuscito");
     } finally {
       setSaving(false);
     }
@@ -53,26 +56,34 @@ export default function Profile() {
   return (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-10" data-testid="profile-root">
       <div className="lg:col-span-7">
-        <div className="label-caps mb-3">Your silhouette</div>
-        <h1 className="font-serif text-4xl md:text-5xl tracking-tighter">Body measurements</h1>
+        <div className="label-caps mb-3">La tua silhouette</div>
+        <h1 className="font-serif text-4xl md:text-5xl tracking-tighter">Misure corporee</h1>
         <p className="mt-4 text-neutral-600 max-w-lg leading-relaxed">
-          Precise numbers mean precise fit. These are used to generate your avatar and suggest sizes.
+          Numeri precisi significano vestibilità precisa. Vengono usati per generare il tuo avatar e consigliarti la taglia giusta.
         </p>
+
+        <div className="mt-8">
+          <FittingAccuracy nonce={accuracyNonce} />
+        </div>
 
         <div className="mt-10 space-y-10">
           <div>
-            <div className="label-caps mb-3">Gender</div>
+            <div className="label-caps mb-3">Genere</div>
             <div className="flex gap-2">
-              {["female", "male", "unisex"].map((g) => (
+              {[
+                { k: "female", l: "donna" },
+                { k: "male", l: "uomo" },
+                { k: "unisex", l: "unisex" },
+              ].map((g) => (
                 <button
-                  key={g}
-                  onClick={() => updateStr("gender", g)}
+                  key={g.k}
+                  onClick={() => updateStr("gender", g.k)}
                   className={`px-4 py-2 label-caps border hairline transition-colors ${
-                    m.gender === g ? "bg-[#0A0A0A] text-white border-[#0A0A0A]" : "bg-white text-[#0A0A0A] hover:border-[#0A0A0A]"
+                    m.gender === g.k ? "bg-[#0A0A0A] text-white border-[#0A0A0A]" : "bg-white text-[#0A0A0A] hover:border-[#0A0A0A]"
                   }`}
-                  data-testid={`gender-${g}`}
+                  data-testid={`gender-${g.k}`}
                 >
-                  {g}
+                  {g.l}
                 </button>
               ))}
             </div>
@@ -104,23 +115,23 @@ export default function Profile() {
           ))}
 
           <button onClick={save} disabled={saving} className="btn-primary" data-testid="save-measurements-btn">
-            {saving ? "Saving..." : "Save measurements"}
+            {saving ? "Salvataggio..." : "Salva misure"}
           </button>
 
-          <WeightTracker />
+          <WeightTracker onChange={() => setAccuracyNonce((n) => n + 1)} />
         </div>
       </div>
 
       <div className="lg:col-span-5">
         <div className="sticky top-28">
-          <div className="label-caps mb-3">Live avatar</div>
+          <div className="label-caps mb-3">Avatar in tempo reale</div>
           <div className="border hairline p-6 bg-white">
             <Avatar3D measurements={m} />
             <div className="mt-6 grid grid-cols-2 gap-3 text-sm">
-              <Info label="Suggested top" value={m.chest_cm ? sizeFromChest(m.chest_cm) : "—"} />
-              <Info label="Suggested bottom" value={m.waist_cm ? sizeFromWaist(m.waist_cm) : "—"} />
-              <Info label="Shoe (EU)" value={m.foot_cm ? Math.round(m.foot_cm * 1.5 + 2) : "—"} />
-              <Info label="BMI" value={m.height_cm && m.weight_kg ? (m.weight_kg / ((m.height_cm/100)**2)).toFixed(1) : "—"} />
+              <Info label="Taglia top" value={m.chest_cm ? sizeFromChest(m.chest_cm) : "—"} />
+              <Info label="Taglia bottom" value={m.waist_cm ? sizeFromWaist(m.waist_cm) : "—"} />
+              <Info label="Scarpa (EU)" value={m.foot_cm ? Math.round(m.foot_cm * 1.5 + 2) : "—"} />
+              <Info label="IMC" value={m.height_cm && m.weight_kg ? (m.weight_kg / ((m.height_cm/100)**2)).toFixed(1) : "—"} />
             </div>
           </div>
         </div>
