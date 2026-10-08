@@ -28,12 +28,27 @@ export default function Studio() {
   const [generating, setGenerating] = useState(false);
   const navigate = useNavigate();
 
+  // Load the user's saved base photo once, so future try-ons don't ask for it.
   useEffect(() => {
+    try {
+      const saved = localStorage.getItem("atelier_base_photo");
+      if (saved) {
+        setPersonPath(saved);
+        setPersonPreview(fileUrl(saved));
+      }
+    } catch (_e) { /* ignore */ }
     if (preset?.chosen_size || preset?.name) {
       toast.success(`Capo pronto: ${preset?.name || "prodotto"} · taglia ${preset?.chosen_size || "—"}`);
     }
      
   }, []);
+
+  const changePhoto = () => {
+    try { localStorage.removeItem("atelier_base_photo"); } catch (_e) { /* ignore */ }
+    setPersonPath(null);
+    setPersonPreview(null);
+    toast.message("Carica una nuova foto");
+  };
 
   const uploadFile = async (file, kind) => {
     const fd = new FormData();
@@ -86,11 +101,22 @@ export default function Studio() {
           title="Your photo"
           hint="Full body or torso works best. Neutral background."
           preview={personPreview}
+          topRight={personPath ? (
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); changePhoto(); }}
+              className="label-caps border hairline px-2 py-1 bg-white hover:bg-[#0A0A0A] hover:text-white transition-colors"
+              data-testid="change-person-photo-btn"
+            >
+              Cambia foto
+            </button>
+          ) : null}
           onFile={async (f) => {
             setPersonPreview(URL.createObjectURL(f));
             try {
               const p = await uploadFile(f, "person");
               setPersonPath(p);
+              try { localStorage.setItem("atelier_base_photo", p); } catch (_e) { /* ignore */ }
             } catch { toast.error("Upload failed"); }
           }}
           testid="upload-person"
@@ -181,7 +207,7 @@ export default function Studio() {
   );
 }
 
-function UploadBox({ title, hint, preview, onFile, testid, className = "" }) {
+function UploadBox({ title, hint, preview, onFile, testid, className = "", topRight = null }) {
   const ref = useRef();
   const [drag, setDrag] = useState(false);
   return (
@@ -200,12 +226,15 @@ function UploadBox({ title, hint, preview, onFile, testid, className = "" }) {
       <input ref={ref} type="file" accept="image/*" className="hidden" onChange={(e) => {
         const f = e.target.files?.[0]; if (f) onFile(f);
       }} />
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-3">
         <div>
           <div className="label-caps">{title}</div>
           <p className="text-xs text-neutral-500 mt-1 max-w-xs">{hint}</p>
         </div>
-        <CloudArrowUp size={22} weight="duotone" />
+        <div className="flex items-center gap-2">
+          {topRight}
+          <CloudArrowUp size={22} weight="duotone" />
+        </div>
       </div>
       <div className="flex-1 mt-6 relative overflow-hidden" style={{ aspectRatio: "4/5" }}>
         {preview ? (
