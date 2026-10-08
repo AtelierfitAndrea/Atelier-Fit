@@ -1,5 +1,5 @@
-import { useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useEffect, useRef, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { api, fileUrl } from "@/lib/api";
 import { useSubscription } from "@/lib/subscription";
@@ -16,15 +16,24 @@ const CATEGORIES = [
 
 export default function Studio() {
   const { status: subStatus, openPaywall, refresh: refreshSub } = useSubscription();
+  const location = useLocation();
+  const preset = location.state?.preset || null;
   const [personPath, setPersonPath] = useState(null);
-  const [garmentPath, setGarmentPath] = useState(null);
+  const [garmentPath, setGarmentPath] = useState(preset?.garment_path || null);
   const [personPreview, setPersonPreview] = useState(null);
-  const [garmentPreview, setGarmentPreview] = useState(null);
-  const [category, setCategory] = useState("top");
-  const [name, setName] = useState("");
-  const [chosenSize, setChosenSize] = useState("");
+  const [garmentPreview, setGarmentPreview] = useState(preset?.garment_path ? fileUrl(preset.garment_path) : null);
+  const [category, setCategory] = useState(preset?.category || "top");
+  const [name, setName] = useState(preset?.name || "");
+  const [chosenSize, setChosenSize] = useState(preset?.chosen_size || "");
   const [generating, setGenerating] = useState(false);
   const navigate = useNavigate();
+
+  useEffect(() => {
+    if (preset?.chosen_size || preset?.name) {
+      toast.success(`Capo pronto: ${preset?.name || "prodotto"} · taglia ${preset?.chosen_size || "—"}`);
+    }
+     
+  }, []);
 
   const uploadFile = async (file, kind) => {
     const fd = new FormData();

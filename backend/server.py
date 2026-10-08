@@ -845,20 +845,29 @@ async def _fetch_page(url: str) -> Optional[str]:
         return None
 
 
-def _condense_html(html: str) -> str:
+def _condense_html(html: str) -> tuple:
+    """Returns (condensed_text, product_image_url_or_None)."""
+    product_image = None
     try:
         soup = BeautifulSoup(html, "html.parser")
+        # Extract product image from og/twitter meta
+        for sel, attr in (("meta[property='og:image']", "content"),
+                          ("meta[name='twitter:image']", "content"),
+                          ("meta[property='product:image']", "content")):
+            el = soup.select_one(sel)
+            if el and el.get(attr):
+                product_image = el[attr]
+                break
         for tag in soup(["script", "style", "noscript", "svg", "iframe", "nav", "footer"]):
             tag.decompose()
         title_el = soup.find("title")
         title = title_el.get_text(strip=True) if title_el else ""
-        # Extract text from the body with some structure signals
         text = soup.get_text(separator="\n", strip=True)
         text = re.sub(r"\n{2,}", "\n", text)
         condensed = f"TITLE: {title}\n{text}"
-        return condensed[:_PAGE_CHAR_LIMIT]
+        return condensed[:_PAGE_CHAR_LIMIT], product_image
     except Exception:
-        return html[:_PAGE_CHAR_LIMIT]
+        return html[:_PAGE_CHAR_LIMIT], None
 
 
 def _extract_json(text: str) -> Optional[dict]:
@@ -914,7 +923,7 @@ async def _call_llm_for_analysis(page_text: Optional[str], image_b64: Optional[s
 
     session_id = f"analyze-{uuid.uuid4().hex[:8]}"
     chat = LlmChat(api_key=EMERGENT_KEY, session_id=session_id, system_message="Sei un assistente taglie professionista. Rispondi SOLO con JSON valido.")
-    chat.with_model("gemini", "gemini-2.0-flash")
+    chat.with_model("gemini", "gemini-3.8-flash")
 
     files = None
     if image_b64:
@@ -931,12 +940,14 @@ async def _call_llm_for_analysis(page_text: Optional[str], image_b64: Optional[s
         logger.error(f"LLM analysis failed: {e}")
         return {"ok": False, "needs_screenshot": image_b64 is None, "error": str(e)}
 
+    logger.info(f"LLM raw reply (first 500 chars): {str(reply)[:500]}")
     data = _extract_json(reply) or {}
     if data.get("needs_screenshot"):
         return {"ok": False, "needs_screenshot": True}
     required = ["recommended_size", "explanation"]
     if not all(data.get(k) for k in required):
-        return {"ok": False, "needs_screenshot": image_b64 is None}
+        logger.warning(f"Missing keys in LLM reply. Got keys={list(data.keys())}")
+        return {"ok": False, "needs_screenshot": image_b64 is None, "raw": str(reply)[:200]}
     data["ok"] = True
     data["needs_screenshot"] = False
     return data
@@ -956,9 +967,11 @@ async def product_analyze(req: AnalyzeUrlRequest, user: User = Depends(get_curre
         raise HTTPException(status_code=400, detail="Aggiungi prima almeno torace, vita, fianchi o altezza nel profilo.")
     html = await _fetch_page(url)
     if not html:
-        return {"ok": False, "needs_screenshot": True, "reason": "Il sito ha bloccato la lettura automatica. Carica uno screenshot della tabella taglie."}
-    condensed = _condense_html(html)
+        return {"ok": False, "needs_screenshot": True, "reason": "Il sito ha bloccato la lettura automatica. Incolla la tabella taglie o carica uno screenshot."}
+    condensed, product_image = _condense_html(html)
     result = await _call_llm_for_analysis(condensed, None, m_doc, hint_url=url)
+    if product_image:
+        result["product_image_url"] = product_image
     # Log the analysis for audit / brand reporting
     await db.product_analyses.insert_one({
         "id": str(uuid.uuid4()),
@@ -969,6 +982,69 @@ async def product_analyze(req: AnalyzeUrlRequest, user: User = Depends(get_curre
         "created_at": datetime.now(timezone.utc).isoformat(),
     })
     return result
+
+
+class AnalyzeTextRequest(BaseModel):
+    chart_text: str
+    url: Optional[str] = None
+
+
+@api_router.post("/product/analyze-text")
+async def product_analyze_text(req: AnalyzeTextRequest, user: User = Depends(get_current_user)):
+    m_doc = await db.measurements.find_one({"user_id": user.user_id}, {"_id": 0, "user_id": 0}) or {}
+    if not any(m_doc.get(k) for k in ("chest_cm", "waist_cm", "hips_cm", "height_cm")):
+        raise HTTPException(status_code=400, detail="Aggiungi prima almeno torace, vita, fianchi o altezza nel profilo.")
+    pseudo_text = f"URL: {req.url or 'n/a'}\n\nTABELLA TAGLIE INCOLLATA DAL CLIENTE:\n{req.chart_text}"
+    result = await _call_llm_for_analysis(pseudo_text, None, m_doc, hint_url=req.url or "")
+    await db.product_analyses.insert_one({
+        "id": str(uuid.uuid4()),
+        "user_id": user.user_id,
+        "url": req.url,
+        "source": "pasted-text",
+        "result": result,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    })
+    return result
+
+
+class ImportImageRequest(BaseModel):
+    image_url: str
+    category: Optional[str] = None
+    name: Optional[str] = None
+
+
+@api_router.post("/product/import-image")
+async def product_import_image(req: ImportImageRequest, user: User = Depends(get_current_user)):
+    """Downloads a product image from an external URL and stores it as a garment."""
+    url = (req.image_url or "").strip()
+    if not re.match(r"^https?://", url):
+        raise HTTPException(status_code=400, detail="URL immagine non valido")
+    headers = {"User-Agent": _UA, "Accept": "image/*,*/*"}
+    try:
+        async with httpx.AsyncClient(follow_redirects=True, timeout=20, headers=headers) as c:
+            r = await c.get(url)
+            r.raise_for_status()
+            data = r.content
+            content_type = r.headers.get("content-type", "image/jpeg").split(";")[0].strip()
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Download immagine fallito: {e}")
+    ext_map = {"image/jpeg": "jpg", "image/jpg": "jpg", "image/png": "png", "image/webp": "webp"}
+    ext = ext_map.get(content_type, "jpg")
+    path = f"{APP_NAME}/garment/{user.user_id}/{uuid.uuid4().hex}.{ext}"
+    result = put_object(path, data, content_type)
+    await db.files.insert_one({
+        "id": str(uuid.uuid4()),
+        "user_id": user.user_id,
+        "kind": "garment",
+        "storage_path": result["path"],
+        "original_filename": url.rsplit("/", 1)[-1][:80],
+        "content_type": content_type,
+        "size": result.get("size", 0),
+        "source_url": url,
+        "is_deleted": False,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    })
+    return {"path": result["path"], "category": req.category, "name": req.name}
 
 
 @api_router.post("/product/analyze-screenshot")
