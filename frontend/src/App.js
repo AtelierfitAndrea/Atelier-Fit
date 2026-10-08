@@ -12,6 +12,7 @@ import Studio from "@/pages/Studio";
 import Wardrobe from "@/pages/Wardrobe";
 import TryOnDetail from "@/pages/TryOnDetail";
 import Settings from "@/pages/Settings";
+import AnalyzeProduct from "@/pages/AnalyzeProduct";
 import AppShell from "@/components/AppShell";
 import "@/App.css";
 
@@ -42,6 +43,7 @@ function AppRouter() {
       <Route path="/wardrobe" element={<Protected><Wardrobe /></Protected>} />
       <Route path="/tryon/:id" element={<Protected><TryOnDetail /></Protected>} />
       <Route path="/settings" element={<Protected><Settings /></Protected>} />
+      <Route path="/analyze" element={<Protected><AnalyzeProduct /></Protected>} />
     </Routes>
   );
 }

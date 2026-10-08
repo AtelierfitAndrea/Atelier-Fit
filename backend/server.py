@@ -13,6 +13,10 @@ from pydantic import BaseModel, Field, ConfigDict
 from typing import List, Optional
 from datetime import datetime, timezone, timedelta
 from emergentintegrations.llm.chat import LlmChat, UserMessage, ImageContent
+import httpx
+from bs4 import BeautifulSoup
+import json as pyjson
+import re
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -814,6 +818,180 @@ async def api_size_recommend(category: str = Query(...), user: User = Depends(ge
 @api_router.get("/")
 async def root():
     return {"service": "VFit API", "status": "ok"}
+
+
+# ----- Product Analyzer (Universal size matcher) -----
+_UA = (
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+)
+_PAGE_CHAR_LIMIT = 18000
+
+
+async def _fetch_page(url: str) -> Optional[str]:
+    headers = {
+        "User-Agent": _UA,
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7",
+    }
+    try:
+        async with httpx.AsyncClient(follow_redirects=True, timeout=15, headers=headers) as c:
+            r = await c.get(url)
+            if r.status_code >= 400:
+                return None
+            return r.text
+    except Exception as e:
+        logger.warning(f"fetch failed: {e}")
+        return None
+
+
+def _condense_html(html: str) -> str:
+    try:
+        soup = BeautifulSoup(html, "html.parser")
+        for tag in soup(["script", "style", "noscript", "svg", "iframe", "nav", "footer"]):
+            tag.decompose()
+        title_el = soup.find("title")
+        title = title_el.get_text(strip=True) if title_el else ""
+        # Extract text from the body with some structure signals
+        text = soup.get_text(separator="\n", strip=True)
+        text = re.sub(r"\n{2,}", "\n", text)
+        condensed = f"TITLE: {title}\n{text}"
+        return condensed[:_PAGE_CHAR_LIMIT]
+    except Exception:
+        return html[:_PAGE_CHAR_LIMIT]
+
+
+def _extract_json(text: str) -> Optional[dict]:
+    if not text:
+        return None
+    m = re.search(r"\{[\s\S]*\}", text)
+    if not m:
+        return None
+    raw = m.group(0)
+    try:
+        return pyjson.loads(raw)
+    except Exception:
+        # Try to clean trailing commas
+        cleaned = re.sub(r",\s*([}\]])", r"\1", raw)
+        try:
+            return pyjson.loads(cleaned)
+        except Exception:
+            return None
+
+
+async def _call_llm_for_analysis(page_text: Optional[str], image_b64: Optional[str], measurements: dict, hint_url: str = "") -> dict:
+    """
+    Ask Gemini to extract a size chart and recommend the best size.
+    Returns a dict with keys: ok, needs_screenshot, brand, product_name,
+    category, size_chart, fit_notes, recommended_size, confidence, explanation.
+    """
+    user_m = {k: v for k, v in measurements.items() if v and k in ("chest_cm", "waist_cm", "hips_cm", "height_cm", "weight_kg", "foot_cm", "shoulder_cm", "inseam_cm")}
+    prompt = (
+        "Sei un esperto di taglie e vestibilità per e-commerce. Analizza la pagina prodotto (o lo screenshot "
+        "della tabella taglie) e consiglia la taglia perfetta per questo utente.\n\n"
+        f"MISURE UTENTE (cm/kg): {pyjson.dumps(user_m)}\n"
+        f"URL fornito: {hint_url}\n\n"
+        "ISTRUZIONI:\n"
+        "1) Identifica brand, nome prodotto, categoria (top/bottom/dress/outerwear/shoes).\n"
+        "2) Estrai la TABELLA TAGLIE con le misure corporee a cui corrisponde ogni taglia (NON le misure del capo).\n"
+        "3) Rileva NOTE DI VESTIBILITÀ: 'veste piccolo' / 'veste grande' / 'conforme'.\n"
+        "4) Confronta con le misure utente e scegli la taglia perfetta. Se c'è una nota 'veste piccolo' consiglia 1 taglia in più, se 'veste grande' 1 in meno.\n"
+        "5) Scrivi una spiegazione breve in ITALIANO, concreta, es: 'Su Zara questo capo veste piccolo, prendi L invece di M'.\n\n"
+        "SE NON RIESCI A TROVARE LA TABELLA TAGLIE in modo affidabile, imposta needs_screenshot=true e lascia gli altri campi null.\n\n"
+        "RISPOSTA — SOLO JSON, nessun testo attorno:\n"
+        "{\n"
+        '  "needs_screenshot": false,\n'
+        '  "brand": "Zara",\n'
+        '  "product_name": "Blazer lino",\n'
+        '  "category": "top",\n'
+        '  "size_chart": {"S": {"chest_cm":88,"waist_cm":72,"hips_cm":94}, "M": {...}, "L": {...}},\n'
+        '  "fit_notes": "runs small",\n'
+        '  "recommended_size": "L",\n'
+        '  "confidence": 0.86,\n'
+        '  "explanation": "Spiegazione in italiano."\n'
+        "}\n"
+    )
+
+    session_id = f"analyze-{uuid.uuid4().hex[:8]}"
+    chat = LlmChat(api_key=EMERGENT_KEY, session_id=session_id, system_message="Sei un assistente taglie professionista. Rispondi SOLO con JSON valido.")
+    chat.with_model("gemini", "gemini-2.0-flash")
+
+    files = None
+    if image_b64:
+        files = [ImageContent(image_b64)]
+        text = prompt + "\n\n(La tabella taglie è nell'immagine allegata.)"
+    else:
+        page = page_text or ""
+        text = prompt + "\n\nCONTENUTO PAGINA:\n" + page
+
+    msg = UserMessage(text=text, file_contents=files) if files else UserMessage(text=text)
+    try:
+        reply = await chat.send_message(msg)
+    except Exception as e:
+        logger.error(f"LLM analysis failed: {e}")
+        return {"ok": False, "needs_screenshot": image_b64 is None, "error": str(e)}
+
+    data = _extract_json(reply) or {}
+    if data.get("needs_screenshot"):
+        return {"ok": False, "needs_screenshot": True}
+    required = ["recommended_size", "explanation"]
+    if not all(data.get(k) for k in required):
+        return {"ok": False, "needs_screenshot": image_b64 is None}
+    data["ok"] = True
+    data["needs_screenshot"] = False
+    return data
+
+
+class AnalyzeUrlRequest(BaseModel):
+    url: str
+
+
+@api_router.post("/product/analyze")
+async def product_analyze(req: AnalyzeUrlRequest, user: User = Depends(get_current_user)):
+    url = (req.url or "").strip()
+    if not re.match(r"^https?://", url):
+        raise HTTPException(status_code=400, detail="URL non valido")
+    m_doc = await db.measurements.find_one({"user_id": user.user_id}, {"_id": 0, "user_id": 0}) or {}
+    if not any(m_doc.get(k) for k in ("chest_cm", "waist_cm", "hips_cm", "height_cm")):
+        raise HTTPException(status_code=400, detail="Aggiungi prima almeno torace, vita, fianchi o altezza nel profilo.")
+    html = await _fetch_page(url)
+    if not html:
+        return {"ok": False, "needs_screenshot": True, "reason": "Il sito ha bloccato la lettura automatica. Carica uno screenshot della tabella taglie."}
+    condensed = _condense_html(html)
+    result = await _call_llm_for_analysis(condensed, None, m_doc, hint_url=url)
+    # Log the analysis for audit / brand reporting
+    await db.product_analyses.insert_one({
+        "id": str(uuid.uuid4()),
+        "user_id": user.user_id,
+        "url": url,
+        "source": "url",
+        "result": result,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    })
+    return result
+
+
+@api_router.post("/product/analyze-screenshot")
+async def product_analyze_screenshot(
+    file: UploadFile = File(...),
+    url: Optional[str] = Query(None),
+    user: User = Depends(get_current_user),
+):
+    m_doc = await db.measurements.find_one({"user_id": user.user_id}, {"_id": 0, "user_id": 0}) or {}
+    if not any(m_doc.get(k) for k in ("chest_cm", "waist_cm", "hips_cm", "height_cm")):
+        raise HTTPException(status_code=400, detail="Aggiungi prima almeno torace, vita, fianchi o altezza nel profilo.")
+    data = await file.read()
+    img_b64 = base64.b64encode(data).decode("utf-8")
+    result = await _call_llm_for_analysis(None, img_b64, m_doc, hint_url=url or "")
+    await db.product_analyses.insert_one({
+        "id": str(uuid.uuid4()),
+        "user_id": user.user_id,
+        "url": url,
+        "source": "screenshot",
+        "result": result,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    })
+    return result
 
 
 app.include_router(api_router)

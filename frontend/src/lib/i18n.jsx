@@ -2,7 +2,18 @@ import { createContext, useContext, useEffect, useMemo, useState } from "react";
 
 const DICTIONARIES = {
   it: {
-    nav: { home: "Home", studio: "Studio", wardrobe: "Armadio", profile: "Profilo", settings: "Impostazioni" },
+    nav: { home: "Home", studio: "Studio", wardrobe: "Armadio", profile: "Profilo", settings: "Impostazioni", analyze: "Analisi prodotto" },
+    analyze: {
+      kicker: "Nuovo",
+      title: "Analisi Prodotto — Universale",
+      subtitle: "Incolla un link e scopri la tua taglia perfetta su qualsiasi shop. Confrontiamo la tabella del brand con le tue misure salvate e ti diamo il consiglio in italiano chiaro.",
+      urlLabel: "Incolla il link del prodotto",
+      placeholder: "Amazon, Zara, H&M, Asos, Zalando — qualsiasi shop",
+      cta: "Trova la mia taglia perfetta",
+      working: "Analizzo…",
+      screenshotLabel: "Non riesco a leggere la tabella",
+      screenshotHint: "Alcuni siti bloccano la lettura automatica. Carica uno screenshot nitido della tabella taglie e penso io al resto.",
+    },
     sub: {
       honeymoonBanner: "Primo mese tutto illimitato gratis. Dal secondo mese scegli tu come continuare — sempre 5 prove free al mese incluse.",
       counter: "Ti restano {n}/5 prove free questo mese",
@@ -117,7 +128,18 @@ const DICTIONARIES = {
     },
   },
   en: {
-    nav: { home: "Home", studio: "Studio", wardrobe: "Wardrobe", profile: "Profile", settings: "Settings" },
+    nav: { home: "Home", studio: "Studio", wardrobe: "Wardrobe", profile: "Profile", settings: "Settings", analyze: "Product analyzer" },
+    analyze: {
+      kicker: "New",
+      title: "Product Analyzer — Universal",
+      subtitle: "Paste a link and discover your perfect size in any shop. We compare the brand's chart with your saved measurements and give a clear recommendation.",
+      urlLabel: "Paste the product link",
+      placeholder: "Amazon, Zara, H&M, Asos, Zalando — any store",
+      cta: "Find my perfect size",
+      working: "Analyzing…",
+      screenshotLabel: "Can't read the chart",
+      screenshotHint: "Some sites block automatic reading. Upload a clear screenshot of the size chart and we'll handle the rest.",
+    },
     sub: {
       honeymoonBanner: "First month fully unlimited, free. From month two, you choose how to continue — 5 free try-ons/month always included.",
       counter: "{n}/5 free try-ons left this month",
@@ -228,7 +250,18 @@ const DICTIONARIES = {
     },
   },
   fr: {
-    nav: { home: "Accueil", studio: "Studio", wardrobe: "Dressing", profile: "Profil", settings: "Réglages" },
+    nav: { home: "Accueil", studio: "Studio", wardrobe: "Dressing", profile: "Profil", settings: "Réglages", analyze: "Analyse produit" },
+    analyze: {
+      kicker: "Nouveau",
+      title: "Analyse Produit — Universelle",
+      subtitle: "Collez un lien et trouvez votre taille parfaite dans n'importe quelle boutique. Nous comparons le guide des tailles à vos mesures et vous donnons un conseil clair.",
+      urlLabel: "Collez le lien du produit",
+      placeholder: "Amazon, Zara, H&M, Asos, Zalando — n'importe quel site",
+      cta: "Trouver ma taille parfaite",
+      working: "J'analyse…",
+      screenshotLabel: "Je n'arrive pas à lire le guide",
+      screenshotHint: "Certains sites bloquent la lecture automatique. Téléchargez une capture d'écran nette du guide des tailles.",
+    },
     sub: {
       honeymoonBanner: "Premier mois entièrement illimité, gratuit. Dès le mois 2, vous choisissez — 5 essayages gratuits/mois toujours inclus.",
       counter: "Il vous reste {n}/5 essayages gratuits ce mois-ci",
@@ -339,7 +372,18 @@ const DICTIONARIES = {
     },
   },
   de: {
-    nav: { home: "Start", studio: "Studio", wardrobe: "Garderobe", profile: "Profil", settings: "Einstellungen" },
+    nav: { home: "Start", studio: "Studio", wardrobe: "Garderobe", profile: "Profil", settings: "Einstellungen", analyze: "Produktanalyse" },
+    analyze: {
+      kicker: "Neu",
+      title: "Produktanalyse — Universal",
+      subtitle: "Füge einen Link ein und finde deine perfekte Größe in jedem Shop. Wir vergleichen die Größentabelle mit deinen Maßen und geben eine klare Empfehlung.",
+      urlLabel: "Füge den Produktlink ein",
+      placeholder: "Amazon, Zara, H&M, Asos, Zalando — jeder Shop",
+      cta: "Meine perfekte Größe finden",
+      working: "Analysiere…",
+      screenshotLabel: "Tabelle nicht lesbar",
+      screenshotHint: "Manche Seiten blockieren das automatische Lesen. Lade einen klaren Screenshot der Größentabelle hoch.",
+    },
     sub: {
       honeymoonBanner: "Erster Monat komplett unbegrenzt, gratis. Ab dem zweiten Monat entscheidest du — 5 kostenlose Try-ons/Monat immer inklusive.",
       counter: "Du hast noch {n}/5 kostenlose Try-ons diesen Monat",

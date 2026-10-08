@@ -2,7 +2,7 @@ import { Link, NavLink, useNavigate } from "react-router-dom";
 import { useAuth } from "@/lib/auth";
 import { useI18n } from "@/lib/i18n";
 import LanguageSwitcher from "@/components/LanguageSwitcher";
-import { SignOut, House, User as UserIcon, TShirt, Sparkle, GearSix } from "@phosphor-icons/react";
+import { SignOut, House, User as UserIcon, TShirt, Sparkle, GearSix, MagnifyingGlass } from "@phosphor-icons/react";
 
 export default function AppShell({ children }) {
   const { user, logout } = useAuth();
@@ -35,6 +35,9 @@ export default function AppShell({ children }) {
             </NavLink>
             <NavLink to="/studio" className={navItem} data-testid="nav-studio">
               <Sparkle size={14} weight="duotone" /> {t("nav.studio")}
+            </NavLink>
+            <NavLink to="/analyze" className={navItem} data-testid="nav-analyze">
+              <MagnifyingGlass size={14} weight="duotone" /> {t("nav.analyze")}
             </NavLink>
             <NavLink to="/wardrobe" className={navItem} data-testid="nav-wardrobe">
               <TShirt size={14} weight="duotone" /> {t("nav.wardrobe")}
