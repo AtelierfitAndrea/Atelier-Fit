@@ -85,6 +85,13 @@ export default function Dashboard() {
           >
             Fitting Accuracy: {accuracy}% - Peso aggiornato il {lastWeightDate} - Affidabile: {affidabile}
           </div>
+          <button
+            onClick={() => setModalOpen(true)}
+            className="mt-4 w-full md:w-auto inline-flex items-center justify-center gap-3 bg-[#0A0A0A] text-white px-8 py-4 text-sm font-semibold tracking-[0.2em] uppercase border border-[#0A0A0A] hover:bg-[#8C7355] hover:border-[#8C7355] transition-colors duration-200"
+            data-testid="hero-update-weight-btn"
+          >
+            Aggiorna ora <ArrowRight size={16} weight="bold" />
+          </button>
           <div className="label-caps mb-4 mt-6">Bentornato</div>
           <h1 className="font-serif text-4xl md:text-6xl tracking-tighter leading-[1]">
             Ciao di nuovo,<br />
