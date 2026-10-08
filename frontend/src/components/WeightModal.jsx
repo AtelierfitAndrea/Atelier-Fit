@@ -15,13 +15,17 @@ export default function WeightModal({ open, onClose, onSaved }) {
     const w = Number(weight);
     if (!w || w < 25 || w > 300) { toast.error("Inserisci un peso valido in kg"); return; }
     setSaving(true);
+    // Optimistic — update the UI immediately so the animation plays
+    toast.success("Peso aggiornato!");
+    onSaved?.();
+    onClose();
     try {
       await api.post("/profile/weight-history", { weight_kg: w });
-      toast.success("Peso aggiornato!");
-      onSaved?.();
-      onClose();
-    } catch { toast.error("Salvataggio non riuscito"); }
-    finally { setSaving(false); }
+    } catch {
+      toast.error("Salvataggio sul server non riuscito");
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (

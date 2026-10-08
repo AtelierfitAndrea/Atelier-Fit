@@ -13,9 +13,8 @@ export default function Dashboard() {
   const [weightStatus, setWeightStatus] = useState(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [nonce, setNonce] = useState(0);
-  // Demo Fitting Accuracy for FASE 1: 10% (NO) → 85% (SÌ)
-  const [demoAccuracy, setDemoAccuracy] = useState(10);
-  const [demoReliable, setDemoReliable] = useState(false);
+  // Demo Fitting Accuracy for FASE 1: 10% (NO) → 85% (SÌ) when weight is fresh
+  const [justSaved, setJustSaved] = useState(false);
 
   const refresh = async () => {
     try {
@@ -32,6 +31,10 @@ export default function Dashboard() {
 
   useEffect(() => { refresh(); }, []);
 
+  const hasFreshWeight = justSaved || (weightStatus?.last_check_at && !weightStatus?.due);
+  const demoAccuracy = hasFreshWeight ? 85 : 10;
+  const demoReliable = hasFreshWeight;
+
   const hasMeasurements = measurements && Object.keys(measurements || {}).some((k) => k !== "updated_at" && measurements[k]);
   const stale = weightStatus?.last_check_at && weightStatus?.due;
   const bannerStyle = stale
@@ -39,9 +42,8 @@ export default function Dashboard() {
     : "bg-[#0A0A0A] hover:bg-[#8C7355] border-[#0A0A0A]";
 
   const onWeightSaved = () => {
-    // Smooth animated jump from 10% → 85%
-    setDemoAccuracy(85);
-    setDemoReliable(true);
+    // Instant optimistic jump 10% → 85% with CSS animation on the circle
+    setJustSaved(true);
     setNonce((n) => n + 1);
     refresh();
   };
