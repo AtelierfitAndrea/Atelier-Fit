@@ -13,6 +13,9 @@ export default function Dashboard() {
   const [weightStatus, setWeightStatus] = useState(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [nonce, setNonce] = useState(0);
+  // Demo Fitting Accuracy for FASE 1: 10% (NO) → 85% (SÌ)
+  const [demoAccuracy, setDemoAccuracy] = useState(10);
+  const [demoReliable, setDemoReliable] = useState(false);
 
   const refresh = async () => {
     try {
@@ -29,22 +32,19 @@ export default function Dashboard() {
 
   useEffect(() => { refresh(); }, []);
 
-  const [weightSavedNow, setWeightSavedNow] = useState(false);
-  const calcolaAccuracy = () => (weightSavedNow ? 85 : 0);
-  const todayIt = new Date().toLocaleDateString("it-IT");
-  const lastWeightDate = weightSavedNow
-    ? todayIt
-    : (weightStatus?.last_check_at
-        ? new Date(weightStatus.last_check_at).toLocaleDateString("it-IT")
-        : "—");
-  const accuracy = calcolaAccuracy();
-  const affidabile = accuracy > 70 ? "SÌ" : "NO";
-
   const hasMeasurements = measurements && Object.keys(measurements || {}).some((k) => k !== "updated_at" && measurements[k]);
   const stale = weightStatus?.last_check_at && weightStatus?.due;
   const bannerStyle = stale
     ? "bg-[#B91C1C] hover:bg-[#991818] border-[#B91C1C]"
     : "bg-[#0A0A0A] hover:bg-[#8C7355] border-[#0A0A0A]";
+
+  const onWeightSaved = () => {
+    // Smooth animated jump from 10% → 85%
+    setDemoAccuracy(85);
+    setDemoReliable(true);
+    setNonce((n) => n + 1);
+    refresh();
+  };
 
   return (
     <div className="space-y-14" data-testid="dashboard-root">
@@ -56,7 +56,7 @@ export default function Dashboard() {
         >
           <div className="flex items-center gap-3">
             <Warning size={18} weight="fill" />
-            <div className="text-left">
+            <div className="text-left" translate="no">
               <div className="label-caps !text-white/80">Controllo peso</div>
               <div className="font-serif text-lg leading-tight">
                 {stale
@@ -73,26 +73,25 @@ export default function Dashboard() {
         </button>
       )}
 
-      <div data-testid="accuracy-row">
-        <AccuracyBadge nonce={nonce} />
+      <div className="flex items-center gap-4 flex-wrap" data-testid="accuracy-row">
+        <AccuracyBadge
+          nonce={nonce}
+          accuracyOverride={demoAccuracy}
+          reliableOverride={demoReliable}
+        />
+        <button
+          onClick={() => setModalOpen(true)}
+          className="inline-flex items-center justify-center gap-3 bg-[#0A0A0A] text-white px-6 py-3 text-xs font-semibold tracking-[0.2em] uppercase border border-[#0A0A0A] hover:bg-[#8C7355] hover:border-[#8C7355] transition-colors duration-200"
+          data-testid="hero-update-weight-btn"
+          translate="no"
+        >
+          Aggiorna ora <ArrowRight size={14} weight="bold" />
+        </button>
       </div>
 
       <section className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-end">
-        <div className="lg:col-span-8">
-          <div
-            style={{ background: "#111", color: "white", padding: "12px", border: "1px solid gold" }}
-            data-testid="accuracy-debug-block"
-          >
-            Fitting Accuracy: {accuracy}% - Peso aggiornato il {lastWeightDate} - Affidabile: {affidabile}
-          </div>
-          <button
-            onClick={() => setModalOpen(true)}
-            className="mt-4 w-full md:w-auto inline-flex items-center justify-center gap-3 bg-[#0A0A0A] text-white px-8 py-4 text-sm font-semibold tracking-[0.2em] uppercase border border-[#0A0A0A] hover:bg-[#8C7355] hover:border-[#8C7355] transition-colors duration-200"
-            data-testid="hero-update-weight-btn"
-          >
-            Aggiorna ora <ArrowRight size={16} weight="bold" />
-          </button>
-          <div className="label-caps mb-4 mt-6">Bentornato</div>
+        <div className="lg:col-span-8" translate="no">
+          <div className="label-caps mb-4">Bentornato</div>
           <h1 className="font-serif text-4xl md:text-6xl tracking-tighter leading-[1]">
             Ciao di nuovo,<br />
             <em className="italic text-[#8C7355]">{user?.name?.split(" ")[0] || "amica"}</em>.
@@ -102,40 +101,40 @@ export default function Dashboard() {
           </p>
         </div>
         <div className="lg:col-span-4 flex gap-3">
-          <Link to="/studio" className="btn-primary flex-1" data-testid="dashboard-start-tryon">
+          <Link to="/studio" className="btn-primary flex-1" data-testid="dashboard-start-tryon" translate="no">
             Nuova prova <ArrowRight size={16} weight="bold" />
           </Link>
         </div>
       </section>
 
-      <section className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <section className="grid grid-cols-1 md:grid-cols-3 gap-4" translate="no">
         <StatCard
           Icon={Ruler}
-          label="Misure"
-          value={hasMeasurements ? "Salvate" : "Da inserire"}
+          label="Misurazioni"
+          value="Le tue misure"
           to="/profile"
-          cta={hasMeasurements ? "Aggiorna" : "Aggiungi misure"}
+          cta={hasMeasurements ? "Aggiorna" : "Aggiungi"}
           testid="stat-measurements"
         />
         <StatCard
           Icon={TShirt}
-          label="Look salvati"
-          value={String(tryons.length)}
+          label="Armadio verificato"
+          value={`${tryons.length} capi`}
           to="/wardrobe"
-          cta="Apri wardrobe"
+          cta="Apri armadio"
           testid="stat-looks"
         />
         <StatCard
           Icon={Sparkle}
-          label="Studio prove"
+          label="Studio di prova"
           value="Pronto"
           to="/studio"
-          cta="Entra nello Studio"
+          cta="Entra nello studio"
           testid="stat-studio"
         />
       </section>
 
-      <section>
+      <section translate="no">
         <div className="flex items-end justify-between mb-6">
           <div>
             <div className="label-caps">Prove recenti</div>
@@ -175,7 +174,7 @@ export default function Dashboard() {
       <WeightModal
         open={modalOpen}
         onClose={() => setModalOpen(false)}
-        onSaved={() => { setWeightSavedNow(true); setNonce((n) => n + 1); refresh(); }}
+        onSaved={onWeightSaved}
       />
     </div>
   );
@@ -183,7 +182,12 @@ export default function Dashboard() {
 
 function StatCard({ Icon, label, value, to, cta, testid }) {
   return (
-    <Link to={to} className="group border hairline p-6 flex flex-col justify-between hover:border-[#0A0A0A] transition-colors duration-200" data-testid={testid}>
+    <Link
+      to={to}
+      className="group border hairline p-6 flex flex-col justify-between hover:border-[#0A0A0A] transition-colors duration-200"
+      data-testid={testid}
+      translate="no"
+    >
       <div className="flex items-center justify-between">
         <span className="label-caps">{label}</span>
         <Icon size={22} weight="duotone" />

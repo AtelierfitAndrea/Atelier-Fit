@@ -3,8 +3,10 @@ import { api } from "@/lib/api";
 
 /**
  * Compact Fitting Accuracy badge with circular progress — for Dashboard header.
+ * If `accuracyOverride` / `reliableOverride` are provided, those values are used
+ * (useful for the Dashboard demo flow).
  */
-export default function AccuracyBadge({ nonce = 0 }) {
+export default function AccuracyBadge({ nonce = 0, accuracyOverride, reliableOverride }) {
   const [state, setState] = useState(null);
   const [open, setOpen] = useState(false);
 
@@ -14,9 +16,13 @@ export default function AccuracyBadge({ nonce = 0 }) {
     })();
   }, [nonce]);
 
-  if (!state) return null;
-  const pct = state.accuracy;
-  const reliable = state.reliable;
+  const hasOverride = typeof accuracyOverride === "number";
+  if (!state && !hasOverride) return null;
+
+  const pct = hasOverride ? accuracyOverride : state.accuracy;
+  const reliable = hasOverride
+    ? (typeof reliableOverride === "boolean" ? reliableOverride : pct >= 70)
+    : state.reliable;
   const ring = reliable ? "#059669" : pct >= 50 ? "#8C7355" : "#B91C1C";
   const size = 44;
   const stroke = 4;
@@ -30,6 +36,7 @@ export default function AccuracyBadge({ nonce = 0 }) {
       onMouseEnter={() => setOpen(true)}
       onMouseLeave={() => setOpen(false)}
       data-testid="accuracy-badge"
+      translate="no"
     >
       <div className="relative" style={{ width: size, height: size }}>
         <svg width={size} height={size} className="rotate-[-90deg]">
@@ -38,17 +45,21 @@ export default function AccuracyBadge({ nonce = 0 }) {
             cx={size/2} cy={size/2} r={r}
             stroke={ring} strokeWidth={stroke} fill="none"
             strokeDasharray={c} strokeDashoffset={offset} strokeLinecap="round"
-            style={{ transition: "stroke-dashoffset 0.6s ease" }}
+            style={{ transition: "stroke-dashoffset 0.8s ease, stroke 0.6s ease" }}
           />
         </svg>
-        <span className="absolute inset-0 flex items-center justify-center font-serif text-[13px] leading-none" data-testid="accuracy-badge-pct">
+        <span
+          className="absolute inset-0 flex items-center justify-center font-serif text-[13px] leading-none"
+          data-testid="accuracy-badge-pct"
+          style={{ color: ring, transition: "color 0.6s ease" }}
+        >
           {pct}%
         </span>
       </div>
-      <div className="pr-1">
-        <div className="label-caps">Fitting Accuracy</div>
-        <div className="text-sm font-medium" style={{ color: ring }}>
-          {pct}% · Affidabile: {reliable ? "SÌ" : "NO"}
+      <div className="pr-1" translate="no">
+        <div className="label-caps" translate="no">Fitting Accuracy</div>
+        <div className="text-sm font-medium" style={{ color: ring, transition: "color 0.6s ease" }}>
+          <span translate="no">{pct}% · Affidabile: {reliable ? "SÌ" : "NO"}</span>
         </div>
       </div>
       {open && pct < 70 && (
