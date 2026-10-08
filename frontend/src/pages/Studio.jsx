@@ -87,10 +87,10 @@ export default function Studio() {
     <div className="space-y-10" data-testid="studio-root">
       <header className="flex items-end justify-between flex-wrap gap-6">
         <div>
-          <div className="label-caps mb-3">The Studio</div>
-          <h1 className="font-serif text-4xl md:text-5xl tracking-tighter">A new fitting</h1>
+          <div className="label-caps mb-3">Atelier Fit</div>
+          <h1 className="font-serif text-4xl md:text-5xl tracking-tighter">Prova taglia</h1>
           <p className="mt-3 text-neutral-600 max-w-xl leading-relaxed">
-            Upload your photo and the garment you want to try. We&apos;ll dress you in a moment.
+            Carica una foto e il capo che vuoi provare. Ti vestiamo in un attimo.
           </p>
         </div>
         <TryonCounter />
@@ -98,8 +98,8 @@ export default function Studio() {
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         <UploadBox
-          title="Your photo"
-          hint="Full body or torso works best. Neutral background."
+          title="La tua foto"
+          hint="Meglio una foto a figura intera o del busto, sfondo neutro."
           preview={personPreview}
           topRight={personPath ? (
             <button
@@ -123,8 +123,8 @@ export default function Studio() {
           className="lg:col-span-5"
         />
         <UploadBox
-          title="The garment"
-          hint="Clean product shot from any e-commerce site."
+          title="Il capo"
+          hint="Foto prodotto dal tuo e-commerce preferito."
           preview={garmentPreview}
           onFile={async (f) => {
             setGarmentPreview(URL.createObjectURL(f));
@@ -242,7 +242,7 @@ function UploadBox({ title, hint, preview, onFile, testid, className = "", topRi
         ) : (
           <div className="absolute inset-0 flex flex-col items-center justify-center text-neutral-400">
             <CloudArrowUp size={46} weight="thin" />
-            <div className="label-caps mt-3">Drag or click to upload</div>
+            <div className="label-caps mt-3">Trascina o clicca per caricare</div>
           </div>
         )}
       </div>

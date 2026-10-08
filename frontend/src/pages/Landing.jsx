@@ -26,12 +26,12 @@ export default function Landing() {
           <span className="font-serif text-xl tracking-tight" data-testid="brand-logo">Atelier Fit</span>
         </div>
         <nav className="hidden md:flex items-center gap-10 label-caps">
-          <a href="#method" className="hover:text-[#8C7355]">Method</a>
-          <a href="#studio" className="hover:text-[#8C7355]">Studio</a>
+          <a href="#method" className="hover:text-[#8C7355]">Metodo</a>
+          <a href="#studio" className="hover:text-[#8C7355]">Il tuo armadio</a>
           <a href="#atelier" className="hover:text-[#8C7355]">Atelier</a>
         </nav>
         <button data-testid="landing-login-btn" onClick={handleLogin} className="btn-ghost">
-          Enter
+          Entra
         </button>
       </header>
 
@@ -39,26 +39,26 @@ export default function Landing() {
       <section className="relative px-6 md:px-12 py-16 md:py-24">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 lg:gap-16 items-start">
           <div className="lg:col-span-7 relative">
-            <div className="label-caps mb-6" data-testid="hero-eyebrow">N°01 — Virtual Fitting</div>
+            <div className="label-caps mb-6" data-testid="hero-eyebrow">N°01 — Il tuo sarto digitale</div>
             <h1 className="font-serif text-5xl md:text-7xl lg:text-8xl leading-[0.95] tracking-tighter">
-              See it on you<br/>
-              <em className="italic text-[#8C7355]">before</em> you buy it.
+              Atelier Fit —<br/>
+              <em className="italic text-[#8C7355]">la taglia giusta,</em> sempre.
             </h1>
             <p className="mt-8 max-w-xl text-base md:text-lg leading-relaxed text-neutral-700">
-              An editorial fitting room, powered by your real measurements. Upload a photo,
-              drop any garment, and watch an AI atelier dress a precise avatar of you — with
-              size guidance you can actually trust.
+              Incolla il link di un capo da qualsiasi shop online. Confrontiamo la tabella taglie del
+              brand con le tue misure reali e ti consigliamo la taglia perfetta, con una spiegazione
+              in italiano chiaro. E se vuoi, te lo mostriamo addosso.
             </p>
             <div className="mt-10 flex flex-wrap gap-4">
               <button data-testid="hero-cta-btn" onClick={handleLogin} className="btn-primary">
-                Begin the fitting <ArrowRight size={16} weight="bold" />
+                Inizia ora <ArrowRight size={16} weight="bold" />
               </button>
-              <a href="#method" className="btn-ghost">How it works</a>
+              <a href="#method" className="btn-ghost">Come funziona</a>
             </div>
             <div className="mt-16 flex items-center gap-8 label-caps">
-              <span>— Measured</span>
-              <span>— Generated</span>
-              <span>— Styled</span>
+              <span>— Misurato</span>
+              <span>— Confrontato</span>
+              <span>— Vestito</span>
             </div>
           </div>
 
@@ -84,16 +84,16 @@ export default function Landing() {
       <section id="method" className="px-6 md:px-12 py-20 md:py-28 border-t hairline">
         <div className="grid grid-cols-1 md:grid-cols-12 gap-10">
           <div className="md:col-span-4">
-            <div className="label-caps mb-4">The Method</div>
+            <div className="label-caps mb-4">Il metodo</div>
             <h2 className="font-serif text-3xl md:text-5xl tracking-tight leading-tight">
-              Three deliberate steps,<br/>no guesswork.
+              Tre passi semplici,<br/>zero resi.
             </h2>
           </div>
           <div className="md:col-span-8 grid grid-cols-1 sm:grid-cols-3 gap-6">
             {[
-              { n: "01", t: "Measure", d: "Enter your body measurements once. We keep them private.", I: Ruler },
-              { n: "02", t: "Upload", d: "Add your photo and any garment image you fancy from any shop.", I: TShirt },
-              { n: "03", t: "Preview", d: "An AI atelier dresses you in seconds, with size recommendation.", I: Sparkle },
+              { n: "01", t: "Misure", d: "Inserisci le tue misure una volta sola. Restano private.", I: Ruler },
+              { n: "02", t: "Link", d: "Incolla il link del prodotto da qualsiasi shop online.", I: TShirt },
+              { n: "03", t: "Taglia", d: "Confrontiamo con la tabella del brand e ti diamo la taglia giusta.", I: Sparkle },
             ].map(({ n, t, d, I }) => (
               <div key={n} className="border hairline p-6 fade-up" data-testid={`method-${n}`}>
                 <div className="flex items-center justify-between">
@@ -112,17 +112,17 @@ export default function Landing() {
       <section id="studio" className="px-6 md:px-12 py-20 md:py-28 border-t hairline">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 items-end">
           <div className="lg:col-span-5">
-            <div className="label-caps mb-4">The Studio</div>
+            <div className="label-caps mb-4">Il tuo armadio</div>
             <h2 className="font-serif text-3xl md:text-5xl tracking-tight leading-tight">
-              A fitting room that<br/>
-              <em className="italic text-[#8C7355]">remembers</em> you.
+              Un armadio che<br/>
+              <em className="italic text-[#8C7355]">ricorda</em> ogni taglia.
             </h2>
             <p className="mt-6 text-base text-neutral-700 leading-relaxed max-w-md">
-              Every item you try is saved to your atelier — a private wardrobe of
-              generated looks, with size notes and the exact outfits that made the cut.
+              Ogni capo analizzato resta salvato: taglia consigliata, misure del brand e, se vuoi,
+              anche la foto di te con quel capo addosso.
             </p>
             <button onClick={handleLogin} data-testid="studio-cta-btn" className="mt-8 btn-primary">
-              Open my atelier <ArrowRight size={16} weight="bold" />
+              Apri l&apos;armadio <ArrowRight size={16} weight="bold" />
             </button>
           </div>
           <div className="lg:col-span-7 grid grid-cols-3 gap-3">
@@ -134,8 +134,8 @@ export default function Landing() {
       </section>
 
       <footer id="atelier" className="px-6 md:px-12 py-10 border-t hairline flex flex-col md:flex-row items-center justify-between gap-4">
-        <div className="label-caps">© Atelier Fit — Milan / Paris</div>
-        <div className="label-caps">Powered by Gemini · Nano Banana</div>
+        <div className="label-caps">© Atelier Fit — Il tuo sarto digitale</div>
+        <div className="label-caps">atelierfit.com</div>
       </footer>
     </div>
   );

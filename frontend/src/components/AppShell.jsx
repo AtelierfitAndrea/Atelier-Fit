@@ -24,7 +24,10 @@ export default function AppShell({ children }) {
             data-testid="shell-brand"
           >
             <div className="w-5 h-5 bg-[#0A0A0A]" />
-            <span className="font-serif text-lg tracking-tight" translate="no">Atelier Fit</span>
+            <div>
+              <div className="font-serif text-lg tracking-tight leading-none" translate="no">Atelier Fit</div>
+              <div className="text-[10px] uppercase tracking-[0.2em] text-neutral-500 mt-0.5" translate="no">Il tuo sarto digitale</div>
+            </div>
             <div className="ml-3">
               <LanguageSwitcher />
             </div>

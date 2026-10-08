@@ -23,9 +23,9 @@ export default function Wardrobe() {
     <div className="space-y-8" data-testid="wardrobe-root">
       <header className="flex items-end justify-between flex-wrap gap-6">
         <div>
-          <div className="label-caps mb-3">Your atelier</div>
-          <h1 className="font-serif text-4xl md:text-5xl tracking-tighter">Wardrobe</h1>
-          <p className="mt-3 text-neutral-600">Every fitting, saved as it was. {items.length} looks.</p>
+          <div className="label-caps mb-3">Atelier Fit</div>
+          <h1 className="font-serif text-4xl md:text-5xl tracking-tighter">Il tuo armadio</h1>
+          <p className="mt-3 text-neutral-600">Ogni prova, salvata com'era. {items.length} capi.</p>
         </div>
         <div className="flex flex-wrap gap-2">
           {FILTERS.map((f) => (
@@ -46,9 +46,9 @@ export default function Wardrobe() {
       {filtered.length === 0 ? (
         <div className="border hairline p-16 text-center" data-testid="wardrobe-empty">
           <TShirt size={44} weight="duotone" className="mx-auto text-neutral-400" />
-          <div className="label-caps mt-4">Nothing here</div>
-          <p className="text-neutral-500 mt-2">No pieces in this category yet.</p>
-          <Link to="/studio" className="btn-primary mt-6 inline-flex">Open the Studio</Link>
+          <div className="label-caps mt-4">Niente qui</div>
+          <p className="text-neutral-500 mt-2">Nessun capo in questa categoria.</p>
+          <Link to="/studio" className="btn-primary mt-6 inline-flex">Apri la prova taglia</Link>
         </div>
       ) : (
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
