@@ -9,6 +9,7 @@ import WeightModal from "@/components/WeightModal";
 import HoneymoonBanner from "@/components/HoneymoonBanner";
 import TryonCounter from "@/components/TryonCounter";
 import PricingCards from "@/components/PricingCards";
+import CalcolaTagliaBox from "@/components/CalcolaTagliaBox";
 import { useSubscription } from "@/lib/subscription";
 
 export default function Dashboard() {
@@ -107,6 +108,8 @@ export default function Dashboard() {
           )}
         </div>
       </section>
+
+      <CalcolaTagliaBox />
 
       <section className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <StatCard
