@@ -284,6 +284,7 @@ WEIGHT_CHECK_DAYS = 60
 class WeightEntry(BaseModel):
     weight_kg: float
     note: Optional[str] = None
+    recorded_at: Optional[str] = None
 
 
 def _weight_status(last_iso: Optional[str]) -> dict:
@@ -314,24 +315,35 @@ async def get_weight_history(user: User = Depends(get_current_user)):
 
 @api_router.post("/profile/weight-history")
 async def add_weight_entry(entry: WeightEntry, user: User = Depends(get_current_user)):
-    now = datetime.now(timezone.utc).isoformat()
+    now_iso = datetime.now(timezone.utc).isoformat()
+    recorded_at = now_iso
+    if entry.recorded_at:
+        try:
+            dt = datetime.fromisoformat(entry.recorded_at.replace("Z", "+00:00"))
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            recorded_at = dt.isoformat()
+        except Exception:
+            recorded_at = now_iso
     doc = {
         "id": str(uuid.uuid4()),
         "user_id": user.user_id,
         "weight_kg": entry.weight_kg,
         "note": entry.note,
-        "recorded_at": now,
+        "recorded_at": recorded_at,
     }
     await db.weight_history.insert_one(doc)
     # Keep current measurement in sync for size & avatar
     await db.measurements.update_one(
         {"user_id": user.user_id},
-        {"$set": {"user_id": user.user_id, "weight_kg": entry.weight_kg, "updated_at": now}},
+        {"$set": {"user_id": user.user_id, "weight_kg": entry.weight_kg, "updated_at": recorded_at}},
         upsert=True,
     )
     doc.pop("_id", None)
     doc.pop("user_id", None)
-    return {"entry": doc, "status": _weight_status(now)}
+    # Refresh accuracy snapshot
+    await _compute_accuracy(user.user_id)
+    return {"entry": doc, "status": _weight_status(recorded_at)}
 
 
 @api_router.delete("/profile/weight-history/{entry_id}")
@@ -341,8 +353,12 @@ async def delete_weight_entry(entry_id: str, user: User = Depends(get_current_us
 
 
 # ----- Fitting Accuracy -----
-# 5 required fields (-20% each if missing) + extra -30% if last weight update > 60 days
-ACCURACY_FIELDS = ["height_cm", "weight_kg", "chest_cm", "waist_cm", "hips_cm"]
+# Formula FASE 2:
+#   base 100
+#   - 15 if altezza (height_cm) missing
+#   - 25 per each missing of torace/vita/fianchi (chest, waist, hips)
+#   - 30 if weight > 60 days old OR missing entirely
+ACCURACY_CORE = ["chest_cm", "waist_cm", "hips_cm"]
 
 
 async def _compute_accuracy(user_id: str) -> dict:
@@ -350,13 +366,21 @@ async def _compute_accuracy(user_id: str) -> dict:
     last_weight_doc = await db.weight_history.find_one(
         {"user_id": user_id}, {"_id": 0}, sort=[("recorded_at", -1)]
     )
-    last_weight_update = last_weight_doc["recorded_at"] if last_weight_doc else m.get("updated_at") if m.get("weight_kg") else None
+    last_weight_update = last_weight_doc["recorded_at"] if last_weight_doc else (m.get("updated_at") if m.get("weight_kg") else None)
 
-    missing = [f for f in ACCURACY_FIELDS if not m.get(f)]
-    accuracy = 100 - 20 * len(missing)
+    missing_core = [f for f in ACCURACY_CORE if not m.get(f)]
+    height_missing = not m.get("height_cm")
+
+    accuracy = 100
+    accuracy -= 25 * len(missing_core)
+    if height_missing:
+        accuracy -= 15
 
     weight_stale = False
-    if m.get("weight_kg") and last_weight_update:
+    if not m.get("weight_kg"):
+        weight_stale = True
+        accuracy -= 30
+    elif last_weight_update:
         last_dt = datetime.fromisoformat(last_weight_update)
         if last_dt.tzinfo is None:
             last_dt = last_dt.replace(tzinfo=timezone.utc)
@@ -365,13 +389,26 @@ async def _compute_accuracy(user_id: str) -> dict:
             accuracy -= 30
 
     accuracy = max(0, min(100, accuracy))
-    return {
+    missing_fields = list(missing_core) + (["height_cm"] if height_missing else [])
+    result = {
         "accuracy": accuracy,
         "last_weight_update": last_weight_update,
-        "reliable": accuracy >= 80,
-        "missing_fields": missing,
+        "reliable": accuracy >= 70,
+        "missing_fields": missing_fields,
         "weight_stale": weight_stale,
+        "weight": m.get("weight_kg"),
     }
+    # Persist snapshot on user profile
+    await db.users.update_one(
+        {"user_id": user_id},
+        {"$set": {
+            "fitting_accuracy": accuracy,
+            "fitting_accuracy_updated_at": datetime.now(timezone.utc).isoformat(),
+            "is_reliable": result["reliable"],
+            "last_weight_update": last_weight_update,
+        }},
+    )
+    return result
 
 
 @api_router.get("/profile/fitting-accuracy")
@@ -386,6 +423,24 @@ async def public_fitting_accuracy(user_id: str):
     if not exists:
         raise HTTPException(status_code=404, detail="User not found")
     return await _compute_accuracy(user_id)
+
+
+@api_router.get("/b2b/fitting-accuracy/{user_id}")
+async def b2b_fitting_accuracy(user_id: str):
+    """B2B endpoint for Shopify brands — reliability signal for free-return decisions."""
+    exists = await db.users.find_one({"user_id": user_id}, {"_id": 0, "user_id": 1})
+    if not exists:
+        raise HTTPException(status_code=404, detail="User not found")
+    data = await _compute_accuracy(user_id)
+    lw = data.get("last_weight_update")
+    last_date = lw.split("T", 1)[0] if lw else None
+    return {
+        "userId": user_id,
+        "accuracy": data["accuracy"],
+        "last_weight_update": last_date,
+        "is_reliable": data["reliable"],
+        "weight": data.get("weight"),
+    }
 
 
 
@@ -429,6 +484,8 @@ class TryOnRequest(BaseModel):
     garment_name: Optional[str] = None
     garment_category: Optional[str] = None  # top, bottom, dress, shoes, outerwear
     notes: Optional[str] = None
+    chosen_size: Optional[str] = None
+    garment_id: Optional[str] = None
 
 
 @api_router.post("/tryon/generate")
@@ -485,6 +542,8 @@ async def tryon_generate(req: TryOnRequest, user: User = Depends(get_current_use
 
     rec_size = recommend_size(m_doc, req.garment_category or "")
     tryon_id = str(uuid.uuid4())
+    accuracy_snapshot = await _compute_accuracy(user.user_id)
+    created_at = datetime.now(timezone.utc).isoformat()
     doc = {
         "id": tryon_id,
         "user_id": user.user_id,
@@ -494,10 +553,27 @@ async def tryon_generate(req: TryOnRequest, user: User = Depends(get_current_use
         "garment_name": req.garment_name,
         "garment_category": req.garment_category,
         "recommended_size": rec_size,
+        "chosen_size": req.chosen_size,
         "notes": req.notes,
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "fitting_accuracy_at_time": accuracy_snapshot["accuracy"],
+        "is_reliable_at_time": accuracy_snapshot["reliable"],
+        "created_at": created_at,
     }
     await db.tryons.insert_one(doc)
+    # Legal evidence log — the proof that our size suggestion was reliable at the moment of purchase
+    await db.try_on_log.insert_one({
+        "id": str(uuid.uuid4()),
+        "userId": user.user_id,
+        "tryonId": tryon_id,
+        "garmentId": req.garment_id or req.garment_path,
+        "garmentName": req.garment_name,
+        "garmentCategory": req.garment_category,
+        "recommendedSize": rec_size,
+        "chosenSize": req.chosen_size,
+        "fittingAccuracyAtTime": accuracy_snapshot["accuracy"],
+        "isReliableAtTime": accuracy_snapshot["reliable"],
+        "timestamp": created_at,
+    })
     doc.pop("_id", None)
     return doc
 
@@ -520,6 +596,13 @@ async def get_tryon(tryon_id: str, user: User = Depends(get_current_user)):
 async def delete_tryon(tryon_id: str, user: User = Depends(get_current_user)):
     res = await db.tryons.delete_one({"id": tryon_id, "user_id": user.user_id})
     return {"deleted": res.deleted_count}
+
+
+@api_router.get("/b2b/try-on-log/{user_id}")
+async def b2b_try_on_log(user_id: str):
+    """B2B evidence log — the proof chain for free-return decisions."""
+    items = await db.try_on_log.find({"userId": user_id}, {"_id": 0}).sort("timestamp", -1).to_list(1000)
+    return {"userId": user_id, "entries": items}
 
 
 # ----- Size recommendation standalone -----

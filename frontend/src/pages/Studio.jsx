@@ -19,6 +19,7 @@ export default function Studio() {
   const [garmentPreview, setGarmentPreview] = useState(null);
   const [category, setCategory] = useState("top");
   const [name, setName] = useState("");
+  const [chosenSize, setChosenSize] = useState("");
   const [generating, setGenerating] = useState(false);
   const navigate = useNavigate();
 
@@ -31,7 +32,7 @@ export default function Studio() {
 
   const generate = async () => {
     if (!personPath || !garmentPath) {
-      toast.error("Add both photos first");
+      toast.error("Carica entrambe le foto prima");
       return;
     }
     setGenerating(true);
@@ -41,11 +42,12 @@ export default function Studio() {
         garment_path: garmentPath,
         garment_category: category,
         garment_name: name || null,
+        chosen_size: chosenSize || null,
       });
-      toast.success("Fitting ready");
+      toast.success("Prova pronta");
       navigate(`/tryon/${data.id}`);
     } catch (e) {
-      toast.error(e?.response?.data?.detail || "Generation failed");
+      toast.error(e?.response?.data?.detail || "Generazione non riuscita");
     } finally {
       setGenerating(false);
     }
@@ -100,7 +102,7 @@ export default function Studio() {
       <section className="border hairline p-6 md:p-8 bg-white">
         <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
           <div className="md:col-span-4">
-            <div className="label-caps mb-2">Category</div>
+            <div className="label-caps mb-2">Categoria</div>
             <div className="flex flex-wrap gap-2">
               {CATEGORIES.map((c) => (
                 <button
@@ -116,14 +118,24 @@ export default function Studio() {
               ))}
             </div>
           </div>
-          <div className="md:col-span-5">
-            <div className="label-caps mb-2">Name (optional)</div>
+          <div className="md:col-span-3">
+            <div className="label-caps mb-2">Nome capo (opzionale)</div>
             <input
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="e.g. Linen trench — Toteme"
+              placeholder="es. Trench lino — Toteme"
               className="w-full px-4 py-3 border hairline bg-transparent outline-none focus:border-[#0A0A0A] transition-colors font-serif text-lg"
               data-testid="garment-name-input"
+            />
+          </div>
+          <div className="md:col-span-2">
+            <div className="label-caps mb-2">Taglia scelta</div>
+            <input
+              value={chosenSize}
+              onChange={(e) => setChosenSize(e.target.value.toUpperCase())}
+              placeholder="S / 40"
+              className="w-full px-4 py-3 border hairline bg-transparent outline-none focus:border-[#0A0A0A] transition-colors font-serif text-lg text-center"
+              data-testid="chosen-size-input"
             />
           </div>
           <div className="md:col-span-3 flex items-end">
@@ -133,7 +145,7 @@ export default function Studio() {
               className="btn-primary w-full disabled:opacity-50 disabled:cursor-not-allowed"
               data-testid="generate-tryon-btn"
             >
-              {generating ? "Fitting..." : (<>Try it on <ArrowRight size={16} weight="bold" /></>)}
+              {generating ? "Provo..." : (<>Provalo <ArrowRight size={16} weight="bold" /></>)}
             </button>
           </div>
         </div>

@@ -17,7 +17,7 @@ const FIELDS = [
     { k: "inseam_cm", l: "Cavallo", u: "cm" },
   ]},
   { group: "Altro", items: [
-    { k: "weight_kg", l: "Peso", u: "kg" },
+    { k: "weight_kg", l: "Peso attuale", u: "kg" },
     { k: "foot_cm", l: "Lunghezza piede", u: "cm" },
   ]},
 ];
