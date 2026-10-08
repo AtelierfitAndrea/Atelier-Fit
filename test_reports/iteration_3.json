@@ -1,0 +1,22 @@
+{
+  "summary": "Frontend-only validation of the Chrome-Translate removeChild crash fix on /profile. All 6 requested scenarios pass: /profile loads cleanly, 'Lunghezza gamba' field present with no 'DOLCE'/'Cavallo' labels, save works and persists via API, anti-translate markup (html.translate='no', meta google=notranslate, #root.notranslate) present, remains intact after language switch, and /dashboard pricing cards + paywall modal work.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "I18nProvider applies translate='no' only after render via useEffect; because index.html already sets it at parse time, this is fine. If i18n provider ever removes it, there is no guard — consider a MutationObserver fallback if a browser extension strips the attribute."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a", "frontend": "100%"},
+  "test_credentials": "cookie session_token=demo_session_fase1 (Bearer demo_session_fase1 for API)",
+  "seed_data_creation": "Wrote inseam_cm=78 to demo-fase1-user via /api/profile/measurements PUT during test.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Profile page bug fully resolved. Anti-translate attributes verified: html[lang=it][translate=no], meta[name=google][content=notranslate], #root.notranslate. Lang switcher persists translate='no' after switching to EN. No removeChild/NotFoundError in console across /profile, /dashboard, and lang-switch flows. GET /api/profile/measurements returned inseam_cm=78 confirming persistence.",
+  "rca of the issue": "Root cause was Chrome Google Translate mutating React-managed Italian text (translating 'Cavallo' label to 'DOLCE'), triggering removeChild in React reconciliation. Fix wraps whole document with notranslate (html.translate='no', meta google=notranslate, #root.notranslate, FIELDS wrapper translate='no' in Profile.jsx, plus runtime enforcement in I18nProvider). Verified: translate='no' attribute preserved across language changes, no runtime errors on /profile."
+}
