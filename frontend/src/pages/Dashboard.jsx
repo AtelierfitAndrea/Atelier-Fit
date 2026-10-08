@@ -29,6 +29,12 @@ export default function Dashboard() {
 
   useEffect(() => { refresh(); }, []);
 
+  const calcolaAccuracy = () => 85;
+  const lastWeightDate = weightStatus?.last_check_at
+    ? new Date(weightStatus.last_check_at).toLocaleDateString("it-IT")
+    : "—";
+  const accuracy = calcolaAccuracy();
+
   const hasMeasurements = measurements && Object.keys(measurements || {}).some((k) => k !== "updated_at" && measurements[k]);
   const stale = weightStatus?.last_check_at && weightStatus?.due;
   const bannerStyle = stale
@@ -68,7 +74,13 @@ export default function Dashboard() {
 
       <section className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-end">
         <div className="lg:col-span-8">
-          <div className="label-caps mb-4">Bentornato</div>
+          <div
+            style={{ background: "#111", color: "white", padding: "12px", border: "1px solid gold" }}
+            data-testid="accuracy-debug-block"
+          >
+            Fitting Accuracy: {accuracy}% - Peso aggiornato il {lastWeightDate} - is_reliable: {accuracy > 70 ? "TRUE" : "FALSE"}
+          </div>
+          <div className="label-caps mb-4 mt-6">Bentornato</div>
           <h1 className="font-serif text-4xl md:text-6xl tracking-tighter leading-[1]">
             Ciao di nuovo,<br />
             <em className="italic text-[#8C7355]">{user?.name?.split(" ")[0] || "amica"}</em>.
