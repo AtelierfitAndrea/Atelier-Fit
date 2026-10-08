@@ -277,6 +277,70 @@ async def save_measurements(m: Measurements, user: User = Depends(get_current_us
     return data
 
 
+# ----- Weight history (check every 2 months) -----
+WEIGHT_CHECK_DAYS = 60
+
+
+class WeightEntry(BaseModel):
+    weight_kg: float
+    note: Optional[str] = None
+
+
+def _weight_status(last_iso: Optional[str]) -> dict:
+    if not last_iso:
+        return {"last_check_at": None, "next_check_at": None, "days_overdue": 0, "due": True}
+    last = datetime.fromisoformat(last_iso)
+    if last.tzinfo is None:
+        last = last.replace(tzinfo=timezone.utc)
+    nxt = last + timedelta(days=WEIGHT_CHECK_DAYS)
+    now = datetime.now(timezone.utc)
+    delta_days = (now - nxt).days
+    return {
+        "last_check_at": last.isoformat(),
+        "next_check_at": nxt.isoformat(),
+        "days_overdue": max(0, delta_days),
+        "due": now >= nxt,
+    }
+
+
+@api_router.get("/profile/weight-history")
+async def get_weight_history(user: User = Depends(get_current_user)):
+    items = await db.weight_history.find(
+        {"user_id": user.user_id}, {"_id": 0, "user_id": 0}
+    ).sort("recorded_at", -1).to_list(200)
+    last_iso = items[0]["recorded_at"] if items else None
+    return {"entries": items, "status": _weight_status(last_iso)}
+
+
+@api_router.post("/profile/weight-history")
+async def add_weight_entry(entry: WeightEntry, user: User = Depends(get_current_user)):
+    now = datetime.now(timezone.utc).isoformat()
+    doc = {
+        "id": str(uuid.uuid4()),
+        "user_id": user.user_id,
+        "weight_kg": entry.weight_kg,
+        "note": entry.note,
+        "recorded_at": now,
+    }
+    await db.weight_history.insert_one(doc)
+    # Keep current measurement in sync for size & avatar
+    await db.measurements.update_one(
+        {"user_id": user.user_id},
+        {"$set": {"user_id": user.user_id, "weight_kg": entry.weight_kg, "updated_at": now}},
+        upsert=True,
+    )
+    doc.pop("_id", None)
+    doc.pop("user_id", None)
+    return {"entry": doc, "status": _weight_status(now)}
+
+
+@api_router.delete("/profile/weight-history/{entry_id}")
+async def delete_weight_entry(entry_id: str, user: User = Depends(get_current_user)):
+    res = await db.weight_history.delete_one({"id": entry_id, "user_id": user.user_id})
+    return {"deleted": res.deleted_count}
+
+
+
 # ----- File upload / serve -----
 @api_router.post("/upload")
 async def upload(kind: str = Query(..., regex="^(person|garment)$"), file: UploadFile = File(...), user: User = Depends(get_current_user)):

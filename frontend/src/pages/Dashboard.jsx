@@ -2,19 +2,25 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, fileUrl } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import { ArrowRight, TShirt, Ruler, Sparkle } from "@phosphor-icons/react";
+import { ArrowRight, TShirt, Ruler, Sparkle, Scales, Warning } from "@phosphor-icons/react";
 
 export default function Dashboard() {
   const { user } = useAuth();
   const [tryons, setTryons] = useState([]);
   const [measurements, setMeasurements] = useState(null);
+  const [weightStatus, setWeightStatus] = useState(null);
 
   useEffect(() => {
     (async () => {
       try {
-        const [t, m] = await Promise.all([api.get("/tryons"), api.get("/profile/measurements")]);
+        const [t, m, w] = await Promise.all([
+          api.get("/tryons"),
+          api.get("/profile/measurements"),
+          api.get("/profile/weight-history"),
+        ]);
         setTryons(t.data || []);
         setMeasurements(m.data || {});
+        setWeightStatus(w.data?.status || null);
       } catch (_e) { /* ignore */ }
     })();
   }, []);
@@ -23,6 +29,28 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-14" data-testid="dashboard-root">
+      {weightStatus?.due && (
+        <Link
+          to="/profile"
+          className="flex items-center justify-between gap-4 border hairline bg-[#0A0A0A] text-white px-5 py-4 hover:bg-[#8C7355] transition-colors"
+          data-testid="weight-reminder-banner"
+        >
+          <div className="flex items-center gap-3">
+            <Warning size={18} weight="fill" />
+            <div>
+              <div className="label-caps !text-white/80">Weight check</div>
+              <div className="font-serif text-lg leading-tight">
+                {weightStatus.last_check_at
+                  ? `It has been ${Math.max(60, 60 + weightStatus.days_overdue)} days — time for your 2-month weight check`
+                  : "Record your weight to keep every fitting accurate — we'll check in every 2 months"}
+              </div>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 label-caps !text-white/90">
+            <Scales size={16} weight="fill" /> Record now →
+          </div>
+        </Link>
+      )}
       <section className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-end">
         <div className="lg:col-span-8">
           <div className="label-caps mb-4">Welcome back</div>

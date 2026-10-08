@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
 import Avatar3D from "@/components/Avatar3D";
+import WeightTracker from "@/components/WeightTracker";
 
 const FIELDS = [
   { group: "Upper", items: [
@@ -105,6 +106,8 @@ export default function Profile() {
           <button onClick={save} disabled={saving} className="btn-primary" data-testid="save-measurements-btn">
             {saving ? "Saving..." : "Save measurements"}
           </button>
+
+          <WeightTracker />
         </div>
       </div>
 
