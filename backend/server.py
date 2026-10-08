@@ -716,17 +716,40 @@ async def tryon_generate(req: TryOnRequest, user: User = Depends(get_current_use
 
     category = (req.garment_category or "garment").lower()
     prompt = (
-        f"Create a photorealistic virtual try-on image. The first image is a photo of a person. "
-        f"The second image shows a {category} item to be worn by the person. "
-        f"Generate a single new image showing the SAME person from the first image wearing the "
-        f"{category} from the second image. Preserve the person's face, hair, skin tone and pose. "
-        f"Fit the clothing naturally to their body proportions, with realistic fabric drape, "
-        f"shadows and lighting that match the original photo. Keep a clean neutral studio background. "
-        f"The result should look like a professional fashion photograph.{measurements_desc}"
+        f"Create a photorealistic virtual try-on image. IMAGE 1 is a real photo of a specific person — "
+        f"the ONLY person who may appear in the output. IMAGE 2 shows a {category} to be worn.\n\n"
+        f"ABSOLUTE REQUIREMENTS — identity preservation is top priority:\n"
+        f"• Keep the EXACT face, head, hair, skin tone, body proportions and pose from IMAGE 1 — pixel-level fidelity.\n"
+        f"• Keep every visible tattoo, mole, scar, piercing, jewellery and personal detail EXACTLY as in IMAGE 1.\n"
+        f"• Keep the person's hands, fingers and nails IDENTICAL to IMAGE 1 — do NOT substitute with other hands.\n"
+        f"• Keep the ORIGINAL BACKGROUND and lighting from IMAGE 1 unchanged (room, wall, floor, props, shadows).\n"
+        f"• Framing must match IMAGE 1 — do NOT crop the head, do NOT zoom in or out, keep the same aspect and composition.\n"
+        f"• The output must contain exactly ONE person — the same person as IMAGE 1. No stock models, no replacement body, no extra people.\n\n"
+        f"WHAT TO CHANGE:\n"
+        f"• ONLY swap/overlay the {category} currently worn (if any) with the garment from IMAGE 2.\n"
+        f"• Fit the garment realistically onto the person's existing body with natural fabric drape, folds and shadows "
+        f"that match the lighting of IMAGE 1.\n"
+        f"• Preserve the colour, pattern, cut and material of the garment from IMAGE 2 as faithfully as possible.\n\n"
+        f"FORBIDDEN:\n"
+        f"• Do NOT alter the face, head, hair or hands.\n"
+        f"• Do NOT replace the background with a studio or neutral backdrop.\n"
+        f"• Do NOT cut, crop or extend the head/arms/legs beyond the original frame.\n"
+        f"• Do NOT invent new tattoos, jewellery or accessories that are not in IMAGE 1.\n"
+        f"{measurements_desc}"
     )
 
     session_id = f"tryon-{user.user_id}-{uuid.uuid4().hex[:8]}"
-    chat = LlmChat(api_key=EMERGENT_KEY, session_id=session_id, system_message="You are a professional fashion virtual try-on image generator.")
+    chat = LlmChat(
+        api_key=EMERGENT_KEY,
+        session_id=session_id,
+        system_message=(
+            "You are a professional fashion virtual try-on image generator. "
+            "Your only job is to re-dress the SAME person in the SAME scene, "
+            "preserving face, hands, tattoos, hair, pose and the original background. "
+            "Never generate stock models, replacement bodies, or neutral studios. "
+            "The person in IMAGE 1 must remain fully recognisable."
+        ),
+    )
     chat.with_model("gemini", "gemini-3.1-flash-image-preview").with_params(modalities=["image", "text"])
     msg = UserMessage(text=prompt, file_contents=[ImageContent(person_b64), ImageContent(garment_b64)])
     try:
