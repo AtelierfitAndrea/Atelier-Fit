@@ -14,7 +14,7 @@ const FIELDS = [
   { group: "Parte Inferiore", items: [
     { k: "waist_cm", l: "Vita", u: "cm" },
     { k: "hips_cm", l: "Fianchi", u: "cm" },
-    { k: "inseam_cm", l: "Cavallo", u: "cm" },
+    { k: "inseam_cm", l: "Lunghezza gamba", u: "cm" },
   ]},
   { group: "Altro", items: [
     { k: "weight_kg", l: "Peso attuale", u: "kg" },
@@ -90,12 +90,12 @@ export default function Profile() {
           </div>
 
           {FIELDS.map((grp) => (
-            <div key={grp.group}>
+            <div key={grp.group} translate="no">
               <div className="label-caps mb-4">{grp.group}</div>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 {grp.items.map((f) => (
-                  <label key={f.k} className="block">
-                    <span className="label-caps block mb-2">{f.l}</span>
+                  <label key={f.k} className="block" translate="no">
+                    <span className="label-caps block mb-2" translate="no">{f.l}</span>
                     <div className="flex items-center border hairline focus-within:border-[#0A0A0A] transition-colors">
                       <input
                         type="number"
