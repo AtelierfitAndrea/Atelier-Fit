@@ -3,17 +3,11 @@ import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { X } from "@phosphor-icons/react";
 
-export default function WeightModal({ open, onClose, onSaved, initialDate }) {
+export default function WeightModal({ open, onClose, onSaved }) {
   const [weight, setWeight] = useState("");
-  const [date, setDate] = useState(initialDate || new Date().toISOString().slice(0, 10));
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => {
-    if (open) {
-      setWeight("");
-      setDate(new Date().toISOString().slice(0, 10));
-    }
-  }, [open]);
+  useEffect(() => { if (open) setWeight(""); }, [open]);
 
   if (!open) return null;
 
@@ -22,9 +16,8 @@ export default function WeightModal({ open, onClose, onSaved, initialDate }) {
     if (!w || w < 25 || w > 300) { toast.error("Inserisci un peso valido in kg"); return; }
     setSaving(true);
     try {
-      const recorded_at = new Date(date + "T12:00:00").toISOString();
-      await api.post("/profile/weight-history", { weight_kg: w, recorded_at });
-      toast.success("Peso aggiornato — taglie ricalcolate");
+      await api.post("/profile/weight-history", { weight_kg: w });
+      toast.success("Peso aggiornato!");
       onSaved?.();
       onClose();
     } catch { toast.error("Salvataggio non riuscito"); }
@@ -37,10 +30,7 @@ export default function WeightModal({ open, onClose, onSaved, initialDate }) {
       onClick={onClose}
       data-testid="weight-modal"
     >
-      <div
-        className="bg-white border hairline w-full max-w-md mx-4 p-6"
-        onClick={(e) => e.stopPropagation()}
-      >
+      <div className="bg-white border hairline w-full max-w-md mx-4 p-6" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between">
           <div>
             <div className="label-caps">Controllo peso</div>
@@ -53,7 +43,7 @@ export default function WeightModal({ open, onClose, onSaved, initialDate }) {
         <p className="text-sm text-neutral-600 mt-2">
           Serve per mantenere taglie accurate e profilo affidabile per i brand partner.
         </p>
-        <div className="mt-6 grid grid-cols-1 gap-4">
+        <div className="mt-6">
           <label className="block">
             <span className="label-caps block mb-2">Peso (kg)</span>
             <div className="flex items-center border hairline focus-within:border-[#0A0A0A] transition-colors">
@@ -64,27 +54,17 @@ export default function WeightModal({ open, onClose, onSaved, initialDate }) {
                 value={weight}
                 onChange={(e) => setWeight(e.target.value)}
                 placeholder="—"
+                onKeyDown={(e) => { if (e.key === "Enter") save(); }}
                 className="w-full px-3 py-3 bg-transparent outline-none font-serif text-xl"
                 data-testid="weight-modal-kg"
               />
               <span className="px-3 text-xs text-neutral-500">kg</span>
             </div>
           </label>
-          <label className="block">
-            <span className="label-caps block mb-2">Data</span>
-            <input
-              type="date"
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
-              max={new Date().toISOString().slice(0, 10)}
-              className="w-full px-3 py-3 border hairline bg-transparent outline-none focus:border-[#0A0A0A] transition-colors font-serif text-lg"
-              data-testid="weight-modal-date"
-            />
-          </label>
         </div>
         <div className="mt-6 flex gap-3">
           <button onClick={save} disabled={saving} className="btn-primary flex-1" data-testid="weight-modal-save">
-            {saving ? "Salvo..." : "Salva peso"}
+            {saving ? "Salvo..." : "Salva"}
           </button>
           <button onClick={onClose} className="btn-ghost">Annulla</button>
         </div>

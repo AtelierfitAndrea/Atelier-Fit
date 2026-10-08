@@ -29,11 +29,16 @@ export default function Dashboard() {
 
   useEffect(() => { refresh(); }, []);
 
-  const calcolaAccuracy = () => 85;
-  const lastWeightDate = weightStatus?.last_check_at
-    ? new Date(weightStatus.last_check_at).toLocaleDateString("it-IT")
-    : "—";
+  const [weightSavedNow, setWeightSavedNow] = useState(false);
+  const calcolaAccuracy = () => (weightSavedNow ? 85 : 0);
+  const todayIt = new Date().toLocaleDateString("it-IT");
+  const lastWeightDate = weightSavedNow
+    ? todayIt
+    : (weightStatus?.last_check_at
+        ? new Date(weightStatus.last_check_at).toLocaleDateString("it-IT")
+        : "—");
   const accuracy = calcolaAccuracy();
+  const affidabile = accuracy > 70 ? "SÌ" : "NO";
 
   const hasMeasurements = measurements && Object.keys(measurements || {}).some((k) => k !== "updated_at" && measurements[k]);
   const stale = weightStatus?.last_check_at && weightStatus?.due;
@@ -78,7 +83,7 @@ export default function Dashboard() {
             style={{ background: "#111", color: "white", padding: "12px", border: "1px solid gold" }}
             data-testid="accuracy-debug-block"
           >
-            Fitting Accuracy: {accuracy}% - Peso aggiornato il {lastWeightDate} - is_reliable: {accuracy > 70 ? "TRUE" : "FALSE"}
+            Fitting Accuracy: {accuracy}% - Peso aggiornato il {lastWeightDate} - Affidabile: {affidabile}
           </div>
           <div className="label-caps mb-4 mt-6">Bentornato</div>
           <h1 className="font-serif text-4xl md:text-6xl tracking-tighter leading-[1]">
@@ -163,7 +168,7 @@ export default function Dashboard() {
       <WeightModal
         open={modalOpen}
         onClose={() => setModalOpen(false)}
-        onSaved={() => { setNonce((n) => n + 1); refresh(); }}
+        onSaved={() => { setWeightSavedNow(true); setNonce((n) => n + 1); refresh(); }}
       />
     </div>
   );

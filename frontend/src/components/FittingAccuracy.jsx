@@ -54,7 +54,7 @@ export default function FittingAccuracy({ nonce = 0 }) {
           data-testid="accuracy-reliable"
         >
           {reliable ? <CheckCircle size={14} weight="fill" /> : <Warning size={14} weight="fill" />}
-          {reliable ? "Affidabile" : "Da migliorare"}
+          Affidabile: {reliable ? "SÌ" : "NO"}
         </span>
       </div>
       <div className="mt-4 h-1.5 w-full bg-neutral-100 overflow-hidden">

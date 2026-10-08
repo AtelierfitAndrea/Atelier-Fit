@@ -41,14 +41,14 @@ export default function AccuracyBadge({ nonce = 0 }) {
             style={{ transition: "stroke-dashoffset 0.6s ease" }}
           />
         </svg>
-        <span className="absolute inset-0 flex items-center justify-center font-serif text-sm" data-testid="accuracy-badge-pct">
-          {pct}
+        <span className="absolute inset-0 flex items-center justify-center font-serif text-[13px] leading-none" data-testid="accuracy-badge-pct">
+          {pct}%
         </span>
       </div>
       <div className="pr-1">
         <div className="label-caps">Fitting Accuracy</div>
         <div className="text-sm font-medium" style={{ color: ring }}>
-          {pct}% · {reliable ? "Affidabile" : "Non affidabile"}
+          {pct}% · Affidabile: {reliable ? "SÌ" : "NO"}
         </div>
       </div>
       {open && pct < 70 && (
