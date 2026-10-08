@@ -471,7 +471,12 @@ export function I18nProvider({ children }) {
   };
 
   useEffect(() => {
-    document.documentElement.setAttribute("lang", lang);
+    const el = document.documentElement;
+    el.setAttribute("lang", lang);
+    el.setAttribute("translate", "no");
+    el.classList.add("notranslate");
+    document.body?.setAttribute("translate", "no");
+    document.body?.classList.add("notranslate");
   }, [lang]);
 
   const t = useMemo(() => {
