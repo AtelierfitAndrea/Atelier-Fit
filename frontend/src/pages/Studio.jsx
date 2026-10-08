@@ -2,6 +2,8 @@ import { useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { api, fileUrl } from "@/lib/api";
+import { useSubscription } from "@/lib/subscription";
+import TryonCounter from "@/components/TryonCounter";
 import { CloudArrowUp, Sparkle, ArrowRight } from "@phosphor-icons/react";
 
 const CATEGORIES = [
@@ -13,6 +15,7 @@ const CATEGORIES = [
 ];
 
 export default function Studio() {
+  const { status: subStatus, openPaywall, refresh: refreshSub } = useSubscription();
   const [personPath, setPersonPath] = useState(null);
   const [garmentPath, setGarmentPath] = useState(null);
   const [personPreview, setPersonPreview] = useState(null);
@@ -35,6 +38,7 @@ export default function Studio() {
       toast.error("Carica entrambe le foto prima");
       return;
     }
+    if (subStatus?.is_blocked) { openPaywall(); return; }
     setGenerating(true);
     try {
       const { data } = await api.post("/tryon/generate", {
@@ -45,9 +49,11 @@ export default function Studio() {
         chosen_size: chosenSize || null,
       });
       toast.success("Prova pronta");
+      refreshSub();
       navigate(`/tryon/${data.id}`);
     } catch (e) {
-      toast.error(e?.response?.data?.detail || "Generazione non riuscita");
+      if (e?.response?.status === 402) { openPaywall(); }
+      else { toast.error(e?.response?.data?.detail || "Generazione non riuscita"); }
     } finally {
       setGenerating(false);
     }
@@ -63,6 +69,7 @@ export default function Studio() {
             Upload your photo and the garment you want to try. We&apos;ll dress you in a moment.
           </p>
         </div>
+        <TryonCounter />
       </header>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">

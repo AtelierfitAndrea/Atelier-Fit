@@ -352,6 +352,153 @@ async def delete_weight_entry(entry_id: str, user: User = Depends(get_current_us
     return {"deleted": res.deleted_count}
 
 
+# ----- Subscription / Honeymoon logic -----
+HONEYMOON_DAYS = 30
+FREE_MONTHLY_LIMIT = 5
+PLAN_PRICES = {
+    "extra": {"amount_cents": 99, "label": "+1 try-on"},
+    "single": {"amount_cents": 299, "label": "Single Unlimited"},
+    "family": {"amount_cents": 499, "label": "Family Unlimited"},
+}
+
+
+def _parse_dt(v) -> Optional[datetime]:
+    if not v:
+        return None
+    if isinstance(v, datetime):
+        dt = v
+    else:
+        try:
+            dt = datetime.fromisoformat(str(v).replace("Z", "+00:00"))
+        except Exception:
+            return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
+async def get_subscription_status(user_id: str) -> dict:
+    user_doc = await db.users.find_one({"user_id": user_id}, {"_id": 0}) or {}
+    created_at = _parse_dt(user_doc.get("created_at")) or datetime.now(timezone.utc)
+    now = datetime.now(timezone.utc)
+    days_since_signup = (now - created_at).days
+    honeymoon_active = days_since_signup < HONEYMOON_DAYS
+    days_left_honeymoon = max(0, HONEYMOON_DAYS - days_since_signup)
+
+    plan = user_doc.get("plan", "FREE")
+    extra_credits = int(user_doc.get("extra_tryon_credits", 0) or 0)
+
+    # Monthly reset on the 1st of the month
+    current_month = now.strftime("%Y-%m")
+    monthly = user_doc.get("monthly_tryon_count") or {}
+    if monthly.get("month") != current_month:
+        monthly = {"month": current_month, "used": 0}
+        await db.users.update_one({"user_id": user_id}, {"$set": {"monthly_tryon_count": monthly}})
+
+    used = int(monthly.get("used", 0) or 0)
+    if plan in ("SINGLE", "FAMILY") or honeymoon_active:
+        limit = None
+        remaining = None
+        is_blocked = False
+    else:
+        limit = FREE_MONTHLY_LIMIT
+        remaining = max(0, limit - used)
+        is_blocked = remaining <= 0 and extra_credits <= 0
+
+    return {
+        "plan": plan,
+        "honeymoon_active": honeymoon_active,
+        "days_left_honeymoon": days_left_honeymoon,
+        "tryons_used_this_month": used,
+        "tryons_limit": limit,
+        "tryons_remaining": remaining,
+        "extra_credits": extra_credits,
+        "is_blocked": is_blocked,
+        "current_month": current_month,
+        "member_since": created_at.isoformat(),
+    }
+
+
+async def consume_tryon_quota(user_id: str, status: dict):
+    """After a successful try-on. Decrement credits/counter if applicable."""
+    if status["plan"] in ("SINGLE", "FAMILY") or status["honeymoon_active"]:
+        return
+    # FREE plan after honeymoon
+    user_doc = await db.users.find_one({"user_id": user_id}, {"_id": 0}) or {}
+    extra_credits = int(user_doc.get("extra_tryon_credits", 0) or 0)
+    if extra_credits > 0:
+        await db.users.update_one({"user_id": user_id}, {"$inc": {"extra_tryon_credits": -1}})
+    else:
+        await db.users.update_one({"user_id": user_id}, {"$inc": {"monthly_tryon_count.used": 1}})
+
+
+@api_router.get("/subscription/status")
+async def api_subscription_status(user: User = Depends(get_current_user)):
+    return await get_subscription_status(user.user_id)
+
+
+class CheckoutRequest(BaseModel):
+    option: str  # "extra" | "single" | "family"
+
+
+@api_router.post("/subscription/checkout")
+async def api_subscription_checkout(req: CheckoutRequest, user: User = Depends(get_current_user)):
+    """Mock Stripe checkout — returns a fake session ID for the frontend to confirm."""
+    if req.option not in PLAN_PRICES:
+        raise HTTPException(status_code=400, detail="Invalid option")
+    session_id = f"mock_cs_{uuid.uuid4().hex[:16]}"
+    await db.stripe_sessions.insert_one({
+        "id": session_id,
+        "user_id": user.user_id,
+        "option": req.option,
+        "amount_cents": PLAN_PRICES[req.option]["amount_cents"],
+        "status": "pending",
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    })
+    return {
+        "session_id": session_id,
+        "option": req.option,
+        "amount_cents": PLAN_PRICES[req.option]["amount_cents"],
+        "mock": True,
+    }
+
+
+class ConfirmRequest(BaseModel):
+    session_id: str
+
+
+@api_router.post("/subscription/confirm")
+async def api_subscription_confirm(req: ConfirmRequest, user: User = Depends(get_current_user)):
+    """Mock payment success — flips the stored session to paid and applies the plan."""
+    sess = await db.stripe_sessions.find_one({"id": req.session_id, "user_id": user.user_id}, {"_id": 0})
+    if not sess:
+        raise HTTPException(status_code=404, detail="Session not found")
+    if sess["status"] == "paid":
+        return await get_subscription_status(user.user_id)
+    option = sess["option"]
+    now_iso = datetime.now(timezone.utc).isoformat()
+    update = {"stripe_last_session": req.session_id, "stripe_last_paid_at": now_iso}
+    if option == "extra":
+        await db.users.update_one({"user_id": user.user_id}, {"$inc": {"extra_tryon_credits": 1}, "$set": update})
+    elif option == "single":
+        update["plan"] = "SINGLE"
+        update["plan_started_at"] = now_iso
+        await db.users.update_one({"user_id": user.user_id}, {"$set": update})
+    elif option == "family":
+        update["plan"] = "FAMILY"
+        update["plan_started_at"] = now_iso
+        await db.users.update_one({"user_id": user.user_id}, {"$set": update})
+    await db.stripe_sessions.update_one({"id": req.session_id}, {"$set": {"status": "paid", "paid_at": now_iso}})
+    return await get_subscription_status(user.user_id)
+
+
+@api_router.post("/subscription/cancel")
+async def api_subscription_cancel(user: User = Depends(get_current_user)):
+    """Downgrade back to FREE (demo helper)."""
+    await db.users.update_one({"user_id": user.user_id}, {"$set": {"plan": "FREE"}})
+    return await get_subscription_status(user.user_id)
+
+
 # ----- Fitting Accuracy -----
 # Formula FASE 2:
 #   base 100
@@ -536,6 +683,10 @@ class TryOnRequest(BaseModel):
 
 @api_router.post("/tryon/generate")
 async def tryon_generate(req: TryOnRequest, user: User = Depends(get_current_user)):
+    # Enforce subscription quota before any paid work (Nano Banana call).
+    status = await get_subscription_status(user.user_id)
+    if status["is_blocked"]:
+        raise HTTPException(status_code=402, detail="Quota exhausted — subscribe or buy an extra try-on.")
     # Load measurements for prompt context
     m_doc = await db.measurements.find_one({"user_id": user.user_id}, {"_id": 0, "user_id": 0}) or {}
     # Load both images
@@ -620,6 +771,8 @@ async def tryon_generate(req: TryOnRequest, user: User = Depends(get_current_use
         "isReliableAtTime": accuracy_snapshot["reliable"],
         "timestamp": created_at,
     })
+    # Deduct quota after a successful generation.
+    await consume_tryon_quota(user.user_id, status)
     doc.pop("_id", None)
     return doc
 

@@ -2,7 +2,7 @@ import { Link, NavLink, useNavigate } from "react-router-dom";
 import { useAuth } from "@/lib/auth";
 import { useI18n } from "@/lib/i18n";
 import LanguageSwitcher from "@/components/LanguageSwitcher";
-import { SignOut, House, User as UserIcon, TShirt, Sparkle } from "@phosphor-icons/react";
+import { SignOut, House, User as UserIcon, TShirt, Sparkle, GearSix } from "@phosphor-icons/react";
 
 export default function AppShell({ children }) {
   const { user, logout } = useAuth();
@@ -41,6 +41,9 @@ export default function AppShell({ children }) {
             </NavLink>
             <NavLink to="/profile" className={navItem} data-testid="nav-profile">
               <UserIcon size={14} weight="duotone" /> {t("nav.profile")}
+            </NavLink>
+            <NavLink to="/settings" className={navItem} data-testid="nav-settings">
+              <GearSix size={14} weight="duotone" /> {t("nav.settings")}
             </NavLink>
           </nav>
           <div className="flex items-center gap-4">

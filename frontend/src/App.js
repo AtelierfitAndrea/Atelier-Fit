@@ -2,6 +2,8 @@ import { BrowserRouter, Routes, Route, useLocation, Navigate } from "react-route
 import { Toaster } from "sonner";
 import { AuthProvider, useAuth } from "@/lib/auth";
 import { I18nProvider } from "@/lib/i18n";
+import { SubscriptionProvider } from "@/lib/subscription";
+import PaywallModal from "@/components/PaywallModal";
 import Landing from "@/pages/Landing";
 import AuthCallback from "@/pages/AuthCallback";
 import Dashboard from "@/pages/Dashboard";
@@ -9,6 +11,7 @@ import Profile from "@/pages/Profile";
 import Studio from "@/pages/Studio";
 import Wardrobe from "@/pages/Wardrobe";
 import TryOnDetail from "@/pages/TryOnDetail";
+import Settings from "@/pages/Settings";
 import AppShell from "@/components/AppShell";
 import "@/App.css";
 
@@ -38,6 +41,7 @@ function AppRouter() {
       <Route path="/studio" element={<Protected><Studio /></Protected>} />
       <Route path="/wardrobe" element={<Protected><Wardrobe /></Protected>} />
       <Route path="/tryon/:id" element={<Protected><TryOnDetail /></Protected>} />
+      <Route path="/settings" element={<Protected><Settings /></Protected>} />
     </Routes>
   );
 }
@@ -46,10 +50,13 @@ export default function App() {
   return (
     <I18nProvider>
       <AuthProvider>
-        <BrowserRouter>
-          <AppRouter />
-          <Toaster position="top-center" theme="light" />
-        </BrowserRouter>
+        <SubscriptionProvider>
+          <BrowserRouter>
+            <AppRouter />
+            <PaywallModal />
+            <Toaster position="top-center" theme="light" />
+          </BrowserRouter>
+        </SubscriptionProvider>
       </AuthProvider>
     </I18nProvider>
   );

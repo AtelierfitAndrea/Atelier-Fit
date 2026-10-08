@@ -6,10 +6,14 @@ import { useI18n } from "@/lib/i18n";
 import { ArrowRight, TShirt, Ruler, Sparkle, Scales, Warning } from "@phosphor-icons/react";
 import AccuracyBadge from "@/components/AccuracyBadge";
 import WeightModal from "@/components/WeightModal";
+import HoneymoonBanner from "@/components/HoneymoonBanner";
+import TryonCounter from "@/components/TryonCounter";
+import { useSubscription } from "@/lib/subscription";
 
 export default function Dashboard() {
   const { user } = useAuth();
   const { t } = useI18n();
+  const { status: subStatus, openPaywall } = useSubscription();
   const [tryons, setTryons] = useState([]);
   const [measurements, setMeasurements] = useState(null);
   const [weightStatus, setWeightStatus] = useState(null);
@@ -45,6 +49,7 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-14" data-testid="dashboard-root">
+      <HoneymoonBanner />
       {weightStatus?.due && (
         <button
           onClick={() => setModalOpen(true)}
@@ -68,6 +73,7 @@ export default function Dashboard() {
 
       <div className="flex items-center gap-4 flex-wrap" data-testid="accuracy-row">
         <AccuracyBadge nonce={nonce} />
+        <TryonCounter />
         <button
           onClick={() => setModalOpen(true)}
           className="inline-flex items-center justify-center gap-3 bg-[#0A0A0A] text-white px-6 py-3 text-xs font-semibold tracking-[0.2em] uppercase border border-[#0A0A0A] hover:bg-[#8C7355] hover:border-[#8C7355] transition-colors duration-200"
@@ -87,9 +93,15 @@ export default function Dashboard() {
           <p className="mt-6 text-neutral-600 max-w-xl leading-relaxed">{t("dashboard.heroCopy")}</p>
         </div>
         <div className="lg:col-span-4 flex gap-3">
-          <Link to="/studio" className="btn-primary flex-1" data-testid="dashboard-start-tryon">
-            {t("dashboard.newTryOn")} <ArrowRight size={16} weight="bold" />
-          </Link>
+          {subStatus?.is_blocked ? (
+            <button onClick={openPaywall} className="btn-primary flex-1" data-testid="dashboard-locked-tryon">
+              {t("dashboard.newTryOn")} <ArrowRight size={16} weight="bold" />
+            </button>
+          ) : (
+            <Link to="/studio" className="btn-primary flex-1" data-testid="dashboard-start-tryon">
+              {t("dashboard.newTryOn")} <ArrowRight size={16} weight="bold" />
+            </Link>
+          )}
         </div>
       </section>
 
