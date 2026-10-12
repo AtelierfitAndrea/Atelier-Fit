@@ -1070,6 +1070,244 @@ async def product_import_image(req: ImportImageRequest, user: User = Depends(get
     return {"path": result["path"], "category": req.category, "name": req.name}
 
 
+# ----- Wardrobe garments (saved from URL) -----
+def _parse_price(txt: Optional[str]) -> Optional[float]:
+    if not txt:
+        return None
+    m = re.search(r"(\d{1,4}[.,]?\d{0,2})", str(txt))
+    if not m:
+        return None
+    try:
+        return float(m.group(1).replace(",", "."))
+    except Exception:
+        return None
+
+
+async def _extract_product_meta(page_text: str, url: str) -> dict:
+    prompt = (
+        "Analizza il testo di una pagina prodotto e restituisci SOLO JSON con questi campi:\n"
+        "{ \"brand\": \"Zara\", \"product_name\": \"Blazer lino\", \"price\": 59.95, \"currency\": \"EUR\", \"category\": \"top|bottom|dress|outerwear|shoes\" }\n"
+        "Se un campo non è deducibile metti null. Nessun testo attorno.\n\n"
+        f"URL: {url}\n\nCONTENUTO:\n{page_text}"
+    )
+    chat = LlmChat(api_key=EMERGENT_KEY, session_id=f"meta-{uuid.uuid4().hex[:8]}", system_message="Sei un parser prodotto. Rispondi solo JSON.")
+    chat.with_model("gemini", "gemini-3.8-flash")
+    try:
+        reply = await chat.send_message(UserMessage(text=prompt))
+    except Exception as e:
+        logger.warning(f"meta extract failed: {e}")
+        return {}
+    data = _extract_json(reply) or {}
+    if isinstance(data.get("price"), str):
+        data["price"] = _parse_price(data["price"])
+    return data
+
+
+class SaveGarmentFromUrlRequest(BaseModel):
+    url: str
+
+
+@api_router.post("/wardrobe/garments/from-url")
+async def wardrobe_save_from_url(req: SaveGarmentFromUrlRequest, user: User = Depends(get_current_user)):
+    url = (req.url or "").strip()
+    if not re.match(r"^https?://", url):
+        raise HTTPException(status_code=400, detail="URL non valido")
+    html = await _fetch_page(url)
+    if not html:
+        raise HTTPException(status_code=400, detail="Impossibile leggere il link. Carica manualmente il capo nello Studio.")
+    condensed, image_url = _condense_html(html)
+    meta = await _extract_product_meta(condensed, url)
+    if not image_url:
+        raise HTTPException(status_code=400, detail="Non siamo riusciti a trovare l'immagine del prodotto.")
+    # Download the image into storage
+    headers = {"User-Agent": _UA, "Accept": "image/*,*/*"}
+    try:
+        async with httpx.AsyncClient(follow_redirects=True, timeout=20, headers=headers) as c:
+            r = await c.get(image_url)
+            r.raise_for_status()
+            img_bytes = r.content
+            content_type = r.headers.get("content-type", "image/jpeg").split(";")[0].strip()
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Download immagine fallito: {e}")
+    ext_map = {"image/jpeg": "jpg", "image/png": "png", "image/webp": "webp"}
+    ext = ext_map.get(content_type, "jpg")
+    img_path = f"{APP_NAME}/garment/{user.user_id}/{uuid.uuid4().hex}.{ext}"
+    put_object(img_path, img_bytes, content_type)
+    garment = {
+        "id": str(uuid.uuid4()),
+        "user_id": user.user_id,
+        "image_path": img_path,
+        "name": meta.get("product_name") or "Capo",
+        "brand": meta.get("brand") or "Shop",
+        "price": meta.get("price"),
+        "currency": meta.get("currency") or "EUR",
+        "category": (meta.get("category") or "top").lower(),
+        "source_url": url,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.garments.insert_one(garment)
+    garment.pop("_id", None)
+    return garment
+
+
+@api_router.get("/wardrobe/garments")
+async def wardrobe_list_garments(user: User = Depends(get_current_user)):
+    items = await db.garments.find({"user_id": user.user_id}, {"_id": 0}).sort("created_at", -1).to_list(500)
+    return items
+
+
+@api_router.delete("/wardrobe/garments/{garment_id}")
+async def wardrobe_delete_garment(garment_id: str, user: User = Depends(get_current_user)):
+    res = await db.garments.delete_one({"id": garment_id, "user_id": user.user_id})
+    return {"deleted": res.deleted_count}
+
+
+# ----- Outfit generation (single AI call, layered) -----
+_LAYER_ORDER = {"bottom": 1, "dress": 2, "shoes": 2, "top": 3, "outerwear": 4}
+
+
+class OutfitGenerateRequest(BaseModel):
+    garment_ids: List[str]
+    person_path: Optional[str] = None
+
+
+@api_router.post("/outfit/generate")
+async def outfit_generate(req: OutfitGenerateRequest, user: User = Depends(get_current_user)):
+    if not (2 <= len(req.garment_ids) <= 4):
+        raise HTTPException(status_code=400, detail="Seleziona da 2 a 4 capi")
+    # Subscription quota — 1 outfit = 1 credit, enforced like a normal try-on
+    status = await get_subscription_status(user.user_id)
+    if status["is_blocked"]:
+        raise HTTPException(status_code=402, detail="Quota esaurita — sblocca o attiva un piano")
+    # Load garments
+    items = []
+    for gid in req.garment_ids:
+        g = await db.garments.find_one({"id": gid, "user_id": user.user_id}, {"_id": 0})
+        if not g:
+            raise HTTPException(status_code=404, detail=f"Capo {gid} non trovato")
+        items.append(g)
+    # Order items for layering (bottoms first, outerwear last)
+    items.sort(key=lambda g: _LAYER_ORDER.get((g.get("category") or "top").lower(), 2))
+    # Resolve person photo — prefer explicit path, else latest person file for the user
+    person_path = req.person_path
+    if not person_path:
+        last_file = await db.files.find_one(
+            {"user_id": user.user_id, "kind": "person", "is_deleted": {"$ne": True}},
+            {"_id": 0, "storage_path": 1},
+            sort=[("created_at", -1)],
+        )
+        if last_file:
+            person_path = last_file["storage_path"]
+    if not person_path:
+        raise HTTPException(status_code=400, detail="Carica prima una tua foto nel Prova taglia")
+    # Build the multi-image prompt
+    person_bytes, _ = get_object(person_path)
+    person_b64 = base64.b64encode(person_bytes).decode("utf-8")
+    file_contents = [ImageContent(person_b64)]
+    layer_lines = []
+    for idx, g in enumerate(items, start=2):
+        try:
+            g_bytes, _ = get_object(g["image_path"])
+        except Exception:
+            raise HTTPException(status_code=400, detail=f"Immagine del capo {g.get('name')} non disponibile")
+        file_contents.append(ImageContent(base64.b64encode(g_bytes).decode("utf-8")))
+        layer_lines.append(f"IMAGE {idx} — {g.get('category','top')} — {g.get('brand','')} {g.get('name','')}")
+
+    prompt = (
+        "You are a virtual try-on image generator. Produce ONE photorealistic image.\n\n"
+        "IMAGE 1 is the real photo of a specific person. Images 2..N are garment product shots.\n"
+        f"{chr(10).join(layer_lines)}\n\n"
+        "ABSOLUTE RULES — identity and scene preservation have top priority:\n"
+        "• Keep the EXACT face, head, hair, skin tone, body proportions and pose from IMAGE 1 — pixel-level fidelity.\n"
+        "• Keep every visible tattoo, mole, scar, piercing and jewellery EXACTLY as in IMAGE 1.\n"
+        "• Keep the person's hands, fingers and nails IDENTICAL to IMAGE 1 — do NOT substitute hands.\n"
+        "• Keep the ORIGINAL BACKGROUND and lighting of IMAGE 1 unchanged (room, wall, floor, props, shadows).\n"
+        "• Framing must match IMAGE 1 — do NOT crop the head, do NOT zoom, keep the same composition.\n"
+        "• Exactly ONE person in the output — the same as IMAGE 1. No stock models, no extra people.\n\n"
+        "WHAT TO DO:\n"
+        "• Dress the SAME person with ALL the garments in images 2..N, layered correctly in this order:\n"
+        "  1) bottoms / dress 2) shoes 3) top / shirt 4) outerwear / jacket on top.\n"
+        "• Preserve each garment's exact colour, pattern, cut and material from its product shot.\n"
+        "• Natural fabric drape, folds and shadows that match IMAGE 1 lighting.\n\n"
+        "FORBIDDEN: altering face/hands, replacing the background with a studio, cropping the head, adding items not provided."
+    )
+
+    session_id = f"outfit-{user.user_id}-{uuid.uuid4().hex[:8]}"
+    chat = LlmChat(
+        api_key=EMERGENT_KEY,
+        session_id=session_id,
+        system_message=(
+            "Virtual try-on for multi-item outfits. Preserve the person's face, hands, tattoos, pose and background exactly. "
+            "Compose all provided garments on the SAME person in a SINGLE image."
+        ),
+    )
+    chat.with_model("gemini", "gemini-3.1-flash-image-preview").with_params(modalities=["image", "text"])
+    try:
+        _text, images = await chat.send_message_multimodal_response(
+            UserMessage(text=prompt, file_contents=file_contents)
+        )
+    except Exception as e:
+        logger.error(f"Outfit generation error: {e}")
+        raise HTTPException(status_code=500, detail=f"Generazione outfit non riuscita: {e}")
+    if not images:
+        raise HTTPException(status_code=500, detail="Nessuna immagine generata")
+    out_bytes = base64.b64decode(images[0]["data"])
+    result_path = f"{APP_NAME}/outfit/{user.user_id}/{uuid.uuid4().hex}.png"
+    put_object(result_path, out_bytes, "image/png")
+
+    total_price = sum((g.get("price") or 0) for g in items)
+    outfit_id = str(uuid.uuid4())
+    doc = {
+        "id": outfit_id,
+        "user_id": user.user_id,
+        "person_path": person_path,
+        "result_path": result_path,
+        "items": [{
+            "garment_id": g["id"], "image_path": g["image_path"], "name": g["name"],
+            "brand": g["brand"], "price": g.get("price"), "currency": g.get("currency", "EUR"),
+            "category": g["category"], "source_url": g.get("source_url"),
+        } for g in items],
+        "total_price": round(total_price, 2) if total_price else None,
+        "currency": items[0].get("currency", "EUR"),
+        "saved": False,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.outfits.insert_one(doc)
+    # Consume 1 credit (same as single try-on)
+    await consume_tryon_quota(user.user_id, status)
+    doc.pop("_id", None)
+    return doc
+
+
+@api_router.get("/outfits")
+async def outfit_list(user: User = Depends(get_current_user)):
+    items = await db.outfits.find({"user_id": user.user_id}, {"_id": 0}).sort("created_at", -1).to_list(500)
+    return items
+
+
+class OutfitSaveRequest(BaseModel):
+    name: Optional[str] = None
+
+
+@api_router.post("/outfits/{outfit_id}/save")
+async def outfit_save(outfit_id: str, req: OutfitSaveRequest, user: User = Depends(get_current_user)):
+    await db.outfits.update_one(
+        {"id": outfit_id, "user_id": user.user_id},
+        {"$set": {"saved": True, "name": req.name}},
+    )
+    doc = await db.outfits.find_one({"id": outfit_id, "user_id": user.user_id}, {"_id": 0})
+    return doc
+
+
+@api_router.get("/outfits/share/{outfit_id}")
+async def outfit_share_public(outfit_id: str):
+    """Public read endpoint used by the share link — returns a redacted snapshot."""
+    doc = await db.outfits.find_one({"id": outfit_id}, {"_id": 0, "user_id": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Outfit non trovato")
+    return doc
+
+
 @api_router.post("/product/analyze-screenshot")
 async def product_analyze_screenshot(
     file: UploadFile = File(...),

@@ -11,6 +11,8 @@
   --vfit-muted: #525252;
   --vfit-border: #E5E5E5;
   --vfit-accent: #8C7355;
+  --vfit-brand: #6B46C1;
+  --vfit-brand-hover: #553499;
 }
 
 body {
@@ -76,6 +78,27 @@ body {
   transition: background-color 0.25s ease, color 0.25s ease;
 }
 .btn-ghost:hover { background: #0A0A0A; color: #FDFDFD; }
+
+/* Brand (viola) — reserved for Outfit CTAs */
+.btn-brand {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.9rem 1.5rem;
+  background: var(--vfit-brand);
+  color: #FFFFFF;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  border: 1px solid var(--vfit-brand);
+  transition: transform 0.25s ease, background-color 0.25s ease, border-color 0.25s ease;
+}
+.btn-brand:hover { transform: translateY(-1px); background: var(--vfit-brand-hover); border-color: var(--vfit-brand-hover); }
+.text-brand { color: var(--vfit-brand); }
+.border-brand { border-color: var(--vfit-brand); }
+.bg-brand { background: var(--vfit-brand); }
 
 /* Dashed upload zone */
 .upload-zone {

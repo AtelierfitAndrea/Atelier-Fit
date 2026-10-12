@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, fileUrl } from "@/lib/api";
 import { TShirt } from "@phosphor-icons/react";
+import OutfitBuilder from "@/components/OutfitBuilder";
 
 const FILTERS = ["all", "top", "bottom", "dress", "outerwear", "shoes"];
 
@@ -20,7 +21,9 @@ export default function Wardrobe() {
   [items, filter]);
 
   return (
-    <div className="space-y-8" data-testid="wardrobe-root">
+    <div className="space-y-10" data-testid="wardrobe-root">
+      <OutfitBuilder />
+
       <header className="flex items-end justify-between flex-wrap gap-6">
         <div>
           <div className="label-caps mb-3">Atelier Fit</div>
