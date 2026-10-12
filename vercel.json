@@ -1,1 +1,0 @@
-{"services":{"backend":{"root":"backend","framework":"fastapi"},"frontend":{"root":"frontend","framework":"vite"}},"rewrites":[{"source":"/api/(._)","destination":{"service":"backend"}},{"source":"/(._)","destination":{"service":"frontend"}}]}
