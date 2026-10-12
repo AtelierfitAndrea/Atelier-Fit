@@ -60,6 +60,11 @@ export default function OutfitBuilder() {
 
   const generate = async () => {
     if (!canGenerate) return;
+    const noPhoto = garments.filter((g) => selected.includes(g.id) && !g.image_path);
+    if (noPhoto.length) {
+      toast.error(`Serve una foto reale del capo: ${noPhoto.map((g) => g.name).join(", ")}. Caricala nello Studio o usa un altro capo.`);
+      return;
+    }
     const personPath = (() => { try { return localStorage.getItem(basePhotoKey()); } catch { return null; } })();
     setGenerating(true); setResult(null);
     try {
@@ -152,12 +157,25 @@ export default function OutfitBuilder() {
                   <Trash size={14} weight="bold" />
                 </button>
                 <div className="relative overflow-hidden" style={{ aspectRatio: "3/4" }}>
-                  <img src={fileUrl(g.image_path)} alt="" className="absolute inset-0 w-full h-full object-cover" />
+                  {g.image_path ? (
+                    <img src={fileUrl(g.image_path)} alt="" className="absolute inset-0 w-full h-full object-cover" />
+                  ) : (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-neutral-100 text-neutral-500" data-testid={`garment-placeholder-${g.id}`}>
+                      <ShoppingBag size={32} weight="duotone" />
+                      <span className="label-caps">Foto non disponibile</span>
+                    </div>
+                  )}
                 </div>
                 <div className="mt-3" translate="no">
                   <div className="label-caps">{g.brand}</div>
                   <div className="font-serif text-base truncate">{g.name}</div>
                   <div className="text-sm text-neutral-700 mt-1">{priceFmt(g.price, g.currency)}</div>
+                  {g.source_url && (
+                    <a href={g.source_url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}
+                      className="text-xs underline text-neutral-500 hover:text-[#0A0A0A]" data-testid={`garment-link-${g.id}`}>
+                      Vedi prodotto
+                    </a>
+                  )}
                 </div>
               </div>
             );

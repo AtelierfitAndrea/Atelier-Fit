@@ -1191,36 +1191,60 @@ class SaveGarmentFromUrlRequest(BaseModel):
     url: str
 
 
-@api_router.post("/wardrobe/garments/from-url")
-async def wardrobe_save_from_url(req: SaveGarmentFromUrlRequest, user: User = Depends(get_current_user)):
-    url = (req.url or "").strip()
-    if not re.match(r"^https?://", url):
-        raise HTTPException(status_code=400, detail="URL non valido")
-    html = await _fetch_page(url)
-    if not html:
-        raise HTTPException(status_code=400, detail="Impossibile leggere il link. Carica manualmente il capo nello Studio.")
-    condensed, image_url = _condense_html(html)
-    meta = await _extract_product_meta(condensed, url)
-    if not image_url:
-        raise HTTPException(status_code=400, detail="Non siamo riusciti a trovare l'immagine del prodotto.")
-    # Download the image into storage
+_AMZ_SHORT_HOSTS = {"amzn.eu", "amzn.to", "a.co", "amzn.com"}
+_ASIN_RE = re.compile(r"/(?:dp|gp/product|gp/aw/d|exec/obidos/ASIN|product)/([A-Z0-9]{10})(?:[/?#]|$)", re.I)
+
+
+def _host(url: str) -> str:
+    return (httpx.URL(url).host or "").lower().removeprefix("www.")
+
+
+async def _resolve_short_url(url: str) -> str:
+    """Follow redirects hop by hop until we leave the short-link domain."""
+    current = url
+    headers = {"User-Agent": _UA, "Accept": "text/html,*/*;q=0.8", "Accept-Language": "it-IT,it;q=0.9"}
+    async with httpx.AsyncClient(follow_redirects=False, timeout=15, headers=headers) as c:
+        for _ in range(10):
+            if _host(current) not in _AMZ_SHORT_HOSTS:
+                break
+            try:
+                r = await c.get(current)
+            except Exception as e:
+                logger.warning(f"short url resolve failed: {e}")
+                break
+            loc = r.headers.get("location")
+            if not (300 <= r.status_code < 400 and loc):
+                break
+            current = str(httpx.URL(current).join(loc))
+    return current
+
+
+def _amazon_image(html: str) -> Optional[str]:
+    for pat in (r'"hiRes":"(https://[^"]+)"', r'data-old-hires="(https://[^"]+)"', r'"large":"(https://[^"]+)"'):
+        m = re.search(pat, html)
+        if m:
+            return m.group(1)
+    return None
+
+
+async def _download_garment_image(image_url: str, user_id: str) -> str:
     headers = {"User-Agent": _UA, "Accept": "image/*,*/*"}
-    try:
-        async with httpx.AsyncClient(follow_redirects=True, timeout=20, headers=headers) as c:
-            r = await c.get(image_url)
-            r.raise_for_status()
-            img_bytes = r.content
-            content_type = r.headers.get("content-type", "image/jpeg").split(";")[0].strip()
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Download immagine fallito: {e}")
-    ext_map = {"image/jpeg": "jpg", "image/png": "png", "image/webp": "webp"}
-    ext = ext_map.get(content_type, "jpg")
-    img_path = f"{APP_NAME}/garment/{user.user_id}/{uuid.uuid4().hex}.{ext}"
-    put_object(img_path, img_bytes, content_type)
+    async with httpx.AsyncClient(follow_redirects=True, timeout=20, headers=headers) as c:
+        r = await c.get(image_url)
+        r.raise_for_status()
+    content_type = r.headers.get("content-type", "image/jpeg").split(";")[0].strip()
+    ext = {"image/jpeg": "jpg", "image/png": "png", "image/webp": "webp"}.get(content_type, "jpg")
+    img_path = f"{APP_NAME}/garment/{user_id}/{uuid.uuid4().hex}.{ext}"
+    put_object(img_path, r.content, content_type)
+    return img_path
+
+
+async def _save_garment(user_id: str, url: str, meta: dict, image_path: Optional[str]) -> dict:
     garment = {
         "id": str(uuid.uuid4()),
-        "user_id": user.user_id,
-        "image_path": img_path,
+        "user_id": user_id,
+        "image_path": image_path,
+        "is_placeholder": image_path is None,
         "name": meta.get("product_name") or "Capo",
         "brand": meta.get("brand") or "Shop",
         "price": meta.get("price"),
@@ -1232,6 +1256,46 @@ async def wardrobe_save_from_url(req: SaveGarmentFromUrlRequest, user: User = De
     await db.garments.insert_one(garment)
     garment.pop("_id", None)
     return garment
+
+
+@api_router.post("/wardrobe/garments/from-url")
+async def wardrobe_save_from_url(req: SaveGarmentFromUrlRequest, user: User = Depends(get_current_user)):
+    url = (req.url or "").strip()
+    if not re.match(r"^https?://", url):
+        raise HTTPException(status_code=400, detail="URL non valido")
+    was_short = _host(url) in _AMZ_SHORT_HOSTS
+    if was_short:
+        url = await _resolve_short_url(url)
+    is_amazon = was_short or "amazon." in _host(url)
+    if "amazon." in _host(url):
+        m = _ASIN_RE.search(httpx.URL(url).path + "/")
+        if m:
+            url = f"https://{httpx.URL(url).host}/dp/{m.group(1).upper()}"
+
+    html = await _fetch_page(url)
+    meta, image_url = {}, None
+    if html:
+        condensed, image_url = _condense_html(html)
+        if is_amazon:
+            image_url = image_url or _amazon_image(html)
+        meta = await _extract_product_meta(condensed, url)
+
+    image_path = None
+    if image_url:
+        try:
+            image_path = await _download_garment_image(image_url, user.user_id)
+        except Exception as e:
+            logger.warning(f"garment image download failed: {e}")
+
+    if is_amazon and (not image_path or not meta.get("product_name")):
+        # Amazon often blocks bots: save anyway with a placeholder so the user keeps the link.
+        meta = {**meta, "brand": meta.get("brand") or "Amazon", "product_name": meta.get("product_name") or "Prodotto Amazon"}
+        return await _save_garment(user.user_id, url, meta, image_path)
+    if not html:
+        raise HTTPException(status_code=400, detail="Impossibile leggere il link. Carica manualmente il capo nello Studio.")
+    if not image_path:
+        raise HTTPException(status_code=400, detail="Non siamo riusciti a trovare l'immagine del prodotto.")
+    return await _save_garment(user.user_id, url, meta, image_path)
 
 
 @api_router.get("/wardrobe/garments")
@@ -1269,6 +1333,8 @@ async def outfit_generate(req: OutfitGenerateRequest, user: User = Depends(get_c
         g = await db.garments.find_one({"id": gid, "user_id": user.user_id}, {"_id": 0})
         if not g:
             raise HTTPException(status_code=404, detail=f"Capo {gid} non trovato")
+        if not g.get("image_path"):
+            raise HTTPException(status_code=400, detail=f"Serve una foto reale del capo \"{g.get('name')}\" per generare l'outfit")
         items.append(g)
     # Order items for layering (bottoms first, outerwear last)
     items.sort(key=lambda g: _LAYER_ORDER.get((g.get("category") or "top").lower(), 2))
