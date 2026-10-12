@@ -1,0 +1,31 @@
+{
+  "summary": "Full E2E testing of Atelier Fit FAMILY plan: 4 sub-profiles, X-Profile-Id scoping, pricing/paywall copy, cancel/reactivate flow, and regression. 13/13 backend pytest tests pass. UI flows all pass with no console errors.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_family_profiles.py",
+    "/app/test_reports/pytest/family_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "FamilySwitcher auto-clears atelier_active_profile and reloads when plan != FAMILY — good; but reload happens inside render-effect which can cause an extra reload on first mount if a stale active profile exists. Works correctly in observed tests.",
+    "Backend get_current_user silently falls back to the account owner when X-Profile-Id does not match an owned sub-profile. Safe but silent; consider returning 400/403 to help clients detect bugs (currently covered by security requirement that non-FAMILY plans or foreign IDs are ignored).",
+    "FamilyProfileIn only validates len>0 and len<=40 server-side; name is used as display text — HTML/script injection is mitigated by React auto-escaping, OK.",
+    "Family sub-profile users are stored in the same `users` collection with is_family_profile=true and no email; make sure any admin listings/queries that iterate users exclude is_family_profile sub-rows to avoid confusing counts (not blocking)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_family_profiles.py",
+    "/app/backend/tests/__init__.py"
+  ],
+  "success_rate": {"backend": "100% (13/13)", "frontend": "100%"},
+  "test_credentials": "Mongo-seeded sessions: cookie session_token=test_fam_session_1 (user_id=test_family_user_1, plan=FAMILY) and session_token=test_free_session_1 (user_id=test_free_user_1, plan=FREE). Family sub-profiles and measurements cleaned up after tests; owner users left in DB (reusable for next iteration).",
+  "seed_data_creation": "Inserted two users in test_database (test_family_user_1 plan=FAMILY, test_free_user_1 plan=FREE) with sessions. Sub-profiles created & cleaned during tests.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "FAMILY plan verified end-to-end: (1) Pricing card and paywall perks show the required Italian copy ('Fino a 4 utenti', '4 spazi foto, 4 misure separate', 'Solo per questo abbonamento'). (2) FREE user has no family-switcher-btn. (3) FAMILY user: switcher shows owner as 'TITOLARE' at profile-0; adding 3 names reaches 4/4 limit (family-full shown; backend returns 400). (4) Rename via family-rename-btn-{i} works and persists. (5) Switching to sub-profile sets localStorage.atelier_active_profile and reload shows new active-name. (6) Backend X-Profile-Id scoping validated: owner measurements chest=100 remain while sub-profile independently stores chest=85; cross-profile isolation holds. (7) X-Profile-Id is correctly ignored for non-FAMILY plans and for IDs not owned by the account. (8) Subscription status plan=FAMILY returned from any sub-profile. (9) POST /api/subscription/cancel => FREE: switcher disappears, localStorage.atelier_active_profile cleared; re-setting plan=FAMILY in DB brings previously created profiles back visible (Alice2/Bob/Carla). (10) basePhotoKey() scheme confirmed in localStorage: 'atelier_base_photo' (owner) vs 'atelier_base_photo:<sub_id>'. (11) Regression on /dashboard /studio /analyze /wardrobe /profile /settings: all load, 0 pageerrors. Note: POST /api/subscription/confirm expects a JSON body (not query param) — not tested as full happy path via UI; backend returned 422 when called with query only. Not a regression — just a note for anyone retesting mock-stripe flows.",
+  "rca of the issue": "N/A — no bugs found. All functional requirements satisfied."
+}

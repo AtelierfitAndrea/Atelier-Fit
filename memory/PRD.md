@@ -38,3 +38,13 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 ## Testing
 - See /app/memory/test_credentials.md for the Mongo-based test session approach.
 - First iteration passed 100% (both backend and frontend).
+
+## 2026-06 — Pacchetto FAMILY (DONE, tested iteration_4: 100%)
+- Card Family: "Fino a 4 utenti. 4 spazi foto, 4 misure separate. Solo per questo abbonamento." (IT/EN/FR/DE, pricing + paywall)
+- Sub-profili salvati in `users` con `owner_id`, `is_family_profile`; endpoint GET/POST /api/family/profiles, PATCH /api/family/profiles/{id} (max 4 incl. titolare)
+- Header `X-Profile-Id` (localStorage `atelier_active_profile`) isola misure, peso, foto, armadio, prove, outfit. Viene ignorato se il piano non è FAMILY → i profili restano salvati ma bloccati
+- Abbonamento/crediti condivisi tramite `User.account_id`; foto base per profilo: `atelier_base_photo:<profileId>`
+- Header FamilySwitcher (components/FamilySwitcher.jsx) visibile solo con FAMILY
+## Backlog
+- P1: screenshot di riserva per "Aggiungi da URL" nell'armadio; Stripe reale (ora MOCK)
+- P2: eliminare un sub-profilo
