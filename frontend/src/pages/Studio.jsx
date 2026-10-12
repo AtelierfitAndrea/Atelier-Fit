@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { api, fileUrl } from "@/lib/api";
+import { api, fileUrl, basePhotoKey } from "@/lib/api";
 import { useSubscription } from "@/lib/subscription";
 import TryonCounter from "@/components/TryonCounter";
 import { CloudArrowUp, Sparkle, ArrowRight } from "@phosphor-icons/react";
@@ -31,7 +31,7 @@ export default function Studio() {
   // Load the user's saved base photo once, so future try-ons don't ask for it.
   useEffect(() => {
     try {
-      const saved = localStorage.getItem("atelier_base_photo");
+      const saved = localStorage.getItem(basePhotoKey());
       if (saved) {
         setPersonPath(saved);
         setPersonPreview(fileUrl(saved));
@@ -44,7 +44,7 @@ export default function Studio() {
   }, []);
 
   const changePhoto = () => {
-    try { localStorage.removeItem("atelier_base_photo"); } catch (_e) { /* ignore */ }
+    try { localStorage.removeItem(basePhotoKey()); } catch (_e) { /* ignore */ }
     setPersonPath(null);
     setPersonPreview(null);
     toast.message("Carica una nuova foto");
@@ -116,7 +116,7 @@ export default function Studio() {
             try {
               const p = await uploadFile(f, "person");
               setPersonPath(p);
-              try { localStorage.setItem("atelier_base_photo", p); } catch (_e) { /* ignore */ }
+              try { localStorage.setItem(basePhotoKey(), p); } catch (_e) { /* ignore */ }
             } catch { toast.error("Upload failed"); }
           }}
           testid="upload-person"

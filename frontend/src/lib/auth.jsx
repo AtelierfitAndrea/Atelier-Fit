@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState, useCallback } from "react";
-import { api } from "@/lib/api";
+import { api, setActiveProfile } from "@/lib/api";
 
 const AuthCtx = createContext({ user: null, loading: true, refresh: () => {}, logout: () => {} });
 
@@ -30,6 +30,7 @@ export function AuthProvider({ children }) {
 
   const logout = async () => {
     try { await api.post("/auth/logout"); } catch (_e) { /* ignore */ }
+    setActiveProfile(null);
     setUser(null);
     window.location.href = "/";
   };

@@ -72,10 +72,16 @@ def get_object(path: str) -> tuple:
 class User(BaseModel):
     model_config = ConfigDict(extra="ignore")
     user_id: str
-    email: str
+    email: str = ""
     name: str
     picture: Optional[str] = None
+    owner_id: Optional[str] = None
+    is_family_profile: bool = False
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+    @property
+    def account_id(self) -> str:
+        return self.owner_id or self.user_id
 
 
 class Measurements(BaseModel):
@@ -107,7 +113,7 @@ class TryOn(BaseModel):
 
 
 # ===== Auth helpers =====
-async def get_current_user(
+async def get_account_user(
     request: Request,
     authorization: Optional[str] = Header(None),
 ) -> User:
@@ -130,6 +136,22 @@ async def get_current_user(
     if not user_doc:
         raise HTTPException(status_code=401, detail="User not found")
     return User(**user_doc)
+
+
+async def get_current_user(
+    account: User = Depends(get_account_user),
+    x_profile_id: Optional[str] = Header(None),
+) -> User:
+    # Family plan: act as the selected sub-profile; data is scoped to its own user_id.
+    if not x_profile_id or x_profile_id == account.user_id:
+        return account
+    owner_doc = await db.users.find_one({"user_id": account.user_id}, {"_id": 0, "plan": 1})
+    if (owner_doc or {}).get("plan") != "FAMILY":
+        return account
+    prof = await db.users.find_one(
+        {"user_id": x_profile_id, "owner_id": account.user_id, "is_family_profile": True}, {"_id": 0}
+    )
+    return User(**prof) if prof else account
 
 
 # ===== Size recommendation logic =====
@@ -249,7 +271,7 @@ async def auth_session(request: Request, response: Response):
 
 
 @api_router.get("/auth/me")
-async def auth_me(user: User = Depends(get_current_user)):
+async def auth_me(user: User = Depends(get_account_user)):
     return user.model_dump()
 
 
@@ -437,8 +459,8 @@ async def consume_tryon_quota(user_id: str, status: dict):
 
 
 @api_router.get("/subscription/status")
-async def api_subscription_status(user: User = Depends(get_current_user)):
-    return await get_subscription_status(user.user_id)
+async def api_subscription_status(user: User = Depends(get_account_user)):
+    return await get_subscription_status(user.account_id)
 
 
 class CheckoutRequest(BaseModel):
@@ -446,7 +468,7 @@ class CheckoutRequest(BaseModel):
 
 
 @api_router.post("/subscription/checkout")
-async def api_subscription_checkout(req: CheckoutRequest, user: User = Depends(get_current_user)):
+async def api_subscription_checkout(req: CheckoutRequest, user: User = Depends(get_account_user)):
     """Mock Stripe checkout — returns a fake session ID for the frontend to confirm."""
     if req.option not in PLAN_PRICES:
         raise HTTPException(status_code=400, detail="Invalid option")
@@ -472,13 +494,13 @@ class ConfirmRequest(BaseModel):
 
 
 @api_router.post("/subscription/confirm")
-async def api_subscription_confirm(req: ConfirmRequest, user: User = Depends(get_current_user)):
+async def api_subscription_confirm(req: ConfirmRequest, user: User = Depends(get_account_user)):
     """Mock payment success — flips the stored session to paid and applies the plan."""
     sess = await db.stripe_sessions.find_one({"id": req.session_id, "user_id": user.user_id}, {"_id": 0})
     if not sess:
         raise HTTPException(status_code=404, detail="Session not found")
     if sess["status"] == "paid":
-        return await get_subscription_status(user.user_id)
+        return await get_subscription_status(user.account_id)
     option = sess["option"]
     now_iso = datetime.now(timezone.utc).isoformat()
     update = {"stripe_last_session": req.session_id, "stripe_last_paid_at": now_iso}
@@ -493,14 +515,76 @@ async def api_subscription_confirm(req: ConfirmRequest, user: User = Depends(get
         update["plan_started_at"] = now_iso
         await db.users.update_one({"user_id": user.user_id}, {"$set": update})
     await db.stripe_sessions.update_one({"id": req.session_id}, {"$set": {"status": "paid", "paid_at": now_iso}})
-    return await get_subscription_status(user.user_id)
+    return await get_subscription_status(user.account_id)
 
 
 @api_router.post("/subscription/cancel")
-async def api_subscription_cancel(user: User = Depends(get_current_user)):
+async def api_subscription_cancel(user: User = Depends(get_account_user)):
     """Downgrade back to FREE (demo helper)."""
     await db.users.update_one({"user_id": user.user_id}, {"$set": {"plan": "FREE"}})
-    return await get_subscription_status(user.user_id)
+    return await get_subscription_status(user.account_id)
+
+
+# ----- Family profiles -----
+FAMILY_MAX_PROFILES = 4
+
+
+class FamilyProfileIn(BaseModel):
+    name: str
+
+
+async def _family_payload(owner: User) -> dict:
+    owner_doc = await db.users.find_one({"user_id": owner.user_id}, {"_id": 0, "plan": 1}) or {}
+    subs = await db.users.find(
+        {"owner_id": owner.user_id, "is_family_profile": True}, {"_id": 0, "user_id": 1, "name": 1}
+    ).sort("created_at", 1).to_list(FAMILY_MAX_PROFILES)
+    profiles = [{"profile_id": owner.user_id, "name": owner.name, "is_owner": True}]
+    profiles += [{"profile_id": p["user_id"], "name": p["name"], "is_owner": False} for p in subs]
+    return {"enabled": owner_doc.get("plan") == "FAMILY", "max_profiles": FAMILY_MAX_PROFILES, "profiles": profiles}
+
+
+def _clean_profile_name(name: str) -> str:
+    name = (name or "").strip()
+    if not name or len(name) > 40:
+        raise HTTPException(status_code=400, detail="Nome non valido (1-40 caratteri)")
+    return name
+
+
+@api_router.get("/family/profiles")
+async def family_list(owner: User = Depends(get_account_user)):
+    return await _family_payload(owner)
+
+
+@api_router.post("/family/profiles")
+async def family_create(body: FamilyProfileIn, owner: User = Depends(get_account_user)):
+    data = await _family_payload(owner)
+    if not data["enabled"]:
+        raise HTTPException(status_code=403, detail="Disponibile solo con il piano Family")
+    if len(data["profiles"]) >= FAMILY_MAX_PROFILES:
+        raise HTTPException(status_code=400, detail="Massimo 4 profili")
+    await db.users.insert_one({
+        "user_id": f"fam_{uuid.uuid4().hex[:12]}",
+        "email": "",
+        "name": _clean_profile_name(body.name),
+        "owner_id": owner.user_id,
+        "is_family_profile": True,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    })
+    return await _family_payload(owner)
+
+
+@api_router.patch("/family/profiles/{profile_id}")
+async def family_rename(profile_id: str, body: FamilyProfileIn, owner: User = Depends(get_account_user)):
+    data = await _family_payload(owner)
+    if not data["enabled"]:
+        raise HTTPException(status_code=403, detail="Disponibile solo con il piano Family")
+    res = await db.users.update_one(
+        {"user_id": profile_id, "owner_id": owner.user_id, "is_family_profile": True},
+        {"$set": {"name": _clean_profile_name(body.name)}},
+    )
+    if res.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Profilo non trovato")
+    return await _family_payload(owner)
 
 
 # ----- Fitting Accuracy -----
@@ -688,7 +772,7 @@ class TryOnRequest(BaseModel):
 @api_router.post("/tryon/generate")
 async def tryon_generate(req: TryOnRequest, user: User = Depends(get_current_user)):
     # Enforce subscription quota before any paid work (Nano Banana call).
-    status = await get_subscription_status(user.user_id)
+    status = await get_subscription_status(user.account_id)
     if status["is_blocked"]:
         raise HTTPException(status_code=402, detail="Quota exhausted — subscribe or buy an extra try-on.")
     # Load measurements for prompt context
@@ -799,7 +883,7 @@ async def tryon_generate(req: TryOnRequest, user: User = Depends(get_current_use
         "timestamp": created_at,
     })
     # Deduct quota after a successful generation.
-    await consume_tryon_quota(user.user_id, status)
+    await consume_tryon_quota(user.account_id, status)
     doc.pop("_id", None)
     return doc
 
@@ -1176,7 +1260,7 @@ async def outfit_generate(req: OutfitGenerateRequest, user: User = Depends(get_c
     if not (2 <= len(req.garment_ids) <= 4):
         raise HTTPException(status_code=400, detail="Seleziona da 2 a 4 capi")
     # Subscription quota — 1 outfit = 1 credit, enforced like a normal try-on
-    status = await get_subscription_status(user.user_id)
+    status = await get_subscription_status(user.account_id)
     if status["is_blocked"]:
         raise HTTPException(status_code=402, detail="Quota esaurita — sblocca o attiva un piano")
     # Load garments
@@ -1274,7 +1358,7 @@ async def outfit_generate(req: OutfitGenerateRequest, user: User = Depends(get_c
     }
     await db.outfits.insert_one(doc)
     # Consume 1 credit (same as single try-on)
-    await consume_tryon_quota(user.user_id, status)
+    await consume_tryon_quota(user.account_id, status)
     doc.pop("_id", None)
     return doc
 

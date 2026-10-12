@@ -2,6 +2,7 @@ import { Link, NavLink, useNavigate } from "react-router-dom";
 import { useAuth } from "@/lib/auth";
 import { useI18n } from "@/lib/i18n";
 import LanguageSwitcher from "@/components/LanguageSwitcher";
+import FamilySwitcher from "@/components/FamilySwitcher";
 import { SignOut, House, User as UserIcon, TShirt, Sparkle, GearSix, MagnifyingGlass } from "@phosphor-icons/react";
 
 export default function AppShell({ children }) {
@@ -53,6 +54,7 @@ export default function AppShell({ children }) {
             </NavLink>
           </nav>
           <div className="flex items-center gap-4">
+            <FamilySwitcher />
             {user?.picture && (
               <img src={user.picture} alt="" className="w-8 h-8 object-cover" style={{ borderRadius: 2 }} />
             )}

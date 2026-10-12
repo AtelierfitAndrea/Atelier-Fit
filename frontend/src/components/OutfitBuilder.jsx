@@ -1,9 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { LinkSimple, Plus, Trash, ShoppingBag, FloppyDisk, ShareNetwork, X } from "@phosphor-icons/react";
-import { api, fileUrl } from "@/lib/api";
+import { api, fileUrl, basePhotoKey } from "@/lib/api";
 
-const PERSON_KEY = "atelier_base_photo";
 
 function priceFmt(n, cur = "EUR") {
   if (n === null || n === undefined) return "—";
@@ -61,7 +60,7 @@ export default function OutfitBuilder() {
 
   const generate = async () => {
     if (!canGenerate) return;
-    const personPath = (() => { try { return localStorage.getItem(PERSON_KEY); } catch { return null; } })();
+    const personPath = (() => { try { return localStorage.getItem(basePhotoKey()); } catch { return null; } })();
     setGenerating(true); setResult(null);
     try {
       const { data } = await api.post("/outfit/generate", {
