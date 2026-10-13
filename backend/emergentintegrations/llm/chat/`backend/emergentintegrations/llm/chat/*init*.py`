@@ -1,0 +1,94 @@
+from dataclasses import dataclass, field
+from typing import List, Optional, Union, Any
+import os
+
+try:
+    from openai import OpenAI
+except ImportError:
+    OpenAI = None
+
+@dataclass
+class ImageContent:
+    image_base64: str
+    mime_type: str = "image/jpeg"
+
+@dataclass
+class FileContent:
+    file_base64: str
+    mime_type: str
+    filename: str = "file"
+
+@dataclass
+class SystemMessage:
+    text: str
+
+@dataclass
+class UserMessage:
+    text: Union[str, List] = ""[Any]
+
+@dataclass
+class AssistantMessage:
+    text: str
+
+class LlmChat:
+    def *init*(self, api_key: str = None, session_id: str = None, system_message: str = ""):
+        http://self.api_key = api_key or http://os.getenv("EMERGENT_LLM_KEY") or http://os.getenv("OPENAI_API_KEY") or ""
+        http://self.session_id = session_id
+        http://self.system_message_text = system_message
+        http://self.model = "gpt-4o-mini"
+        http://self.max_tokens = 2000
+        http://self.temperature = 0.7
+        http://self.messages: List = []
+        if system_message:
+            http://self.messages.append({"role": "system", "content": system_message})[dict]
+
+    def with_api_key(self, key: str):
+        http://self.api_key = key
+        return self
+
+    def with_model(self, provider: str, model: str):
+        http://self.model = model
+        return self
+
+    def with_max_tokens(self, max_tokens: int):
+        http://self.max_tokens = max_tokens
+        return self
+
+    def with_temperature(self, temp: float):
+        http://self.temperature = temp
+        return self
+
+    def with_system_message(self, msg: str):
+        http://self.system_message_text = msg
+        if http://self.messages and http://self.messages.get("role") == "system":
+            http://self.messages["content"] = msg
+        else:
+            http://self.messages.insert(0, {"role": "system", "content": msg})
+        return self[0]
+
+    def add_user_message(self, content: Union[str, UserMessage, List]):
+        if isinstance(content, UserMessage):
+            text = http://content.text
+        else:
+            text = content
+
+        if isinstance(text, list):
+            parts = []
+            for item in text:
+                if isinstance(item, str):
+                    http://parts.append({"type": "text", "text": item})
+                elif isinstance(item, ImageContent):
+                    http://parts.append({
+                        "type": "image_url",
+                        "image_url": {"url": f"data:{item.mime_type};base64,{item.image_base64}"}
+                    })
+                elif isinstance(item, FileContent):
+                    http://parts.append({"type": "text", "text": f"[File: {item.filename}]"})
+                else:
+                    http://parts.append({"type": "text", "text": str(item)})
+            http://self.messages.append({"role": "user", "content": parts})
+        else:
+            http://self.messages.append({"role": "user", "content": str(text)})
+        return self[Any]
+
+    def _get
