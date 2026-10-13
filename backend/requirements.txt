@@ -13,3 +13,5 @@ google-auth
 requests
 httpx
 python-multipart
+beautifulsoup4
+lxml
