@@ -53,3 +53,8 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 - POST /api/wardrobe/garments/from-url: segue i redirect di amzn.eu/amzn.to/a.co/amzn.com un passo alla volta fino ad amazon.*, estrae l'ASIN e salva il link pulito https://<host>/dp/ASIN
 - Fallback immagine Amazon (hiRes/data-old-hires). Se la lettura fallisce, salva comunque brand=Amazon, nome="Prodotto Amazon", image_path=null, is_placeholder=true + link finale
 - UI: riquadro "Foto non disponibile" + "Vedi prodotto"; selezionabile, ma la generazione dell'outfit viene bloccata con un avviso (anche dal backend, 400)
+
+## 2026-06 — Fix deploy Render (ImportError ImageContent)
+- Causa: emergentintegrations non è su PyPI pubblico → su Render serve l'indice privato. Inoltre il riferimento a litellm con #sha256 andava in conflitto con quello della libreria
+- Fix: requirements.txt riga 1 `--extra-index-url https://d33sy5i8bnduwe.cloudfront.net/simple/`; litellm URL senza #sha256; backend/.python-version 3.11.11; /app/render.yaml (rootDir backend, uvicorn server:app --port $PORT)
+- Verificato: pip install pulito senza configurazione pip, import di ImageContent OK, /api/ risponde 200

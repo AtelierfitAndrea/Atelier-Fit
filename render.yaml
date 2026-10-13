@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: atelier-fit-backend
+    runtime: python
+    rootDir: backend
+    buildCommand: pip install --upgrade pip && pip install -r requirements.txt
+    startCommand: uvicorn server:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.11
+      - key: MONGO_URL
+        sync: false
+      - key: DB_NAME
+        sync: false
+      - key: EMERGENT_LLM_KEY
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
