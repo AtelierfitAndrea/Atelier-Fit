@@ -5,6 +5,7 @@ import { api, fileUrl, basePhotoKey } from "@/lib/api";
 import { useSubscription } from "@/lib/subscription";
 import TryonCounter from "@/components/TryonCounter";
 import { CloudArrowUp, Sparkle, ArrowRight } from "@phosphor-icons/react";
+import PrivacyBox from "@/components/PrivacyBox";
 
 const CATEGORIES = [
   { k: "top", l: "Top" },
@@ -44,6 +45,7 @@ export default function Studio() {
   }, []);
 
   const changePhoto = () => {
+    if (personPath) api.delete(`/files/${personPath}`).catch(() => {});
     try { localStorage.removeItem(basePhotoKey()); } catch (_e) { /* ignore */ }
     setPersonPath(null);
     setPersonPreview(null);
@@ -96,6 +98,8 @@ export default function Studio() {
         <TryonCounter />
       </header>
 
+      <PrivacyBox testid="privacy-box-top" />
+
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         <UploadBox
           title="La tua foto"
@@ -140,6 +144,8 @@ export default function Studio() {
           <Sparkle size={56} weight="duotone" className="text-[#8C7355]" />
         </div>
       </div>
+
+      <PrivacyBox testid="privacy-box-bottom" />
 
       <section className="border hairline p-6 md:p-8 bg-white">
         <div className="grid grid-cols-1 md:grid-cols-12 gap-6">

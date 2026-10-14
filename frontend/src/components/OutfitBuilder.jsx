@@ -95,6 +95,7 @@ export default function OutfitBuilder() {
     if (!result) return;
     const url = `${window.location.origin}/share/outfit/${result.id}`;
     try {
+      await api.post(`/outfits/${result.id}/share`);
       if (navigator.share) await navigator.share({ title: "Il mio outfit Atelier Fit", url });
       else { await navigator.clipboard.writeText(url); toast.success("Link copiato"); }
     } catch (_e) { /* ignore */ }

@@ -750,12 +750,35 @@ async def upload(kind: str = Query(..., regex="^(person|garment)$"), file: Uploa
     return {"path": result["path"]}
 
 
+async def _account_owner_ids(account: User) -> set:
+    subs = await db.users.find({"owner_id": account.user_id, "is_family_profile": True}, {"_id": 0, "user_id": 1}).to_list(10)
+    return {account.user_id, *[x["user_id"] for x in subs]}
+
+
+def _path_owner(path: str) -> Optional[str]:
+    parts = path.split("/")
+    return parts[2] if len(parts) >= 4 and parts[0] == APP_NAME else None
+
+
 @api_router.get("/files/{path:path}")
-async def files_get(path: str, request: Request):
-    # Lightweight: allow any logged-in user to view files they reference.
-    # Attempt auth but don't fail hard for images.
+async def files_get(path: str, request: Request, authorization: Optional[str] = Header(None)):
+    # Private by default: only the account (and its family profiles) can view; shared outfits stay public.
+    if await db.files.find_one({"storage_path": path, "is_deleted": True}, {"_id": 1}):
+        raise HTTPException(status_code=404, detail="File non trovato")
+    if not await db.outfits.find_one({"result_path": path, "shared": True}, {"_id": 1}):
+        account = await get_account_user(request, authorization)
+        if _path_owner(path) not in await _account_owner_ids(account):
+            raise HTTPException(status_code=403, detail="Accesso negato")
     data, content_type = get_object(path)
-    return Response(content=data, media_type=content_type)
+    return Response(content=data, media_type=content_type, headers={"Cache-Control": "private, max-age=3600"})
+
+
+@api_router.delete("/files/{path:path}")
+async def files_delete(path: str, user: User = Depends(get_current_user)):
+    if _path_owner(path) != user.user_id:
+        raise HTTPException(status_code=403, detail="Accesso negato")
+    await db.files.update_many({"storage_path": path}, {"$set": {"is_deleted": True}})
+    return {"deleted": True}
 
 
 # ----- Try-on generation -----
@@ -1449,10 +1472,18 @@ async def outfit_save(outfit_id: str, req: OutfitSaveRequest, user: User = Depen
     return doc
 
 
+@api_router.post("/outfits/{outfit_id}/share")
+async def outfit_mark_shared(outfit_id: str, user: User = Depends(get_current_user)):
+    res = await db.outfits.update_one({"id": outfit_id, "user_id": user.user_id}, {"$set": {"shared": True}})
+    if res.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Outfit non trovato")
+    return {"shared": True}
+
+
 @api_router.get("/outfits/share/{outfit_id}")
 async def outfit_share_public(outfit_id: str):
     """Public read endpoint used by the share link — returns a redacted snapshot."""
-    doc = await db.outfits.find_one({"id": outfit_id}, {"_id": 0, "user_id": 0})
+    doc = await db.outfits.find_one({"id": outfit_id, "shared": True}, {"_id": 0, "user_id": 0})
     if not doc:
         raise HTTPException(status_code=404, detail="Outfit non trovato")
     return doc
