@@ -331,7 +331,7 @@ def _request_token(request: Request, authorization: Optional[str]) -> Optional[s
 def _device_label(ua: str) -> str:
     ua = ua or ""
     os_name = next((n for k, n in (("iPhone", "iPhone"), ("iPad", "iPad"), ("Android", "Android"), ("Windows", "Windows"),
-                                   ("Mac OS", "Mac"), ("Linux", "Linux")) if k in ua), "Dispositivo")
+                                   ("Mac OS", "Mac"), ("CrOS", "ChromeOS"), ("Linux", "Linux"), ("X11", "Linux")) if k in ua), "Computer")
     browser = next((n for k, n in (("Edg/", "Edge"), ("OPR/", "Opera"), ("Chrome/", "Chrome"), ("Firefox/", "Firefox"),
                                    ("Safari/", "Safari")) if k in ua), "Browser")
     return f"{browser} · {os_name}" if ua else "Dispositivo sconosciuto"

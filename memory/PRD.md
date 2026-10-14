@@ -74,3 +74,9 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 - Termini: sezione "Account personale" con la riga richiesta
 - Backend _enforce_session_limit dopo POST /api/auth/session: 1 sessione (FAMILY 4); i token vecchi vanno in revoked_sessions → 401 "session_revoked_other_device"
 - Frontend: l'interceptor mostra SessionRevokedNotice (modale gentile) → "Ho capito" porta alla home
+
+## 2026-06 — Controlli privacy + Termini (DONE, iteration_6 100%)
+- Impostazioni: "Cancella tutte le mie foto" (profilo attivo: foto base + immagini e storico di prove/outfit; restano armadio e misure). Lo storage non ha DELETE → l'oggetto viene sovrascritto vuoto + db.files is_deleted
+- Impostazioni: "Dispositivi attivi" (user_agent salvato al login) + "Esci da tutti" (cancella tutte le sessioni, anche quella corrente)
+- TermsGate: modale con casella obbligatoria; POST /api/terms/accept salva terms_version/terms_accepted_at + log terms_acceptances; TERMS_VERSION="1.0-2026-06" (cambiandola la modale ricompare)
+- /termini: bozza completa dei T&C in 14 sezioni (DA FAR RIVEDERE A UN AVVOCATO) sopra il box del metodo proprietario

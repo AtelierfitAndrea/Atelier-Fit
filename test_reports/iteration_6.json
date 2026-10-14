@@ -1,0 +1,37 @@
+{
+  "summary": "Iteration 6: validated Terms acceptance gate, Settings 'Cancella tutte le mie foto' + 'Dispositivi attivi' + 'Esci da tutti', and expanded /termini (14 sections + proprietary box last). 10/10 backend pytests pass. Frontend E2E (desktop) all green: gate blocks /dashboard until checkbox+accept, link to /termini has target=_blank, acceptance persists after reload, settings dialogs work, delete-all returns success toast, logout-all wipes sessions and redirects to '/' with /api/auth/me returning 401.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Settings · Dispositivi attivi", "issues": ["Device label fallback: Playwright/HeadlessChrome UA contains 'Linux' but device row rendered 'Chrome · Dispositivo' (OS not matched). _device_label() in server.py matches 'Linux' only if literal substring present; the real Playwright UA used in the test did not include it. Not a bug per se, but consider defaulting OS to the raw platform token when known keywords miss, so users don't see the generic 'Dispositivo' fallback."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_terms_devices_photos.py",
+    "/app/test_reports/pytest/iteration_6_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py photos_delete_all: uses get_current_user (profile-aware) correctly, so family X-Profile-Id scoping works. Confirmed in test: only sub-profile data wiped, owner data untouched.",
+    "server.py _erase_object overwrites with empty bytes via put_object and marks db.files.is_deleted=True; GET /api/files/<path> short-circuits to 404 before even checking storage. Good.",
+    "server.py terms_accept uses get_account_user — correct (account-level, not per sub-profile). Terms acceptance validates version strictly and persists in users + terms_acceptances with user_agent capture.",
+    "server.py auth_devices identifies the current session via cookie-or-Bearer header match on session_token. Works both for real cookie login and for Bearer test sessions.",
+    "server.py auth_logout_all deletes ALL sessions for the account (including current) and clears the cookie — matches spec. Also returns deleted_count.",
+    "TermsGate.jsx: condition `user.terms_version === user.terms_current_version` cleanly handles version bump (gate reappears if backend TERMS_VERSION changes). Good.",
+    "Terms.jsx: 13 <section> elements have data-testid starting with 'terms-section-' and the 4th (index 3) is tagged 'terms-personal-account' instead — total 14 numbered sections + proprietary box last. Order verified via DOM: proprietary-box is the final <main section>.",
+    "Minor: PrivacyControls.jsx DeletePhotosSection shows 'Fatto: 0 foto cancellate' when no files existed — correct but could be friendlier ('Nessuna foto da cancellare'). Non-blocking.",
+    "server.py file size: 1646 lines — approaching the 'split into modules' threshold flagged in previous reviews. Consider splitting auth/terms/devices and files/photos into separate routers."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_terms_devices_photos.py"
+  ],
+  "success_rate": {"backend": "100% (10/10)", "frontend": "100%"},
+  "test_credentials": "Created ephemeral test users TEST_fe_user_* and TEST_fe_lo_* in test_database (cleaned up after tests). For backend pytests: each test spins its own TEST_user_* + session and tears down. Reused owner cookie fam_test_1791784817 is still valid.",
+  "seed_data_creation": "All seed users/sessions/tryons/outfits/files created with TEST_ prefix inside tests and cleaned up in finally blocks. No AI generation triggered — tryons/outfits docs inserted directly via mongo with path pointers to real uploads from /api/upload only.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Terms gate: /api/auth/me returns {terms_version, terms_accepted_at, terms_current_version='1.0-2026-06'}; POST /api/terms/accept 400 on wrong version or accepted=false; 401 unauth. Devices: GET /api/auth/devices returns array of {label, signed_in_at, current}; label built from user_agent via _device_label. Logout-all: POST /api/auth/logout-all deletes all user_sessions for the account and clears cookie. Delete-all: POST /api/photos/delete-all wipes person-kind files + all tryons/outfits + their referenced paths for the ACTIVE profile (X-Profile-Id aware); garments and measurements preserved; subsequent GET /api/files/<person path> returns 404. /termini has 14 text sections (section-4 'Account personale' contains 'strettamente personale') followed by the terms-proprietary-box as the last <section>.",
+  "rca of the issue": "N/A — no bugs found."
+}
