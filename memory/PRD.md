@@ -80,3 +80,9 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 - Impostazioni: "Dispositivi attivi" (user_agent salvato al login) + "Esci da tutti" (cancella tutte le sessioni, anche quella corrente)
 - TermsGate: modale con casella obbligatoria; POST /api/terms/accept salva terms_version/terms_accepted_at + log terms_acceptances; TERMS_VERSION="1.0-2026-06" (cambiandola la modale ricompare)
 - /termini: bozza completa dei T&C in 14 sezioni (DA FAR RIVEDERE A UN AVVOCATO) sopra il box del metodo proprietario
+
+## 2026-06 — Griglia outfit multi-brand in Prova taglia (DONE)
+- "Il capo" invariato. Nuovo blocco OutfitGrid.jsx in fondo a Studio: 2x2 (Maglia/Top, Pantaloni/Bottom, Giacca, Scarpe), drag&drop/clic jpg/png/webp, da 1 a 4 capi
+- POST /api/outfit/generate-from-uploads {person_path, items:[{slot,image_path}]}: strati Scarpe→Pantaloni→Maglia→Giacca, 1 credito, salvato in outfits (source "grid"); prompt condiviso _compose_outfit (stesse regole rigide)
+- Dopo il risultato: "Incolla link per salvare in armadio" → POST /api/wardrobe/garments/from-screenshot (screenshot come foto + meta dal link; nome generico se il sito blocca)
+- Immagini di test: /app/memory/test_person.jpg, test_garment.jpg
