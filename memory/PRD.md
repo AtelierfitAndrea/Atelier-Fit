@@ -58,3 +58,8 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 - Causa: emergentintegrations non è su PyPI pubblico → su Render serve l'indice privato. Inoltre il riferimento a litellm con #sha256 andava in conflitto con quello della libreria
 - Fix: requirements.txt riga 1 `--extra-index-url https://d33sy5i8bnduwe.cloudfront.net/simple/`; litellm URL senza #sha256; backend/.python-version 3.11.11; /app/render.yaml (rootDir backend, uvicorn server:app --port $PORT)
 - Verificato: pip install pulito senza configurazione pip, import di ImageContent OK, /api/ risponde 200
+
+## 2026-06 — Pagina Termini e Condizioni (DONE, screenshot)
+- Nuova pagina pubblica /termini (pages/Terms.jsx): titolo + box con lucchetto "Tecnologia e Metodo Proprietario My Atelier Fit®" (testo esatto dell'utente), prima del footer
+- Link "Termini e Condizioni" nel footer della Landing e dell'AppShell
+- Il resto del testo dei termini lo fornirà l'utente più avanti

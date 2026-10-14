@@ -14,6 +14,7 @@ import TryOnDetail from "@/pages/TryOnDetail";
 import Settings from "@/pages/Settings";
 import AnalyzeProduct from "@/pages/AnalyzeProduct";
 import AppShell from "@/components/AppShell";
+import Terms from "@/pages/Terms";
 import "@/App.css";
 
 function Protected({ children }) {
@@ -37,6 +38,7 @@ function AppRouter() {
   return (
     <Routes>
       <Route path="/" element={<Landing />} />
+      <Route path="/termini" element={<Terms />} />
       <Route path="/dashboard" element={<Protected><Dashboard /></Protected>} />
       <Route path="/profile" element={<Protected><Profile /></Protected>} />
       <Route path="/studio" element={<Protected><Studio /></Protected>} />

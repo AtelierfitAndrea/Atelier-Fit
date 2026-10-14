@@ -76,6 +76,9 @@ export default function AppShell({ children }) {
           translate="no"
         >
           Metodo Fitting Accuracy® — Sistema brevettato per la verifica dell&apos;affidabilità dell&apos;utente — Atelier Fit Proprietary Technology
+          <div className="mt-2">
+            <Link to="/termini" className="underline hover:text-[#0A0A0A]" data-testid="shell-terms-link">Termini e Condizioni</Link>
+          </div>
         </div>
       </footer>
     </div>

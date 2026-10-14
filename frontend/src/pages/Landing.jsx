@@ -135,6 +135,7 @@ export default function Landing() {
 
       <footer id="atelier" className="px-6 md:px-12 py-10 border-t hairline flex flex-col md:flex-row items-center justify-between gap-4">
         <div className="label-caps">© Atelier Fit — Il tuo sarto digitale</div>
+        <a href="/termini" className="label-caps hover:underline" data-testid="landing-terms-link">Termini e Condizioni</a>
         <div className="label-caps">atelierfit.com</div>
       </footer>
     </div>
