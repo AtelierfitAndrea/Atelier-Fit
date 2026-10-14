@@ -3,6 +3,7 @@ import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 import { useSubscription } from "@/lib/subscription";
+import { DeletePhotosSection, DevicesSection } from "@/components/PrivacyControls";
 
 export default function Settings() {
   const { t } = useI18n();
@@ -59,6 +60,8 @@ export default function Settings() {
           <Info label={t("sub.settings.extraCredits")} value={String(status.extra_credits)} />
         </div>
       </div>
+      <DeletePhotosSection />
+      <DevicesSection />
     </div>
   );
 }

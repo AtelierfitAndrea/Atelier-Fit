@@ -3,6 +3,7 @@ import { useAuth } from "@/lib/auth";
 import { useI18n } from "@/lib/i18n";
 import LanguageSwitcher from "@/components/LanguageSwitcher";
 import FamilySwitcher from "@/components/FamilySwitcher";
+import TermsGate from "@/components/TermsGate";
 import { SignOut, House, User as UserIcon, TShirt, Sparkle, GearSix, MagnifyingGlass } from "@phosphor-icons/react";
 
 export default function AppShell({ children }) {
@@ -69,6 +70,7 @@ export default function AppShell({ children }) {
         </div>
       </header>
       <main className="max-w-[1400px] mx-auto px-6 md:px-10 py-10">{children}</main>
+      <TermsGate />
       <footer className="border-t hairline mt-16" data-testid="ip-footer">
         <div
           className="max-w-[1400px] mx-auto px-6 md:px-10 py-6 text-center"

@@ -273,6 +273,7 @@ async def auth_session(request: Request, response: Response):
         "session_token": session_token,
         "expires_at": expires_at.isoformat(),
         "created_at": datetime.now(timezone.utc).isoformat(),
+        "user_agent": (request.headers.get("user-agent") or "")[:300],
     })
     await _enforce_session_limit(user_id)
     response.set_cookie(
@@ -288,9 +289,70 @@ async def auth_session(request: Request, response: Response):
     return {"user": user_doc, "session_token": session_token}
 
 
+TERMS_VERSION = "1.0-2026-06"
+
+
 @api_router.get("/auth/me")
 async def auth_me(user: User = Depends(get_account_user)):
-    return user.model_dump()
+    doc = await db.users.find_one({"user_id": user.user_id}, {"_id": 0, "terms_version": 1, "terms_accepted_at": 1}) or {}
+    return {
+        **user.model_dump(),
+        "terms_version": doc.get("terms_version"),
+        "terms_accepted_at": doc.get("terms_accepted_at"),
+        "terms_current_version": TERMS_VERSION,
+    }
+
+
+class TermsAcceptIn(BaseModel):
+    version: str
+    accepted: bool
+
+
+@api_router.post("/terms/accept")
+async def terms_accept(body: TermsAcceptIn, request: Request, user: User = Depends(get_account_user)):
+    if not body.accepted or body.version != TERMS_VERSION:
+        raise HTTPException(status_code=400, detail="Devi accettare la versione attuale dei Termini")
+    now = datetime.now(timezone.utc).isoformat()
+    await db.users.update_one({"user_id": user.user_id}, {"$set": {"terms_version": TERMS_VERSION, "terms_accepted_at": now}})
+    await db.terms_acceptances.insert_one({
+        "user_id": user.user_id, "version": TERMS_VERSION, "accepted_at": now,
+        "user_agent": (request.headers.get("user-agent") or "")[:300],
+    })
+    return {"terms_version": TERMS_VERSION, "terms_accepted_at": now}
+
+
+def _request_token(request: Request, authorization: Optional[str]) -> Optional[str]:
+    token = request.cookies.get("session_token")
+    if not token and authorization and authorization.startswith("Bearer "):
+        token = authorization.split(" ", 1)[1]
+    return token
+
+
+def _device_label(ua: str) -> str:
+    ua = ua or ""
+    os_name = next((n for k, n in (("iPhone", "iPhone"), ("iPad", "iPad"), ("Android", "Android"), ("Windows", "Windows"),
+                                   ("Mac OS", "Mac"), ("Linux", "Linux")) if k in ua), "Dispositivo")
+    browser = next((n for k, n in (("Edg/", "Edge"), ("OPR/", "Opera"), ("Chrome/", "Chrome"), ("Firefox/", "Firefox"),
+                                   ("Safari/", "Safari")) if k in ua), "Browser")
+    return f"{browser} · {os_name}" if ua else "Dispositivo sconosciuto"
+
+
+@api_router.get("/auth/devices")
+async def auth_devices(request: Request, authorization: Optional[str] = Header(None), user: User = Depends(get_account_user)):
+    current = _request_token(request, authorization)
+    sessions = await db.user_sessions.find({"user_id": user.user_id}, {"_id": 0}).sort("created_at", -1).to_list(20)
+    return [{
+        "label": _device_label(x.get("user_agent", "")),
+        "signed_in_at": x.get("created_at"),
+        "current": x["session_token"] == current,
+    } for x in sessions]
+
+
+@api_router.post("/auth/logout-all")
+async def auth_logout_all(response: Response, user: User = Depends(get_account_user)):
+    res = await db.user_sessions.delete_many({"user_id": user.user_id})
+    response.delete_cookie("session_token", path="/", samesite="none", secure=True)
+    return {"ok": True, "signed_out": res.deleted_count}
 
 
 @api_router.post("/auth/logout")
@@ -791,11 +853,48 @@ async def files_get(path: str, request: Request, authorization: Optional[str] = 
     return Response(content=data, media_type=content_type, headers={"Cache-Control": "private, max-age=3600"})
 
 
+def _erase_object(path: str) -> None:
+    # Object storage has no delete: overwrite the content so the image is gone for good.
+    try:
+        put_object(path, b"", "application/octet-stream")
+    except Exception as e:
+        logger.warning(f"erase failed for {path}: {e}")
+
+
+async def _mark_files_deleted(paths: list, user_id: str) -> None:
+    now = datetime.now(timezone.utc).isoformat()
+    for p in paths:
+        _erase_object(p)
+        await db.files.update_one(
+            {"storage_path": p},
+            {"$set": {"is_deleted": True, "deleted_at": now}, "$setOnInsert": {"user_id": user_id}},
+            upsert=True,
+        )
+
+
+@api_router.post("/photos/delete-all")
+async def photos_delete_all(user: User = Depends(get_current_user)):
+    uid = user.user_id
+    paths = set()
+    async for f in db.files.find({"user_id": uid, "kind": "person", "is_deleted": {"$ne": True}}, {"_id": 0, "storage_path": 1}):
+        paths.add(f["storage_path"])
+    tryons = await db.tryons.find({"user_id": uid}, {"_id": 0, "person_path": 1, "result_path": 1}).to_list(5000)
+    outfits = await db.outfits.find({"user_id": uid}, {"_id": 0, "result_path": 1, "person_path": 1}).to_list(5000)
+    for d in tryons + outfits:
+        for k in ("person_path", "result_path"):
+            if d.get(k) and _path_owner(d[k]) == uid:
+                paths.add(d[k])
+    await _mark_files_deleted(sorted(paths), uid)
+    await db.tryons.delete_many({"user_id": uid})
+    await db.outfits.delete_many({"user_id": uid})
+    return {"deleted_photos": len(paths), "deleted_tryons": len(tryons), "deleted_outfits": len(outfits)}
+
+
 @api_router.delete("/files/{path:path}")
 async def files_delete(path: str, user: User = Depends(get_current_user)):
     if _path_owner(path) != user.user_id:
         raise HTTPException(status_code=403, detail="Accesso negato")
-    await db.files.update_many({"storage_path": path}, {"$set": {"is_deleted": True}})
+    await _mark_files_deleted([path], user.user_id)
     return {"deleted": True}
 
 
