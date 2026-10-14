@@ -7,6 +7,7 @@ import TryonCounter from "@/components/TryonCounter";
 import { CloudArrowUp, Sparkle, ArrowRight } from "@phosphor-icons/react";
 import PrivacyBox from "@/components/PrivacyBox";
 import AccountPersonalBox from "@/components/AccountPersonalBox";
+import OutfitGrid from "@/components/OutfitGrid";
 
 const CATEGORIES = [
   { k: "top", l: "Top" },
@@ -213,6 +214,8 @@ export default function Studio() {
           </div>
         </div>
       )}
+
+      <OutfitGrid personPath={personPath} uploadFile={uploadFile} />
     </div>
   );
 }

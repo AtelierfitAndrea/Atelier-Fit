@@ -1459,27 +1459,12 @@ class OutfitGenerateRequest(BaseModel):
     person_path: Optional[str] = None
 
 
-@api_router.post("/outfit/generate")
-async def outfit_generate(req: OutfitGenerateRequest, user: User = Depends(get_current_user)):
-    if not (2 <= len(req.garment_ids) <= 4):
-        raise HTTPException(status_code=400, detail="Seleziona da 2 a 4 capi")
-    # Subscription quota — 1 outfit = 1 credit, enforced like a normal try-on
-    status = await get_subscription_status(user.account_id)
-    if status["is_blocked"]:
-        raise HTTPException(status_code=402, detail="Quota esaurita — sblocca o attiva un piano")
-    # Load garments
-    items = []
-    for gid in req.garment_ids:
-        g = await db.garments.find_one({"id": gid, "user_id": user.user_id}, {"_id": 0})
-        if not g:
-            raise HTTPException(status_code=404, detail=f"Capo {gid} non trovato")
-        if not g.get("image_path"):
-            raise HTTPException(status_code=400, detail=f"Serve una foto reale del capo \"{g.get('name')}\" per generare l'outfit")
-        items.append(g)
-    # Order items for layering (bottoms first, outerwear last)
-    items.sort(key=lambda g: _LAYER_ORDER.get((g.get("category") or "top").lower(), 2))
+_DEFAULT_LAYER_TEXT = "  1) bottoms / dress 2) shoes 3) top / shirt 4) outerwear / jacket on top."
+
+
+async def _compose_outfit(user: User, person_path: Optional[str], items: list, layer_order_text: str = _DEFAULT_LAYER_TEXT):
+    """Layer the given garment images on the user's base photo; returns (person_path, result_path)."""
     # Resolve person photo — prefer explicit path, else latest person file for the user
-    person_path = req.person_path
     if not person_path:
         last_file = await db.files.find_one(
             {"user_id": user.user_id, "kind": "person", "is_deleted": {"$ne": True}},
@@ -1501,7 +1486,7 @@ async def outfit_generate(req: OutfitGenerateRequest, user: User = Depends(get_c
         except Exception:
             raise HTTPException(status_code=400, detail=f"Immagine del capo {g.get('name')} non disponibile")
         file_contents.append(ImageContent(base64.b64encode(g_bytes).decode("utf-8")))
-        layer_lines.append(f"IMAGE {idx} — {g.get('category','top')} — {g.get('brand','')} {g.get('name','')}")
+        layer_lines.append(f"IMAGE {idx} — {g.get('category','top')} — {g.get('brand') or ''} {g.get('name') or ''}")
 
     prompt = (
         "You are a virtual try-on image generator. Produce ONE photorealistic image.\n\n"
@@ -1516,7 +1501,7 @@ async def outfit_generate(req: OutfitGenerateRequest, user: User = Depends(get_c
         "• Exactly ONE person in the output — the same as IMAGE 1. No stock models, no extra people.\n\n"
         "WHAT TO DO:\n"
         "• Dress the SAME person with ALL the garments in images 2..N, layered correctly in this order:\n"
-        "  1) bottoms / dress 2) shoes 3) top / shirt 4) outerwear / jacket on top.\n"
+        f"{layer_order_text}\n"
         "• Preserve each garment's exact colour, pattern, cut and material from its product shot.\n"
         "• Natural fabric drape, folds and shadows that match IMAGE 1 lighting.\n\n"
         "FORBIDDEN: altering face/hands, replacing the background with a studio, cropping the head, adding items not provided."
@@ -1544,6 +1529,30 @@ async def outfit_generate(req: OutfitGenerateRequest, user: User = Depends(get_c
     out_bytes = base64.b64decode(images[0]["data"])
     result_path = f"{APP_NAME}/outfit/{user.user_id}/{uuid.uuid4().hex}.png"
     put_object(result_path, out_bytes, "image/png")
+    return person_path, result_path
+
+
+
+@api_router.post("/outfit/generate")
+async def outfit_generate(req: OutfitGenerateRequest, user: User = Depends(get_current_user)):
+    if not (2 <= len(req.garment_ids) <= 4):
+        raise HTTPException(status_code=400, detail="Seleziona da 2 a 4 capi")
+    # Subscription quota — 1 outfit = 1 credit, enforced like a normal try-on
+    status = await get_subscription_status(user.account_id)
+    if status["is_blocked"]:
+        raise HTTPException(status_code=402, detail="Quota esaurita — sblocca o attiva un piano")
+    # Load garments
+    items = []
+    for gid in req.garment_ids:
+        g = await db.garments.find_one({"id": gid, "user_id": user.user_id}, {"_id": 0})
+        if not g:
+            raise HTTPException(status_code=404, detail=f"Capo {gid} non trovato")
+        if not g.get("image_path"):
+            raise HTTPException(status_code=400, detail=f"Serve una foto reale del capo \"{g.get('name')}\" per generare l'outfit")
+        items.append(g)
+    # Order items for layering (bottoms first, outerwear last)
+    items.sort(key=lambda g: _LAYER_ORDER.get((g.get("category") or "top").lower(), 2))
+    person_path, result_path = await _compose_outfit(user, req.person_path, items)
 
     total_price = sum((g.get("price") or 0) for g in items)
     outfit_id = str(uuid.uuid4())
@@ -1567,6 +1576,96 @@ async def outfit_generate(req: OutfitGenerateRequest, user: User = Depends(get_c
     await consume_tryon_quota(user.account_id, status)
     doc.pop("_id", None)
     return doc
+
+
+_GRID_SLOTS = {
+    "shoes": ("shoes", "Scarpe"),
+    "bottom": ("bottom", "Pantaloni / Bottom"),
+    "top": ("top", "Maglia / Top"),
+    "jacket": ("outerwear", "Giacca"),
+}
+_GRID_ORDER = ["shoes", "bottom", "top", "jacket"]
+_GRID_LAYER_TEXT = "  1) shoes 2) trousers / bottoms 3) top / shirt 4) jacket / outerwear on top."
+
+
+class GridItem(BaseModel):
+    slot: str
+    image_path: str
+
+
+class GridOutfitRequest(BaseModel):
+    person_path: Optional[str] = None
+    items: List[GridItem]
+
+
+@api_router.post("/outfit/generate-from-uploads")
+async def outfit_generate_from_uploads(req: GridOutfitRequest, user: User = Depends(get_current_user)):
+    slots = {i.slot: i.image_path for i in req.items}
+    if not (1 <= len(slots) <= 4) or any(k not in _GRID_SLOTS for k in slots):
+        raise HTTPException(status_code=400, detail="Carica da 1 a 4 capi")
+    for path in [*slots.values(), req.person_path]:
+        if path and _path_owner(path) != user.user_id:
+            raise HTTPException(status_code=403, detail="Accesso negato")
+    status = await get_subscription_status(user.account_id)
+    if status["is_blocked"]:
+        raise HTTPException(status_code=402, detail="Quota esaurita — sblocca o attiva un piano")
+    items = [{
+        "slot": k, "image_path": slots[k], "category": _GRID_SLOTS[k][0], "name": _GRID_SLOTS[k][1], "brand": None,
+    } for k in _GRID_ORDER if k in slots]
+    person_path, result_path = await _compose_outfit(user, req.person_path, items, _GRID_LAYER_TEXT)
+    doc = {
+        "id": str(uuid.uuid4()),
+        "user_id": user.user_id,
+        "person_path": person_path,
+        "result_path": result_path,
+        "items": [{
+            "garment_id": None, "slot": g["slot"], "image_path": g["image_path"], "name": g["name"], "brand": None,
+            "price": None, "currency": "EUR", "category": g["category"], "source_url": None,
+        } for g in items],
+        "total_price": None,
+        "currency": "EUR",
+        "saved": False,
+        "source": "grid",
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.outfits.insert_one(doc)
+    await consume_tryon_quota(user.account_id, status)
+    doc.pop("_id", None)
+    return doc
+
+
+class GarmentFromScreenshotRequest(BaseModel):
+    image_path: str
+    url: str
+    slot: str
+
+
+@api_router.post("/wardrobe/garments/from-screenshot")
+async def wardrobe_save_from_screenshot(req: GarmentFromScreenshotRequest, user: User = Depends(get_current_user)):
+    if req.slot not in _GRID_SLOTS:
+        raise HTTPException(status_code=400, detail="Tipo di capo non valido")
+    if _path_owner(req.image_path) != user.user_id:
+        raise HTTPException(status_code=403, detail="Accesso negato")
+    url = (req.url or "").strip()
+    if not re.match(r"^https?://", url):
+        raise HTTPException(status_code=400, detail="URL non valido")
+    if _host(url) in _AMZ_SHORT_HOSTS:
+        url = await _resolve_short_url(url)
+    meta = {}
+    try:
+        html = await _fetch_page(url)
+        if html:
+            meta = await _extract_product_meta(_condense_html(html)[0], url)
+    except Exception as e:
+        logger.warning(f"screenshot garment meta failed: {e}")
+    category, label = _GRID_SLOTS[req.slot]
+    meta = {
+        **meta,
+        "product_name": meta.get("product_name") or label.split(" / ")[0],
+        "brand": meta.get("brand") or ("Amazon" if "amazon." in _host(url) else _host(url) or "Shop"),
+        "category": category,
+    }
+    return await _save_garment(user.user_id, url, meta, req.image_path)
 
 
 @api_router.get("/outfits")
