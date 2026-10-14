@@ -86,3 +86,9 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 - POST /api/outfit/generate-from-uploads {person_path, items:[{slot,image_path}]}: strati Scarpe→Pantaloni→Maglia→Giacca, 1 credito, salvato in outfits (source "grid"); prompt condiviso _compose_outfit (stesse regole rigide)
 - Dopo il risultato: "Incolla link per salvare in armadio" → POST /api/wardrobe/garments/from-screenshot (screenshot come foto + meta dal link; nome generico se il sito blocca)
 - Immagini di test: /app/memory/test_person.jpg, test_garment.jpg
+
+## 2026-06 — Prezzo totale, Riprova un capo, Foto capo manuale (DONE, iteration_8 100%)
+- OutfitGrid: dopo il risultato si cambia un solo riquadro → "RIGENERA OUTFIT CON IL CAPO NUOVO" (1 prova); i capi salvati restano legati al loro screenshot
+- Sotto l'outfit: Totale outfit (somma dei prezzi dei capi salvati) + link "Acquista"
+- Armadio: "Carica screenshot" sui capi segnaposto → PUT /api/wardrobe/garments/{id}/image
+- IncludedNote "Incluso nel tuo abbonamento Atelier Fit" accanto ai pulsanti di generazione (Single/Family/mese gratuito). La parola "Crediti" non era presente nell'interfaccia

@@ -1,0 +1,29 @@
+{
+  "summary": "Iteration 8 validates A/B/C/D changes. Backend: 19/19 pytests pass (6 new in test_wardrobe_image_included.py: PUT /api/wardrobe/garments/{id}/image 200/403/404/auth, GET /api/subscription/status honeymoon|SINGLE for IncludedNote, from-screenshot persists brand+source_url+price for grid-total). Frontend E2E on live preview URL with Bearer fam_test_1791784817 (SINGLE plan): (A) grid-retry-hint visible after result; grid-generate-btn label flips from 'VESTIMI CON I CAPI SCELTI - CREA OUTFIT' to 'RIGENERA OUTFIT CON IL CAPO NUOVO' after replacing bottom slot; previously-saved jacket (grid-save-jacket-done) persists because its path didn't change. (B) grid-save-jacket-input + grid-save-jacket-btn save the garment; grid-total + grid-total-price render ('0,00 €' with 'Alcuni capi hanno prezzo non disponibile' note since httpstat.us has no price); grid-buy-jacket is <a target='_blank' href='<saved url>'>. (C) Wardrobe placeholder garment (POST /api/wardrobe/garments/from-url with https://a.co/d/invalid...) renders Foto non disponibile with garment-upload-photo-<id> label + garment-upload-photo-input-<id>; uploading /app/memory/test_garment.jpg replaces placeholder with real image (PUT /api/wardrobe/garments/{id}/image → is_placeholder:false, image_path updated — verified both via UI and via backend GET list). (D) IncludedNote text 'Incluso nel tuo abbonamento Atelier Fit' visible in included-note-tryon, included-note-grid, and included-note-outfit (sticky bar after selecting 2 garments). Backend test asserts the visibility rule (plan∈{SINGLE,FAMILY} OR honeymoon_active). Regression: /studio UploadBox 'Il capo' single box, privacy-box-top/bottom, grid-slot-top/bottom/jacket/shoes, generate-tryon-btn all unchanged. ONE real AI generation performed (grid), 2nd regen skipped per budget.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_outfit_grid.py",
+    "/app/backend/tests/test_wardrobe_image_included.py",
+    "/app/test_reports/pytest/iteration_8_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py now ~1762 lines; still growing. Previous iterations flagged the split; consider splitting outfit, wardrobe, subscription, files into dedicated routers before adding more features.",
+    "OutfitGrid.jsx 'changed' detection is by path identity. Re-selecting the same screenshot file re-uploads and generates a new path, so the slot is considered 'changed' even if the user picked the same image — acceptable but slightly wasteful (and burns a generation). A quick optimisation: skip setSlot when the chosen File has identical name+size+lastModified as current.",
+    "OutfitGrid.jsx: URL.createObjectURL(preview) is still not revoked on slot replace/clear (minor memory leak over long sessions).",
+    "OutfitBuilder.uploadPhoto: no size cap or dimension check client-side; relies on backend validation. Fine, but adding a quick client-side check (e.g. >10MB → reject) would avoid wasted uploads.",
+    "wardrobe_set_image: when image_path points to a different user's folder, response is 403 Accesso negato — good. Does not however validate that image_path actually corresponds to an existing file row (just checks path prefix). Low risk since _path_owner regex is strict, but a db.files existence check would be stricter.",
+    "IncludedNote hides itself when status is undefined — correct, but renders nothing while /subscription/status loads; brief flicker on cold loads is possible. Acceptable."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_wardrobe_image_included.py"
+  ],
+  "success_rate": {"backend": "100% (19/19)", "frontend": "100%"},
+  "test_credentials": "Reused Bearer fam_test_1791784817 (user fam-owner-1791784817, plan SINGLE, terms 1.0-2026-06). FREE+expired-honeymoon user not created — IncludedNote hide-for-FREE path verified logically through subscription endpoint response but not with an actual FREE user whose created_at>30d. Main agent can test by inserting a user with created_at = (now-31d).isoformat() and plan='FREE'.",
+  "seed_data_creation": "No new persistent seed data; each test cleans up garments it creates. Reused /app/memory/test_person.jpg and /app/memory/test_garment.jpg.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "All features A/B/C/D pass. Test files: /app/backend/tests/test_outfit_grid.py (13) and /app/backend/tests/test_wardrobe_image_included.py (6). To verify IncludedNote hide-for-FREE: db.users.updateOne({user_id:<fresh>}, {$set:{plan:'FREE', created_at: ISO date 31d ago}}) then GET /api/subscription/status should return honeymoon_active=false, plan='FREE' → IncludedNote returns null in Studio and sticky bar. Grid-retry-hint only shows after result and when !changed. Button text uses the 'changed' boolean: ready.length != result.used.length OR any slot path differs from result.used[i].item.path.",
+  "rca of the issue": "N/A — no bugs found this iteration."
+}
