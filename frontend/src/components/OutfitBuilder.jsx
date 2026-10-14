@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { LinkSimple, Plus, Trash, ShoppingBag, FloppyDisk, ShareNetwork, X } from "@phosphor-icons/react";
 import { api, fileUrl, basePhotoKey } from "@/lib/api";
+import IncludedNote from "@/components/IncludedNote";
 
 
 function priceFmt(n, cur = "EUR") {
@@ -18,6 +19,25 @@ export default function OutfitBuilder() {
   const [generating, setGenerating] = useState(false);
   const [result, setResult] = useState(null);
   const [savedName, setSavedName] = useState("");
+
+  const [uploadingId, setUploadingId] = useState(null);
+  const uploadPhoto = async (id, file) => {
+    if (!file) return;
+    if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) { toast.error("Formato non supportato: usa jpg, png o webp"); return; }
+    setUploadingId(id);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const { data: up } = await api.post("/upload?kind=garment", fd, { headers: { "Content-Type": "multipart/form-data" } });
+      const { data: g } = await api.put(`/wardrobe/garments/${id}/image`, { image_path: up.path });
+      setGarments((list) => list.map((x) => (x.id === id ? g : x)));
+      toast.success("Foto del capo aggiunta");
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || "Caricamento non riuscito");
+    } finally {
+      setUploadingId(null);
+    }
+  };
 
   const load = async () => {
     try { const { data } = await api.get("/wardrobe/garments"); setGarments(data || []); }
@@ -164,6 +184,17 @@ export default function OutfitBuilder() {
                     <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-neutral-100 text-neutral-500" data-testid={`garment-placeholder-${g.id}`}>
                       <ShoppingBag size={32} weight="duotone" />
                       <span className="label-caps">Foto non disponibile</span>
+                      <label
+                        onClick={(e) => e.stopPropagation()}
+                        className="mt-1 cursor-pointer bg-[#0A0A0A] text-white px-3 py-2 label-caps hover:bg-neutral-800"
+                        data-testid={`garment-upload-photo-${g.id}`}
+                      >
+                        {uploadingId === g.id ? "Caricamento…" : "Carica screenshot"}
+                        <input type="file" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" className="hidden"
+                          disabled={uploadingId === g.id}
+                          onChange={(e) => { uploadPhoto(g.id, e.target.files?.[0]); e.target.value = ""; }}
+                          data-testid={`garment-upload-photo-input-${g.id}`} />
+                      </label>
                     </div>
                   )}
                 </div>
@@ -193,6 +224,7 @@ export default function OutfitBuilder() {
           <div>
             <div className="label-caps !text-white/70">Outfit in costruzione</div>
             <div className="font-serif text-lg">{selected.length} {selected.length === 1 ? "capo" : "capi"} · {priceFmt(total)}</div>
+            <IncludedNote light testid="included-note-outfit" />
           </div>
           <button
             onClick={generate}

@@ -1444,6 +1444,23 @@ async def wardrobe_list_garments(user: User = Depends(get_current_user)):
     return items
 
 
+class GarmentImageRequest(BaseModel):
+    image_path: str
+
+
+@api_router.put("/wardrobe/garments/{garment_id}/image")
+async def wardrobe_set_image(garment_id: str, req: GarmentImageRequest, user: User = Depends(get_current_user)):
+    if _path_owner(req.image_path) != user.user_id:
+        raise HTTPException(status_code=403, detail="Accesso negato")
+    res = await db.garments.update_one(
+        {"id": garment_id, "user_id": user.user_id},
+        {"$set": {"image_path": req.image_path, "is_placeholder": False}},
+    )
+    if res.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Capo non trovato")
+    return await db.garments.find_one({"id": garment_id}, {"_id": 0})
+
+
 @api_router.delete("/wardrobe/garments/{garment_id}")
 async def wardrobe_delete_garment(garment_id: str, user: User = Depends(get_current_user)):
     res = await db.garments.delete_one({"id": garment_id, "user_id": user.user_id})

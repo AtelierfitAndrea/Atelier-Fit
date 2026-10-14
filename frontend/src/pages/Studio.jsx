@@ -8,6 +8,7 @@ import { CloudArrowUp, Sparkle, ArrowRight } from "@phosphor-icons/react";
 import PrivacyBox from "@/components/PrivacyBox";
 import AccountPersonalBox from "@/components/AccountPersonalBox";
 import OutfitGrid from "@/components/OutfitGrid";
+import IncludedNote from "@/components/IncludedNote";
 
 const CATEGORIES = [
   { k: "top", l: "Top" },
@@ -191,7 +192,8 @@ export default function Studio() {
               data-testid="chosen-size-input"
             />
           </div>
-          <div className="md:col-span-3 flex items-end">
+          <div className="md:col-span-3 flex flex-col justify-end gap-2">
+            <IncludedNote testid="included-note-tryon" />
             <button
               onClick={generate}
               disabled={generating || !personPath || !garmentPath}
