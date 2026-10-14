@@ -16,6 +16,13 @@ export default function Terms() {
           Termini e Condizioni
         </h1>
 
+        <section className="mt-12" data-testid="terms-personal-account">
+          <h2 className="font-bold text-lg">Account personale</h2>
+          <p className="mt-2 text-sm md:text-base leading-relaxed text-neutral-700">
+            L&apos;account Atelier Fit è strettamente personale e non cedibile a terzi.
+          </p>
+        </section>
+
         <section
           className="mt-16 border-2 border-[#0A0A0A] bg-white p-6 md:p-8 flex gap-5"
           data-testid="terms-proprietary-box"

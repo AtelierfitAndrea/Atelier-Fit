@@ -6,6 +6,7 @@ import { useSubscription } from "@/lib/subscription";
 import TryonCounter from "@/components/TryonCounter";
 import { CloudArrowUp, Sparkle, ArrowRight } from "@phosphor-icons/react";
 import PrivacyBox from "@/components/PrivacyBox";
+import AccountPersonalBox from "@/components/AccountPersonalBox";
 
 const CATEGORIES = [
   { k: "top", l: "Top" },
@@ -145,7 +146,10 @@ export default function Studio() {
         </div>
       </div>
 
-      <PrivacyBox testid="privacy-box-bottom" />
+      <div className="space-y-3">
+        <PrivacyBox testid="privacy-box-bottom" />
+        <AccountPersonalBox />
+      </div>
 
       <section className="border hairline p-6 md:p-8 bg-white">
         <div className="grid grid-cols-1 md:grid-cols-12 gap-6">

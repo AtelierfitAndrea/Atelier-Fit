@@ -124,6 +124,8 @@ async def get_account_user(
         raise HTTPException(status_code=401, detail="Not authenticated")
     sess = await db.user_sessions.find_one({"session_token": token}, {"_id": 0})
     if not sess:
+        if await db.revoked_sessions.find_one({"session_token": token}, {"_id": 1}):
+            raise HTTPException(status_code=401, detail="session_revoked_other_device")
         raise HTTPException(status_code=401, detail="Invalid session")
     expires_at = sess["expires_at"]
     if isinstance(expires_at, str):
@@ -217,6 +219,21 @@ async def startup():
 
 
 # ----- Auth routes -----
+async def _enforce_session_limit(user_id: str) -> None:
+    # Personal account: 1 device (FAMILY: up to 4). Newest login wins, older devices are signed out.
+    user_doc = await db.users.find_one({"user_id": user_id}, {"_id": 0, "plan": 1}) or {}
+    limit = 4 if user_doc.get("plan") == "FAMILY" else 1
+    sessions = await db.user_sessions.find({"user_id": user_id}, {"_id": 0, "session_token": 1}).sort("created_at", -1).to_list(100)
+    old = [x["session_token"] for x in sessions[limit:]]
+    if not old:
+        return
+    now = datetime.now(timezone.utc).isoformat()
+    await db.revoked_sessions.insert_many([
+        {"session_token": t, "user_id": user_id, "reason": "other_device", "revoked_at": now} for t in old
+    ])
+    await db.user_sessions.delete_many({"session_token": {"$in": old}})
+
+
 @api_router.post("/auth/session")
 async def auth_session(request: Request, response: Response):
     body = await request.json()
@@ -257,6 +274,7 @@ async def auth_session(request: Request, response: Response):
         "expires_at": expires_at.isoformat(),
         "created_at": datetime.now(timezone.utc).isoformat(),
     })
+    await _enforce_session_limit(user_id)
     response.set_cookie(
         key="session_token",
         value=session_token,

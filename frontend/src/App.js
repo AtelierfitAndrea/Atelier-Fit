@@ -15,6 +15,7 @@ import Settings from "@/pages/Settings";
 import AnalyzeProduct from "@/pages/AnalyzeProduct";
 import AppShell from "@/components/AppShell";
 import Terms from "@/pages/Terms";
+import SessionRevokedNotice from "@/components/SessionRevokedNotice";
 import "@/App.css";
 
 function Protected({ children }) {
@@ -59,6 +60,7 @@ export default function App() {
             <AppRouter />
             <PaywallModal />
             <Toaster position="top-center" theme="light" />
+            <SessionRevokedNotice />
           </BrowserRouter>
         </SubscriptionProvider>
       </AuthProvider>

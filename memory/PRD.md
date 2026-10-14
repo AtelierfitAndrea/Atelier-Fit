@@ -68,3 +68,9 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 - Landing: slogan "Zero stress, solo puro shopping" - by Andrea M. e testo principale (testo esatto dell'utente) grandi e centrati; foto Fit score spostata sotto
 - PrivacyBox (#E8F5E9, lucchetto) sopra e sotto l'upload in Studio. Testo VERITIERO scelto dall'utente (l'originale "non le salviamo sui server" era falso → rischio GDPR)
 - Per rendere vero il testo: GET /api/files/{path} privato (account + profili family); outfit pubblici solo se shared=True (POST /api/outfits/{id}/share); DELETE /api/files/{path} → is_deleted (404); "Cambia foto" elimina la vecchia foto base
+
+## 2026-06 — Account personale e non cedibile (DONE, unit test + screenshot)
+- AccountPersonalBox (verde, persona+lucchetto) sotto il box privacy in fondo alla zona upload di Studio, con la frase sul motivo
+- Termini: sezione "Account personale" con la riga richiesta
+- Backend _enforce_session_limit dopo POST /api/auth/session: 1 sessione (FAMILY 4); i token vecchi vanno in revoked_sessions → 401 "session_revoked_other_device"
+- Frontend: l'interceptor mostra SessionRevokedNotice (modale gentile) → "Ho capito" porta alla home

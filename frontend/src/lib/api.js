@@ -33,3 +33,16 @@ api.interceptors.request.use((config) => {
   if (p) config.headers["X-Profile-Id"] = p;
   return config;
 });
+
+export const SESSION_REVOKED_KEY = "atelier_session_revoked";
+
+api.interceptors.response.use(
+  (r) => r,
+  (error) => {
+    if (error?.response?.status === 401 && error.response.data?.detail === "session_revoked_other_device") {
+      try { localStorage.setItem(SESSION_REVOKED_KEY, "1"); } catch (_e) { /* ignore */ }
+      window.dispatchEvent(new Event("atelier-session-revoked"));
+    }
+    return Promise.reject(error);
+  }
+);
