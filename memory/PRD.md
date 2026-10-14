@@ -63,3 +63,8 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 - Nuova pagina pubblica /termini (pages/Terms.jsx): titolo + box con lucchetto "Tecnologia e Metodo Proprietario My Atelier Fit®" (testo esatto dell'utente), prima del footer
 - Link "Termini e Condizioni" nel footer della Landing e dell'AppShell
 - Il resto del testo dei termini lo fornirà l'utente più avanti
+
+## 2026-06 — Home slogan + Box privacy (DONE, iteration_5 100%)
+- Landing: slogan "Zero stress, solo puro shopping" - by Andrea M. e testo principale (testo esatto dell'utente) grandi e centrati; foto Fit score spostata sotto
+- PrivacyBox (#E8F5E9, lucchetto) sopra e sotto l'upload in Studio. Testo VERITIERO scelto dall'utente (l'originale "non le salviamo sui server" era falso → rischio GDPR)
+- Per rendere vero il testo: GET /api/files/{path} privato (account + profili family); outfit pubblici solo se shared=True (POST /api/outfits/{id}/share); DELETE /api/files/{path} → is_deleted (404); "Cambia foto" elimina la vecchia foto base
