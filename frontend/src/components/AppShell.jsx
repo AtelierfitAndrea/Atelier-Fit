@@ -12,7 +12,7 @@ export default function AppShell({ children }) {
   const navigate = useNavigate();
 
   const navItem = ({ isActive }) =>
-    `flex items-center gap-2 px-3 py-2 label-caps transition-colors duration-200 ${
+    `flex items-center gap-2 px-2 py-2 label-caps whitespace-nowrap transition-colors duration-200 ${
       isActive ? "!text-white border-b border-white" : "!text-neutral-400 hover:!text-white"
     }`;
 
@@ -30,7 +30,7 @@ export default function AppShell({ children }) {
               <LanguageSwitcher />
             </div>
           </div>
-          <nav className="hidden md:flex items-center gap-6" translate="no">
+          <nav className="hidden md:flex items-center gap-3 xl:gap-5" translate="no">
             <NavLink to="/dashboard" className={navItem} data-testid="nav-dashboard">
               <House size={14} weight="duotone" /> {t("nav.home")}
             </NavLink>

@@ -46,14 +46,17 @@ export default function CalcolaTagliaBox() {
     try {
       await api.post("/profile/quick-estimate", { height_cm: Number(m.height_cm), weight_kg: Number(m.weight_kg), gender: m.gender });
       return true;
-    } catch { return false; }
+    } catch (e) {
+      toast.error(e?.response?.data?.detail?.[0]?.msg || e?.response?.data?.detail || "Non riusciamo a stimare le tue misure, riprova");
+      return false;
+    }
   };
 
   const analyze = async () => {
     if (!url.trim()) { toast.error("Incolla prima il link del prodotto"); return; }
     if (!validHW()) return;
     setWorking(true); setResult(null); setNeedsFallback(false); setReason("");
-    await persistMeasurements();
+    if (!(await persistMeasurements())) { setWorking(false); return; }
     try {
       const { data } = await api.post("/product/analyze", { url });
       handleResult(data);

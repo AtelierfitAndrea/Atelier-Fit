@@ -49,7 +49,7 @@ export default function FittingAccuracy({ nonce = 0 }) {
         </div>
         <span
           className={`label-caps inline-flex items-center gap-2 px-3 py-1 border hairline ${
-            reliable ? "bg-emerald-700 text-white border-emerald-700" : "bg-[#8C7355] text-white border-[#8C7355]"
+            reliable ? "bg-emerald-700 !text-white border-emerald-700" : "bg-[#8C7355] !text-white border-[#8C7355]"
           }`}
           data-testid="accuracy-reliable"
         >

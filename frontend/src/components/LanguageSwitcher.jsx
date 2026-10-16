@@ -20,7 +20,7 @@ export default function LanguageSwitcher() {
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        className="inline-flex items-center gap-2 border hairline bg-white px-3 py-2 label-caps hover:border-[#0A0A0A] transition-colors"
+        className="inline-flex items-center gap-2 border hairline bg-transparent px-3 py-2 label-caps !text-current hover:border-current transition-colors"
         data-testid="lang-switcher-trigger"
         translate="no"
       >
@@ -30,7 +30,7 @@ export default function LanguageSwitcher() {
       </button>
       {open && (
         <div
-          className="absolute right-0 top-full mt-2 z-40 min-w-[128px] bg-white border hairline shadow-lg"
+          className="absolute right-0 top-full mt-2 z-40 min-w-[128px] bg-white border border-neutral-200 shadow-lg"
           data-testid="lang-switcher-menu"
         >
           {LANGS.map((l) => (
@@ -38,7 +38,7 @@ export default function LanguageSwitcher() {
               key={l.code}
               onClick={() => { setLang(l.code); setOpen(false); }}
               className={`w-full flex items-center gap-3 px-3 py-2 label-caps transition-colors ${
-                l.code === lang ? "bg-[#0A0A0A] text-white" : "hover:bg-neutral-50"
+                l.code === lang ? "bg-[#0A0A0A] !text-white" : "!text-[#0A0A0A] hover:bg-neutral-100"
               }`}
               data-testid={`lang-option-${l.code}`}
               translate="no"

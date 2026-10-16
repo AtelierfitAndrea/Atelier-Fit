@@ -99,3 +99,9 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 - "Precisione stimata fino al 98%/85% · stima AI", "±2cm stima AI"
 - Cifratura Fernet (DATA_ENCRYPTION_KEY in backend/.env — DEVE esserci anche in produzione; se la chiave si perde, i dati non sono più leggibili): measurements.enc, weight_history.weight_enc, foto del calcolo .bin cifrata e mai restituita. Migrazione all'avvio
 - Gli endpoint B2B e il pubblico /api/fitting-accuracy/{id} non espongono più il peso né altri dati personali
+
+## 2026-06 — Home senza metro + logo MY ATELIER (DONE, iteration_10 + fix)
+- Box "Calcola taglia" (Dashboard): solo Link + Altezza + Peso + Uomo/Donna → POST /api/profile/quick-estimate (body_measure.estimate_from_height_weight; tiene le misure da foto/metro se altezza, sesso e peso (±5 kg) non cambiano) → /product/analyze
+- Armadio: sezione chiusa "Verifica con metro (opzionale)" (TapeCalibration.jsx, PUT con method "tape")
+- Logo: public/logo.png (originale), logo-trim.png, logo-white.png (trasparente), favicon.ico/png, apple-touch-icon. Classe .theme-dark (#000) per Landing + header dell'app; le pagine interne restano chiare
+- In attesa: versione bianca "estiva" del logo

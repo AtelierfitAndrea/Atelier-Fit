@@ -1,0 +1,43 @@
+{
+  "summary": "Iteration 10 tested the new height+weight+sex 'Calcola taglia' box, the tape calibration in /wardrobe, the MY ATELIER logo, the black public page and app header, the favicons and the regressions. Backend: 16/17 pytests passed (tests/test_quick_estimate.py). The one failure (index.html favicon links) came from the frontend dev server serving a stale index.html; after I restarted the frontend it serves the links. Covered: 422 on height 100/240, weight 30/160, gender unisex or missing; 401 without auth; method 'height_weight' with chest/waist/hips/shoulder/inseam and brand_sizes stored and shown by GET; kept_precise=true for a tape user with the same height and sex (circumferences untouched, weight updated); a height change re-estimates the values; logo.png, logo-white.png, favicon.ico/png and apple-touch-icon return 200. Frontend on the live URL: the dashboard box has only url/height/weight/male/female (no chest/waist/hips/shoulder testids or labels). All 6 validation toasts work (no URL, empty height, height 250, empty weight, weight 30, no sex) and send no API calls. A valid CTA sends POST quick-estimate {182,75,male} -> 200, then POST product/analyze -> 200. The H&M link showed calcola-fallback; the pasted size chart then gave calcola-result 'L' with an LLM reason, no crash. /wardrobe: tape-calibration is closed by default, the toggle opens 4 prefilled fields, save shows the 'Misure verificate' toast, and the values persist after reload (101/85.5/99/47). The dashboard estimate then kept those tape values (the LLM reason cited 101/85.5). Public '/': #000 background, hero-logo /logo-white.png 576px wide and exactly centered, white slogan/main text, white CTA with black text, brand-logo in the header, no grey box, favicon links present. The app header is #000 with the white logo; nav is white when active and #A3A3A3 otherwise. Profile auto-measure, Studio and Settings load.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/profile/quick-estimate", "issue": "When kept_precise is true, weight_kg is updated but brand_sizes/precision stay from the tape/photo run. This is acceptable by design, but a weight change of e.g. 20kg is silently ignored for the circumferences. Consider re-estimating when the weight differs by more than ~5kg."},
+      {"endpoint": "POST /api/profile/quick-estimate", "issue": "The frontend swallows quick-estimate errors (persistMeasurements returns false and analyze continues), so if it fails the brand comparison runs on stale measurements with no feedback."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "FittingAccuracy badge (Profile)", "issue": "'AFFIDABILE: SÌ' badge: the .label-caps colour (rgb 82,82,82) overrides text-white on bg-emerald-700, so it is nearly unreadable. Same root cause as the iteration_9 CTA bug. Use !text-white.", "selector": "[data-testid=accuracy-reliable]", "priority": "MEDIUM"},
+      {"component": "Language switcher in the black header", "issue": "The trigger has bg-white with text colour #A3A3A3 (theme-dark --vfit-muted applied through .label-caps), so the 'IT' label is grey on white with low contrast. It also looks like a white box on the black bar. Make it transparent with white text, or keep it white with black text.", "selector": "[data-testid=lang-switcher-trigger]", "priority": "MEDIUM"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "App header (1920px)", "issues": ["Nav labels wrap onto two lines ('PROVA|TAGLIA', 'ANALISI|PRODOTTO', 'IL TUO|ARMADIO' are 50px tall vs 33px for the others). Add whitespace-nowrap or reduce the tracking/gap.", "On one initial load of /profile the header briefly rendered without the shell-brand logo and with a different layout, which settled after a few seconds. Possibly a loading-state header; check it."]},
+      {"screen": "Public '/'", "issues": ["The logo PNG has a grey gradient fill, so it reads as light grey rather than pure white on #000. This is fine if intended."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_quick_estimate.py", "/app/test_reports/pytest/pytest_results.xml"],
+  "action_items": [
+    "Fix the contrast on [data-testid=accuracy-reliable]: .label-caps overrides text-white, so use !text-white",
+    "Fix the lang-switcher-trigger contrast in the dark header (grey text on a white box)",
+    "Prevent the header nav labels from wrapping (whitespace-nowrap)",
+    "Before redeploying, run the production build so the new index.html favicon links are included. The dev server needed a frontend restart before it served them.",
+    "Optional: show a toast or retry if quick-estimate fails, instead of silently continuing"
+  ],
+  "critical_code_review_comments": [
+    "The .label-caps global colour keeps overriding Tailwind text-* utilities (3rd occurrence). Fix it at the root: put .label-caps in @layer components, or remove its colour.",
+    "CalcolaTagliaBox number inputs: onChange casts to Number. Fine, but typing '1' briefly passes no validation until the value is complete. OK.",
+    "public/logo-trim.png is unused (104KB); remove it",
+    "server.py is now 1884 lines; split the measurements/estimate routes into a router"
+  ],
+  "updated_files": ["/app/backend/tests/test_quick_estimate.py"],
+  "success_rate": {"backend": "100% (16/16 functional; 1 stale index.html check fixed by a frontend restart)", "frontend": "92% (all requested flows pass; 2 contrast issues, 1 nav-wrap issue)"},
+  "test_credentials": "fam_test_1791784817 used read-only. The temporary users TEST_qe_* and TEST_ui_qe were created in Mongo and deleted afterwards.",
+  "seed_data_creation": "None left behind",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Run: pytest tests/test_quick_estimate.py (it creates and cleans its own temp user via mongosh). For toast checks use page.locator('[data-sonner-toast]', has_text=...) and never remove toast DOM nodes manually (that crashes React with an insertBefore error). The H&M productpage.1234 URL always gives the fallback; paste a chart text to reach calcola-result.",
+  "rca of the issue": "Contrast: .label-caps in index.css sets color: var(--vfit-muted) outside the Tailwind layers, so it beats text-white. In .theme-dark --vfit-muted is #A3A3A3, which gives the grey-on-white lang switcher. Favicon links missing in the served HTML: the CRA dev server caches public/index.html, so a restart was needed."
+}

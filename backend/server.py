@@ -426,6 +426,7 @@ async def quick_estimate(body: QuickEstimateIn, user: User = Depends(get_current
     # Photo or tape measurements are more precise: keep them unless height/sex changed.
     keep = (current.get("method") in ("auto_photo", "tape")
             and abs((current.get("height_cm") or 0) - body.height_cm) < 1
+            and abs((current.get("weight_kg") or body.weight_kg) - body.weight_kg) <= 5
             and current.get("gender") == body.gender)
     if not keep:
         est = estimate_from_height_weight(body.height_cm, body.weight_kg, body.gender)
