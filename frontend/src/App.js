@@ -15,6 +15,7 @@ import Settings from "@/pages/Settings";
 import AnalyzeProduct from "@/pages/AnalyzeProduct";
 import AppShell from "@/components/AppShell";
 import Terms from "@/pages/Terms";
+import ComingSoon, { useOwnerAccess } from "@/components/ComingSoon";
 import SessionRevokedNotice from "@/components/SessionRevokedNotice";
 import "@/App.css";
 
@@ -33,6 +34,9 @@ function Protected({ children }) {
 
 function AppRouter() {
   const location = useLocation();
+  const isOwner = useOwnerAccess();
+  if (!isOwner && location.pathname !== "/termini") return <ComingSoon />;
+  if (location.pathname.startsWith("/atelier")) return <Navigate to="/" replace />;
   if (location.hash?.includes("session_id=")) {
     return <AuthCallback />;
   }
