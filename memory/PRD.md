@@ -105,3 +105,8 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 - Armadio: sezione chiusa "Verifica con metro (opzionale)" (TapeCalibration.jsx, PUT con method "tape")
 - Logo: public/logo.png (originale), logo-trim.png, logo-white.png (trasparente), favicon.ico/png, apple-touch-icon. Classe .theme-dark (#000) per Landing + header dell'app; le pagine interne restano chiare
 - In attesa: versione bianca "estiva" del logo
+
+## 2026-06 — Calcola taglia solo con foto (DONE, iteration_11 100%)
+- Box Dashboard: solo Link + "Carica una foto intera" + testo dell'utente + "CALCOLA CON LA MIA FOTO"
+- La foto viene analizzata nel browser (MediaPipe) → POST /api/profile/auto-measure. L'altezza salvata fa da scala; se manca compare una sola volta "Quanto sei alto?" (viene salvata). Peso e sesso dal profilo se presenti; senza sesso precisione -10 (media dei modelli uomo/donna, tabelle unisex = uomo). Profilo: forget_weight=true quando si sceglie "Preferisco non indicare il peso"
+- /api/profile/quick-estimate resta nel backend ma non è più usato dal box

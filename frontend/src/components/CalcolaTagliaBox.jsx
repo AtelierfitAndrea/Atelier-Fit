@@ -12,6 +12,13 @@ export default function CalcolaTagliaBox() {
   const [savedHeight, setSavedHeight] = useState(null);
   const [askHeight, setAskHeight] = useState(false);
   const [height, setHeight] = useState("");
+  const [working, setWorking] = useState(false);
+  const [result, setResult] = useState(null);
+  const [needsFallback, setNeedsFallback] = useState(false);
+  const [reason, setReason] = useState("");
+  const [chartText, setChartText] = useState("");
+  const [textLoading, setTextLoading] = useState(false);
+  const [importing, setImporting] = useState(false);
   const photoRef = useRef();
 
   useEffect(() => {

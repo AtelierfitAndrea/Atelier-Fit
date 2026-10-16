@@ -6,7 +6,7 @@ import subprocess
 import pytest
 import requests
 
-BASE_URL = os.environ.get("REACT_APP_BACKEND_URL").rstrip("/")
+BASE_URL = (os.environ.get("REACT_APP_BACKEND_URL") or [l.split("=", 1)[1].strip() for l in open("/app/frontend/.env") if l.startswith("REACT_APP_BACKEND_URL=")][0]).rstrip("/")
 TOKEN = "fam_test_1791784817"
 UID = "fam-owner-1791784817"
 FEATS = {"shoulder_r": 0.24, "chest_r": 0.17, "waist_r": 0.14, "hips_r": 0.20, "inseam_r": 0.45}
@@ -29,6 +29,8 @@ def _post(s, weight=60, height=165, gender="female", feats=None):
     params = {"height_cm": height, "gender": gender, "features": json.dumps(feats or FEATS)}
     if weight is not None:
         params["weight_kg"] = weight
+    else:
+        params["forget_weight"] = "true"  # omitted weight now falls back to the saved one
     with open(PHOTO, "rb") as f:
         return s.post(f"{BASE_URL}/api/profile/auto-measure", params=params, files={"photo": ("p.jpg", f, "image/jpeg")})
 

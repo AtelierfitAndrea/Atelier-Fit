@@ -1,0 +1,29 @@
+{
+  "summary": "Iteration 11 tested the photo-based 'Calcola taglia da link' box (no height/weight/sex fields). CRITICAL BUG FOUND AND FIXED: CalcolaTagliaBox.jsx had lost 7 useState declarations (working, result, needsFallback, reason, chartText, textLoading, importing), so /dashboard crashed with the runtime error 'working is not defined' and the whole page went blank. I re-added them and then all flows passed. Backend: 22/22 pytests passed (new tests/test_calcola_photo.py with 11 tests, plus test_auto_measure_encryption.py updated for the new saved-weight fallback). Covered: need_height 400 when no height is saved; the saved height is reused; precision is 75 without weight or gender, 88 with weight and no gender, 98 with gender; saved weight and gender are reused; forget_weight removes the weight (precision 85); height 100 gives 422; the photo is stored encrypted in db.files; 401 without auth. Frontend on the live URL: the box is white (rgb 255,255,255) with dark text (rgb 10,10,10); it has url-input, photo-btn, hidden photo-input, the exact help text and the CTA 'CALCOLA CON LA MIA FOTO'; there are no calcola-m-*, calcola-gender-* or ALTEZZA/PESO/SESSO labels. The no-URL and no-photo toasts send no API calls. Photo select, remove and change (file chooser) work. The saved-height user (fam_test) sees no height question; the CTA sends auto-measure (no height_cm) and then product/analyze, which gives calcola-fallback for the H&M test URL. A new user sees 'Quanto sei alto?'; height 90 gives a toast; 170 continues (auto-measure with height_cm=170, then analyze). GET measurements then returns height 170, gender null, precision 75. After a reload the question is not asked again. The garment photo gives the friendly toast 'Non vediamo bene la tua figura...' with no API call and no crash. Profile AutoMeasure: 'Preferisco non indicare il peso' sends forget_weight=true and gives 85%; with weight it gives 98%. Public '/' is still black with hero-logo /logo-white.png.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "CalcolaTagliaBox", "issue": "FIXED by the testing agent: missing useState declarations (working, result, needsFallback, reason, chartText, textLoading, importing) caused a ReferenceError at render, crashing /dashboard", "selector": "[data-testid=calcola-taglia-box]", "priority": "CRITICAL"}
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": ["/app/backend/tests/test_calcola_photo.py", "/app/backend/tests/test_auto_measure_encryption.py", "/app/test_reports/pytest/pytest_results.xml"],
+  "action_items": [
+    "Review the re-added state declarations in CalcolaTagliaBox.jsx (lines 15-21) and run lint/no-undef after large component edits",
+    "Optional: when gender is unknown, show the reduced precision to the user in the Calcola box (precision is stored but not displayed there)"
+  ],
+  "critical_code_review_comments": [
+    "CalcolaTagliaBox lost state hooks during the refactor. The CRA dev overlay/eslint no-undef should have caught it, so check the build warnings after edits.",
+    "If auto-measure fails with an error other than need_height, analyze stops (good). need_height after the client already believed a height was saved only sets askHeight, with no toast. Acceptable.",
+    "server.py is ~1895 lines; split the measurement routes into a router"
+  ],
+  "updated_files": ["/app/frontend/src/components/CalcolaTagliaBox.jsx", "/app/backend/tests/test_calcola_photo.py", "/app/backend/tests/test_auto_measure_encryption.py"],
+  "success_rate": {"backend": "100% (22/22)", "frontend": "100% after the critical fix (0% before: dashboard crashed)"},
+  "test_credentials": "fam_test_1791784817 (test_auto_measure_encryption sets its measurements to 165/female, weight forgotten then 60). The temporary users TEST_cp_* and TEST_ui_cp were created in Mongo and deleted.",
+  "seed_data_creation": "None left behind",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Run: pytest tests/test_calcola_photo.py tests/test_auto_measure_encryption.py. MediaPipe pose works in headless Chromium (about 1s). The H&M productpage.1234 URL quickly returns the fallback, so you avoid Gemini runs.",
+  "rca of the issue": "Dashboard crash: during the refactor that removed the height/weight/sex fields, the useState lines for working/result/needsFallback/reason/chartText/textLoading/importing were deleted, but the JSX and handlers still referenced them. The render threw 'working is not defined' (CTA disabled={working}). Fix: re-declare the 7 states."
+}
