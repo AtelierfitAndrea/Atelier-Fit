@@ -1,62 +1,60 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { LinkSimple, Ruler, Sparkle, CheckCircle, CloudArrowUp, Warning, ArrowRight } from "@phosphor-icons/react";
+import { LinkSimple, Camera, Sparkle, CheckCircle, CloudArrowUp, Warning, ArrowRight, X } from "@phosphor-icons/react";
 import { api } from "@/lib/api";
-
-const FIELDS = [
-  { k: "height_cm", l: "Altezza", u: "cm", ph: "es. 182" },
-  { k: "weight_kg", l: "Peso", u: "kg", ph: "es. 75" },
-];
+import { extractBodyRatios } from "@/lib/pose";
 
 export default function CalcolaTagliaBox() {
   const navigate = useNavigate();
   const [url, setUrl] = useState("");
-  const [m, setM] = useState({ height_cm: "", weight_kg: "", gender: "" });
-  const [result, setResult] = useState(null);
-  const [working, setWorking] = useState(false);
-  const [needsFallback, setNeedsFallback] = useState(false);
-  const [reason, setReason] = useState("");
-  const [chartText, setChartText] = useState("");
-  const [textLoading, setTextLoading] = useState(false);
-  const [importing, setImporting] = useState(false);
+  const [photo, setPhoto] = useState(null);
+  const [savedHeight, setSavedHeight] = useState(null);
+  const [askHeight, setAskHeight] = useState(false);
+  const [height, setHeight] = useState("");
+  const photoRef = useRef();
 
   useEffect(() => {
-    (async () => {
-      try {
-        const { data } = await api.get("/profile/measurements");
-        if (data) setM((prev) => ({
-          height_cm: data.height_cm ?? prev.height_cm,
-          weight_kg: data.weight_kg ?? prev.weight_kg,
-          gender: ["female", "male"].includes(data.gender) ? data.gender : prev.gender,
-        }));
-      } catch (_e) { /* ignore */ }
-    })();
+    api.get("/profile/measurements").then(({ data }) => setSavedHeight(data?.height_cm || null)).catch(() => {});
   }, []);
 
-  const validHW = () => {
-    if (!(Number(m.height_cm) >= 120 && Number(m.height_cm) <= 230)) { toast.error("Inserisci l'altezza in cm (120-230)"); return false; }
-    if (!(Number(m.weight_kg) >= 40 && Number(m.weight_kg) <= 150)) { toast.error("Inserisci il peso in kg (40-150)"); return false; }
-    if (!m.gender) { toast.error("Scegli Uomo o Donna"); return false; }
-    return true;
+  const pickPhoto = (f) => {
+    if (!f) return;
+    if (!["image/jpeg", "image/png", "image/webp"].includes(f.type)) { toast.error("Usa una foto jpg, png o webp"); return; }
+    setPhoto({ file: f, preview: URL.createObjectURL(f) });
   };
 
-  // Estimate the body from height + weight + sex (no tape) before comparing with the brand chart.
-  const persistMeasurements = async () => {
+  // Body measured from the photo (in the browser); height from the profile is the only scale.
+  const measureFromPhoto = async () => {
+    let ratios;
+    try { ratios = await extractBodyRatios(photo.file); }
+    catch (e) {
+      toast.error(e.message === "not_full_body" ? "Serve la foto intera: dalla testa ai piedi, ben visibili." : "Non vediamo bene la tua figura. Riprova con una foto più luminosa, frontale e intera.");
+      return false;
+    }
+    const params = new URLSearchParams({ features: JSON.stringify(ratios) });
+    if (askHeight) params.set("height_cm", String(Number(height)));
+    const fd = new FormData();
+    fd.append("photo", photo.file);
     try {
-      await api.post("/profile/quick-estimate", { height_cm: Number(m.height_cm), weight_kg: Number(m.weight_kg), gender: m.gender });
+      const { data } = await api.post(`/profile/auto-measure?${params}`, fd, { headers: { "Content-Type": "multipart/form-data" } });
+      setSavedHeight(data.measurements.height_cm);
+      setAskHeight(false);
       return true;
     } catch (e) {
-      toast.error(e?.response?.data?.detail?.[0]?.msg || e?.response?.data?.detail || "Non riusciamo a stimare le tue misure, riprova");
+      if (e?.response?.data?.detail === "need_height") { setAskHeight(true); return false; }
+      toast.error(e?.response?.data?.detail || "Calcolo non riuscito");
       return false;
     }
   };
 
   const analyze = async () => {
     if (!url.trim()) { toast.error("Incolla prima il link del prodotto"); return; }
-    if (!validHW()) return;
+    if (!photo) { toast.error("Carica una tua foto intera"); return; }
+    if (!savedHeight && !askHeight) { setAskHeight(true); return; }
+    if (askHeight && !(Number(height) >= 120 && Number(height) <= 230)) { toast.error("Inserisci la tua altezza in cm (120-230)"); return; }
     setWorking(true); setResult(null); setNeedsFallback(false); setReason("");
-    if (!(await persistMeasurements())) { setWorking(false); return; }
+    if (!(await measureFromPhoto())) { setWorking(false); return; }
     try {
       const { data } = await api.post("/product/analyze", { url });
       handleResult(data);
@@ -68,7 +66,6 @@ export default function CalcolaTagliaBox() {
   const analyzeText = async () => {
     if (!chartText.trim()) { toast.error("Incolla la tabella taglie"); return; }
     setTextLoading(true); setResult(null);
-    await persistMeasurements();
     try {
       const { data } = await api.post("/product/analyze-text", { chart_text: chartText, url });
       handleResult(data, true);
@@ -80,7 +77,6 @@ export default function CalcolaTagliaBox() {
   const uploadScreenshot = async (file) => {
     if (!file) return;
     setTextLoading(true); setResult(null);
-    await persistMeasurements();
     try {
       const fd = new FormData(); fd.append("file", file);
       const q = url ? `?url=${encodeURIComponent(url)}` : "";
@@ -159,41 +155,45 @@ export default function CalcolaTagliaBox() {
         />
       </div>
 
-      <div className="mt-6 grid grid-cols-2 md:grid-cols-3 gap-3">
-        {FIELDS.map((f) => (
-          <label key={f.k} className="block">
-            <span className="label-caps block mb-2">{f.l}</span>
-            <div className="flex items-center border hairline focus-within:border-[#0A0A0A] transition-colors">
-              <input
-                type="number"
-                inputMode="numeric"
-                value={m[f.k] ?? ""}
-                onChange={(e) => setM((prev) => ({ ...prev, [f.k]: e.target.value === "" ? "" : Number(e.target.value) }))}
-                placeholder={f.ph}
-                className="w-full px-3 py-3 bg-transparent outline-none font-serif text-lg"
-                data-testid={`calcola-m-${f.k}`}
-              />
-              <span className="px-3 text-xs text-neutral-500">{f.u}</span>
-            </div>
-          </label>
-        ))}
-        <div className="col-span-2 md:col-span-1">
-          <span className="label-caps block mb-2">Sesso</span>
-          <div className="flex">
-            {[["male", "Uomo"], ["female", "Donna"]].map(([k, l]) => (
-              <button key={k} type="button" onClick={() => setM((prev) => ({ ...prev, gender: k }))}
-                className={`flex-1 py-3 label-caps border hairline transition-colors ${m.gender === k ? "bg-[#0A0A0A] !text-white border-[#0A0A0A]" : "bg-white hover:border-[#0A0A0A]"}`}
-                data-testid={`calcola-gender-${k}`}>{l}</button>
-            ))}
+      <div className="mt-6">
+        <span className="label-caps block mb-2">La tua foto intera</span>
+        <input ref={photoRef} type="file" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" className="hidden"
+          onChange={(e) => { pickPhoto(e.target.files?.[0]); e.target.value = ""; }} data-testid="calcola-photo-input" />
+        {photo ? (
+          <div className="flex items-center gap-4" data-testid="calcola-photo-selected">
+            <img src={photo.preview} alt="" className="w-16 h-20 object-cover border hairline" />
+            <button type="button" onClick={() => photoRef.current?.click()} className="btn-ghost" data-testid="calcola-photo-change">Cambia foto</button>
+            <button type="button" onClick={() => setPhoto(null)} className="text-neutral-500 hover:text-[#0A0A0A]" aria-label="Rimuovi" data-testid="calcola-photo-remove"><X size={16} /></button>
           </div>
-        </div>
+        ) : (
+          <button type="button" onClick={() => photoRef.current?.click()}
+            onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); pickPhoto(e.dataTransfer.files?.[0]); }}
+            className="w-full upload-zone py-6 flex items-center justify-center gap-3 label-caps !text-[#0A0A0A]" data-testid="calcola-photo-btn">
+            <CloudArrowUp size={20} /> Carica una foto intera
+          </button>
+        )}
       </div>
 
-      <div className="mt-6 flex items-center gap-3 flex-wrap">
+      {askHeight && (
+        <div className="mt-5 flex flex-wrap items-center gap-3 fade-up" data-testid="calcola-ask-height">
+          <span className="text-sm">Quanto sei alto?</span>
+          <div className="flex items-center border hairline focus-within:border-[#0A0A0A] w-36">
+            <input type="number" inputMode="numeric" value={height} onChange={(e) => setHeight(e.target.value)} placeholder="es. 182"
+              className="w-full px-3 py-2 bg-transparent outline-none font-serif text-lg" data-testid="calcola-height-input" />
+            <span className="px-3 text-xs text-neutral-500">cm</span>
+          </div>
+          <span className="text-xs text-neutral-500">Te lo chiediamo solo questa volta.</span>
+        </div>
+      )}
+
+      <p className="mt-5 text-sm text-neutral-700" data-testid="calcola-help">
+        Carica una tua foto intera e incolla il link del prodotto, noi ti diciamo la taglia perfetta. Niente metro, niente misure.
+      </p>
+
+      <div className="mt-5">
         <button onClick={analyze} disabled={working} className="btn-primary" data-testid="calcola-cta">
-          {working ? "Leggo il sito..." : (<><Ruler size={14} weight="bold" /> Calcola la mia taglia</>)}
+          {working ? "Calcolo in corso..." : (<><Camera size={14} weight="bold" /> CALCOLA CON LA MIA FOTO</>)}
         </button>
-        <span className="text-xs text-neutral-500">Niente metro: stimiamo le tue misure da altezza, peso e sesso e le confrontiamo con la tabella del brand.</span>
       </div>
 
       {needsFallback && (

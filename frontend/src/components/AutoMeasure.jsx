@@ -89,6 +89,7 @@ export default function AutoMeasure({ initial = {}, onDone }) {
       catch (e) { toast.error(POSE_ERRORS[e.message] || "Analisi della foto non riuscita, riprova"); return; }
       const params = new URLSearchParams({ height_cm: String(Number(height)), gender, features: JSON.stringify(ratios) });
       if (useWeight) params.set("weight_kg", String(weight));
+      else params.set("forget_weight", "true");
       const fd = new FormData();
       fd.append("photo", file);
       const { data } = await api.post(`/profile/auto-measure?${params}`, fd, { headers: { "Content-Type": "multipart/form-data" } });

@@ -447,16 +447,25 @@ class FeatureRatios(BaseModel):
 @api_router.post("/profile/auto-measure")
 async def auto_measure(
     photo: UploadFile = File(...),
-    height_cm: float = Query(..., ge=120, le=230),
-    gender: str = Query(..., regex="^(female|male)$"),
     features: str = Query(...),
+    height_cm: Optional[float] = Query(None, ge=120, le=230),
+    gender: Optional[str] = Query(None, regex="^(female|male)$"),
     weight_kg: Optional[float] = Query(None, ge=40, le=150),
+    forget_weight: bool = Query(False),
     user: User = Depends(get_current_user),
 ):
     try:
         ratios = FeatureRatios(**pyjson.loads(features)).model_dump()
     except Exception:
         raise HTTPException(status_code=400, detail="Non riusciamo a leggere la tua figura: riprova con una foto intera, frontale, ben illuminata")
+    saved_m = await _get_measurements(user.user_id)
+    # Missing values fall back to the ones already saved in the profile.
+    height_cm = height_cm or saved_m.get("height_cm")
+    if not height_cm:
+        raise HTTPException(status_code=400, detail="need_height")
+    if weight_kg is None and not forget_weight:
+        weight_kg = saved_m.get("weight_kg")
+    gender = gender or (saved_m.get("gender") if saved_m.get("gender") in ("female", "male") else None)
     raw = await photo.read()
     if len(raw) > 15 * 1024 * 1024:
         raise HTTPException(status_code=413, detail="Foto troppo grande (max 15 MB)")
@@ -476,12 +485,13 @@ async def auto_measure(
         "id": str(uuid.uuid4()), "user_id": user.user_id, "kind": "measure", "storage_path": path,
         "encrypted": True, "is_deleted": False, "created_at": now,
     })
-    precision = 98 if weight_kg else 85
+    precision = (98 if weight_kg else 85) - (0 if gender else 10)
+    new_weight = weight_kg is not None and weight_kg != saved_m.get("weight_kg")
     saved = await _set_measurements(user.user_id, {
         **est, "height_cm": height_cm, "weight_kg": weight_kg, "gender": gender,
         "brand_sizes": sizes, "precision": precision, "method": "auto_photo",
-    }, now, remove=() if weight_kg else ("weight_kg",))
-    if weight_kg:
+    }, now, remove=("weight_kg",) if forget_weight else ())
+    if new_weight:
         await db.weight_history.insert_one({
             "id": str(uuid.uuid4()), "user_id": user.user_id, "weight_enc": _enc(weight_kg),
             "note": "Calcolo automatico", "recorded_at": now,

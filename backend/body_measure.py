@@ -50,7 +50,11 @@ def estimate_from_height_weight(height_cm: float, weight_kg: float, gender: str)
 
 
 def estimate(features: dict, height_cm: float, weight_kg: Optional[float], gender: str) -> dict:
-    g = "male" if gender == "male" else "female"
+    if gender not in ("male", "female"):
+        # Sex unknown: average of both models.
+        a, b = estimate(features, height_cm, weight_kg, "female"), estimate(features, height_cm, weight_kg, "male")
+        return {k: round((a[k] + b[k]) / 2) for k in a}
+    g = gender
     bmi = weight_kg / ((height_cm / 100) ** 2) if weight_kg else None
     adj = _clamp(((bmi or 22) - 22) * 0.012, -0.08, 0.15)
 
@@ -81,7 +85,7 @@ def _size_for(bounds: list, value: float, idx: int, offset: int) -> str:
 
 
 def brand_sizes(m: dict, gender: str) -> list:
-    g = "male" if gender == "male" else "female"
+    g = "female" if gender == "female" else "male"  # unknown sex -> unisex sizing follows men's tables
     order = [r[0] for r in _BASE[g]]
     out = []
     for brand, off in BRANDS.items():
