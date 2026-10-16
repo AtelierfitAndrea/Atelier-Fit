@@ -14,9 +14,13 @@ export function useOwnerAccess() {
 
 export default function ComingSoon() {
   return (
-    <div className="theme-dark min-h-screen flex flex-col items-center justify-center px-6" translate="no" data-testid="coming-soon">
-      <img src="/logo-white.png" alt="MY ATELIER" className="w-full max-w-2xl h-auto fade-up" data-testid="coming-soon-logo" />
-      <p className="mt-12 label-caps tracking-[0.4em] !text-white/80 fade-up" data-testid="coming-soon-text">Stiamo arrivando</p>
+    <div
+      style={{ background: "#000", height: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", color: "white" }}
+      translate="no"
+      data-testid="coming-soon"
+    >
+      <h1 style={{ letterSpacing: "8px", fontSize: "32px", fontWeight: 300 }} data-testid="coming-soon-title">MY ATELIER</h1>
+      <p style={{ marginTop: "20px", letterSpacing: "3px", opacity: 0.8 }} data-testid="coming-soon-text">MY ATELIER .APP - COMING SOON</p>
     </div>
   );
 }

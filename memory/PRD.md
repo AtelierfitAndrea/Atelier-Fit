@@ -124,3 +124,4 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 ## 2026-06 — Pagina "lavori in corso" (DONE, iteration_14 100%)
 - ComingSoon.jsx: nero, logo grande, "Stiamo arrivando", nessun login. Si vede su tutte le pagine (anche da loggati) tranne /termini, finché non si apre ?atelier=2026 o /atelier → localStorage atelier_owner="1" (protezione leggera, non vera sicurezza)
 - Da fare quando si va live: togliere il blocco (una riga in App.js)
+- 2026-06: la pagina coming soon usa il design dell'utente (titolo testuale "MY ATELIER" + "MY ATELIER .APP - COMING SOON", niente logo immagine). Redeploy avviato
