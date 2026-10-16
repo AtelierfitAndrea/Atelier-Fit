@@ -5,6 +5,7 @@ export function useOwnerAccess() {
   const params = new URLSearchParams(window.location.search);
   const viaLink = window.location.pathname.startsWith("/atelier") || params.get("atelier") === "2026";
   try {
+    if (params.get("atelier") === "esci") { localStorage.removeItem(OWNER_KEY); return false; }
     if (viaLink) localStorage.setItem(OWNER_KEY, "1");
     return viaLink || localStorage.getItem(OWNER_KEY) === "1";
   } catch {
