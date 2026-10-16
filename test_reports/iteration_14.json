@@ -1,0 +1,33 @@
+{
+  "summary": "Frontend test of the 'coming soon' owner gate (ComingSoon.jsx useOwnerAccess + App.js AppRouter). All 7 requested scenarios PASS in isolated fresh browser contexts.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/termini", "issues": ["Header/body brand still says 'Atelier Fit' while the rest of the site uses 'MY ATELIER' (existing before this change, cosmetic only)"]}
+    ]
+  },
+  "verified": [
+    "Fresh context: /, /dashboard, /studio, /profile -> coming-soon shown, logo src=/logo-white.png, text 'Stiamo arrivando' (shown uppercase by CSS), bg rgb(0,0,0), 0 buttons, no header, no login text",
+    "Fresh context + session cookie fam_test_1791784817 (/api/auth/me 200): /dashboard -> coming-soon",
+    "/termini without owner flag -> Terms page renders, no coming-soon",
+    "/?atelier=2026 -> Landing (hero-slogan) shown, localStorage atelier_owner='1'; going to / without the param and reloading -> still Landing",
+    "/atelier in fresh context -> redirected to / with Landing shown, flag stored, still remembered on later visits",
+    "Owner flag + cookie: /dashboard (calcola-taglia-box present), /studio (studio-root), /profile (profile-root), /wardrobe (wardrobe-root) all render with the AppShell nav",
+    "/?atelier=2025 in fresh context -> coming-soon, localStorage stays unset"
+  ],
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "This is a soft gate only: everything is decided on the client, so anyone can set the flag from devtools and the /api endpoints are still reachable. That is acceptable for the agreed purpose but worth knowing.",
+    "useOwnerAccess runs on every render and reads/writes localStorage directly. That works, but a useMemo/useState initialiser would avoid writing to localStorage again on each render.",
+    "OAuth callback (hash session_id) is checked after the gate, so a visitor without the flag who comes back from Google login sees coming-soon. That matches the agreed behaviour (no login for visitors)."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A", "frontend": "100%"},
+  "seed_data_creation": "None. Used existing session fam_test_1791784817 (user fam-owner-1791784817, terms accepted).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Owner gate: localStorage atelier_owner='1' or open /?atelier=2026 or /atelier. To test, create new contexts with browser.new_context() so each starts with no localStorage. /termini is exempt from the gate."
+}

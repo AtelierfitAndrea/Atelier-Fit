@@ -120,3 +120,7 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 ## 2026-06 — Tabelle salvate + Foto una volta sola (DONE, iteration_13 100% + fix) + Redeploy
 - saved_size_charts {account_id, brand_key, group sopra/sotto/scarpe, host_keys, size_chart, fit_notes, saved_at}: salvate da analyze-screenshot/analyze-text; usate quando il link è bloccato o la pagina è piccola (<3000 caratteri, prima della chiamata LLM) o non ha la tabella. Il gruppo viene da categoria o parole dell'URL. I marketplace (amazon, zalando…) non vengono mai abbinati per host. La chiave del brand è il dominio registrabile
 - UI: "Tabella X salvata dal tuo screenshot" + "Usa uno screenshot nuovo"; "Usiamo la tua ultima foto intera (del gg/mm)" + "Cambia foto" (measurements.photo_measured_at)
+
+## 2026-06 — Pagina "lavori in corso" (DONE, iteration_14 100%)
+- ComingSoon.jsx: nero, logo grande, "Stiamo arrivando", nessun login. Si vede su tutte le pagine (anche da loggati) tranne /termini, finché non si apre ?atelier=2026 o /atelier → localStorage atelier_owner="1" (protezione leggera, non vera sicurezza)
+- Da fare quando si va live: togliere il blocco (una riga in App.js)
