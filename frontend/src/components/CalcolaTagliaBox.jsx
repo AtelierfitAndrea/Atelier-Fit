@@ -50,6 +50,7 @@ export default function CalcolaTagliaBox() {
       const { data } = await api.post(`/profile/auto-measure?${params}`, fd, { headers: { "Content-Type": "multipart/form-data" } });
       setSavedHeight(data.measurements.height_cm);
       setLastPhotoAt(data.measurements.photo_measured_at || new Date().toISOString());
+      setPhoto(null);
       setAskHeight(false);
       return true;
     } catch (e) {

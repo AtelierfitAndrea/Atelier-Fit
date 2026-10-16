@@ -1345,8 +1345,11 @@ def _brand_key(url: str = "", brand: Optional[str] = None) -> Optional[str]:
     if brand:
         return re.sub(r"[^a-z0-9]", "", brand.lower()) or None
     host = _host(url) if url and re.match(r"^https?://", url) else ""
-    parts = [p for p in host.split(".") if p not in ("www", "www2", "shop", "it", "com", "co", "uk", "eu", "de", "fr", "es")]
-    return parts[0] if parts else None
+    labels = host.split(".")
+    # Registrable label: zara.com -> zara, m.zalando.it -> zalando, shop.brand.co.uk -> brand
+    if len(labels) >= 3 and labels[-2] in ("co", "com", "org", "net") and len(labels[-1]) == 2:
+        labels = labels[:-1]
+    return labels[-2] if len(labels) >= 2 else None
 
 
 async def _remember_chart(user: User, url: Optional[str], result: dict) -> None:
@@ -1367,13 +1370,23 @@ async def _remember_chart(user: User, url: Optional[str], result: dict) -> None:
     )
 
 
+_GROUP_WORDS = {
+    "scarpe": ("scarp", "shoe", "sneaker", "stivale", "boot", "sandal", "mocassin", "decollet"),
+    "sotto": ("pantalon", "trouser", "jean", "gonna", "skirt", "short", "legging", "bermuda", "pant"),
+}
+
+
+def _group_from_url(url: str) -> str:
+    u = url.lower()
+    return next((g for g, words in _GROUP_WORDS.items() if any(w in u for w in words)), "sopra")
+
+
 async def _analyze_with_saved_chart(user: User, url: str, m_doc: dict, category: Optional[str] = None) -> Optional[dict]:
     hk = _brand_key(url)
     if not hk or hk in _MARKETPLACES:
         return None
-    q = {"account_id": user.account_id, "$or": [{"brand_key": hk}, {"host_keys": hk}]}
-    if category and _CAT_GROUP.get(category.lower()):
-        q["group"] = _CAT_GROUP[category.lower()]
+    group = _CAT_GROUP.get((category or "").lower()) or _group_from_url(url)
+    q = {"account_id": user.account_id, "$or": [{"brand_key": hk}, {"host_keys": hk}], "group": group}
     saved = await db.saved_size_charts.find_one(q, {"_id": 0}, sort=[("saved_at", -1)])
     if not saved:
         return None
@@ -1394,17 +1407,21 @@ async def product_analyze(req: AnalyzeUrlRequest, user: User = Depends(get_curre
     if not any(m_doc.get(k) for k in ("chest_cm", "waist_cm", "hips_cm", "height_cm")):
         raise HTTPException(status_code=400, detail="Aggiungi prima almeno torace, vita, fianchi o altezza nel profilo.")
     html = await _fetch_page(url)
-    if not html:
-        saved = await _analyze_with_saved_chart(user, url, m_doc)
-        if saved and saved.get("ok"):
-            return saved
-        return {"ok": False, "needs_screenshot": True, "reason": "Il sito ha bloccato la lettura automatica. Incolla la tabella taglie o carica uno screenshot."}
-    condensed, product_image = _condense_html(html)
-    result = await _call_llm_for_analysis(condensed, None, m_doc, hint_url=url)
-    if not result.get("ok"):
-        saved = await _analyze_with_saved_chart(user, url, m_doc, result.get("category"))
-        if saved and saved.get("ok"):
-            result = saved
+    condensed, product_image = _condense_html(html) if html else ("", None)
+    result = None
+    if len(condensed) < 3000:
+        # Blocked or bot page: try the chart saved from the user's screenshot first (1 LLM call).
+        result = await _analyze_with_saved_chart(user, url, m_doc)
+        if not (result and result.get("ok")):
+            result = None
+            if not html:
+                return {"ok": False, "needs_screenshot": True, "reason": "Il sito ha bloccato la lettura automatica. Incolla la tabella taglie o carica uno screenshot."}
+    if result is None:
+        result = await _call_llm_for_analysis(condensed, None, m_doc, hint_url=url)
+        if not result.get("ok"):
+            saved = await _analyze_with_saved_chart(user, url, m_doc, result.get("category"))
+            if saved and saved.get("ok"):
+                result = saved
     if product_image:
         result["product_image_url"] = product_image
     # Log the analysis for audit / brand reporting

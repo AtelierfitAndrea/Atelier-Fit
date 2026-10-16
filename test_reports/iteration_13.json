@@ -1,0 +1,36 @@
+{
+  "summary": "Tested saved size charts per account + 'photo once' in CalcolaTagliaBox. All requested flows PASS. fam_test: calcola-last-photo-text 'Usiamo la tua ultima foto intera (del 16/10)'; CTA with only URL -> only POST /api/product/analyze (no auto-measure, no toast). Zara giacca URL -> calcola-fallback; PIL PNG chart uploaded -> result size S; mongo saved_size_charts doc {account_id fam-owner-1791784817, brand_key 'zara', group 'sopra', host_keys ['zara'], size_chart S/M/L}. Zara maglia URL -> calcola-result with calcola-saved-chart-text 'Tabella Zara salvata dal tuo screenshot'; calcola-new-screenshot-btn shows calcola-fallback. Cambia foto -> file chooser -> calcola-photo-selected -> CTA calls POST /api/profile/auto-measure then /api/product/analyze (analyze mocked to save LLM); photo_measured_at updated. New user without measurements: calcola-photo-btn shown, toast 'Carica una tua foto intera', no API calls. Backend: analyze-text saves chart for its account; in-process checks: other account's chart not used, amazon URL returns None even with host_keys ['amazon'] doc. Regression: 'Niente metro' present, /studio and /profile load. ~6 LLM calls used.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "_brand_key", "issue": "Only strips www/www2/shop/it/... prefixes. Hosts like m.zalando.it -> 'm', mobile/en/store subdomains give generic keys; a host_key 'm' saved from m.brandA.com would match any m.brandB.com link (wrong brand chart). Use registrable domain label (second-level) instead of first label."},
+      {"endpoint": "POST /api/product/analyze (blocked branch)", "issue": "_analyze_with_saved_chart called without category -> returns the most recent chart of ANY group (e.g., a saved 'scarpe' chart could be used for a jacket). Consider inferring group from URL/keywords or preferring 'sopra'/asking."},
+      {"endpoint": "POST /api/product/analyze", "issue": "Zara returns HTTP 200 bot page (2.2KB), so 'blocked' path is not hit; each analyze costs 2 LLM calls (page + saved chart). Consider checking saved chart first when condensed page is tiny/has no size table. Also the saved-chart result in the blocked branch is not logged to product_analyses."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Dashboard CalcolaTagliaBox", "issues": ["Help text 'Carica una tua foto intera e incolla il link...' still shown when the last photo is reused; could say just 'Incolla il link'.", "After a new photo is measured, photo state is not cleared, so each subsequent CTA re-uploads and re-measures the photo (minor)."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_saved_size_charts.py", "/app/test_reports/pytest/pytest_saved_charts.xml"],
+  "action_items": [
+    "Optional: make _brand_key use the registrable domain label (avoid 'm'/'en'/'store' keys)",
+    "Optional: avoid cross-group chart reuse in blocked branch when category unknown",
+    "Optional: adapt help text when last photo is reused"
+  ],
+  "critical_code_review_comments": [
+    "server.py is ~1950 lines; split product/size-chart logic into a module",
+    "_brand_key subdomain handling (see backend minor)",
+    "Group-agnostic saved chart lookup when category unknown"
+  ],
+  "updated_files": ["/app/backend/tests/test_saved_size_charts.py"],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "Bearer/cookie session_token=fam_test_1791784817 (fam-owner-1791784817). TEST_ users created via mongo and cleaned up.",
+  "seed_data_creation": "fam-owner-1791784817 now has a saved_size_charts doc for Zara (sopra) and photo_measured_at=2026-10-16T07:11 (auto-measure re-run with test_fullbody.jpg).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Zara URLs return a 200 bot page, so analyze -> LLM on page -> not ok -> saved chart lookup (2 LLM calls). Use page.route mock for /api/product/analyze to save LLM budget. Generated chart PNG at /tmp/zara_chart.png (PIL)."
+}

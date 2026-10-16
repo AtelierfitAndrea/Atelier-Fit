@@ -116,3 +116,7 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 
 ## 2026-06 — Fallback screenshot della tabella taglie (DONE, iteration_12 100%)
 - Se il sito blocca, non trova la tabella o va in errore → compare in automatico il riquadro "Non riusciamo a leggere la tabella da questo link - Carica screenshot tabella taglie" (upload jpg/png/webp; il testo incollato resta come opzione secondaria). Nessun messaggio d'errore per l'utente
+
+## 2026-06 — Tabelle salvate + Foto una volta sola (DONE, iteration_13 100% + fix) + Redeploy
+- saved_size_charts {account_id, brand_key, group sopra/sotto/scarpe, host_keys, size_chart, fit_notes, saved_at}: salvate da analyze-screenshot/analyze-text; usate quando il link è bloccato o la pagina è piccola (<3000 caratteri, prima della chiamata LLM) o non ha la tabella. Il gruppo viene da categoria o parole dell'URL. I marketplace (amazon, zalando…) non vengono mai abbinati per host. La chiave del brand è il dominio registrabile
+- UI: "Tabella X salvata dal tuo screenshot" + "Usa uno screenshot nuovo"; "Usiamo la tua ultima foto intera (del gg/mm)" + "Cambia foto" (measurements.photo_measured_at)
