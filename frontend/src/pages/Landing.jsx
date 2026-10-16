@@ -18,13 +18,10 @@ export default function Landing() {
   };
 
   return (
-    <div className="min-h-screen bg-[#FDFDFD] text-[#0A0A0A] font-sans">
+    <div className="theme-dark min-h-screen font-sans">
       {/* Top bar */}
       <header className="flex items-center justify-between px-6 md:px-12 py-6 border-b hairline">
-        <div className="flex items-center gap-2">
-          <div className="w-6 h-6 bg-[#0A0A0A]" />
-          <span className="font-serif text-xl tracking-tight" data-testid="brand-logo">Atelier Fit</span>
-        </div>
+        <img src="/logo-white.png" alt="MY ATELIER" className="h-9 w-auto" data-testid="brand-logo" />
         <nav className="hidden md:flex items-center gap-10 label-caps">
           <a href="#method" className="hover:text-[#8C7355]">Metodo</a>
           <a href="#studio" className="hover:text-[#8C7355]">Il tuo armadio</a>
@@ -38,12 +35,13 @@ export default function Landing() {
       {/* Hero */}
       <section className="relative px-6 md:px-12 py-16 md:py-24" translate="no">
         <div className="max-w-5xl mx-auto text-center flex flex-col items-center">
+          <img src="/logo-white.png" alt="MY ATELIER" className="w-full max-w-xl h-auto mb-14 fade-up" data-testid="hero-logo" />
           <div className="label-caps mb-6" data-testid="hero-eyebrow">N°01 — Il tuo sarto digitale</div>
           <h1 className="font-serif text-4xl sm:text-5xl lg:text-7xl leading-[1] tracking-tighter" data-testid="hero-slogan">
             <em className="italic text-[#8C7355]">&quot;Zero stress, solo puro shopping&quot;</em>
           </h1>
           <div className="mt-4 label-caps text-neutral-500" data-testid="hero-slogan-author">- by Andrea M.</div>
-          <p className="mt-10 max-w-4xl font-serif text-2xl md:text-3xl lg:text-4xl leading-snug text-[#0A0A0A]" data-testid="hero-main-text">
+          <p className="mt-10 max-w-4xl font-serif text-2xl md:text-3xl lg:text-4xl leading-snug text-white" data-testid="hero-main-text">
             &quot;Siamo il tuo commesso di fiducia, basta stress da camerino, basta resi da shopping online. Ti basta caricare una foto, darci peso e altezza, noi di Atelier ti indichiamo la taglia perfetta per te!! Scegli i capi che vuoi dai brand che più ami e noi te li mettiamo addosso, nella comodità del tuo divano di casa. La promessa My Atelier.&quot;
           </p>
           <div className="mt-12 flex flex-wrap justify-center gap-4">
@@ -66,7 +64,7 @@ export default function Landing() {
                 className="absolute inset-0 w-full h-full object-cover"
                 data-testid="hero-image"
               />
-              <div className="absolute left-4 bottom-4 bg-white/85 backdrop-blur-md px-4 py-3 border hairline text-left">
+              <div className="absolute left-4 bottom-4 bg-white/85 backdrop-blur-md px-4 py-3 border border-white text-left text-[#0A0A0A]">
                 <div className="label-caps">Fit score</div>
                 <div className="font-serif text-2xl">M · 98%</div>
               </div>

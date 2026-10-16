@@ -5,17 +5,14 @@ import { LinkSimple, Ruler, Sparkle, CheckCircle, CloudArrowUp, Warning, ArrowRi
 import { api } from "@/lib/api";
 
 const FIELDS = [
-  { k: "height_cm",   l: "Altezza" },
-  { k: "chest_cm",    l: "Torace" },
-  { k: "waist_cm",    l: "Vita" },
-  { k: "hips_cm",     l: "Fianchi" },
-  { k: "shoulder_cm", l: "Spalle" },
+  { k: "height_cm", l: "Altezza", u: "cm", ph: "es. 182" },
+  { k: "weight_kg", l: "Peso", u: "kg", ph: "es. 75" },
 ];
 
 export default function CalcolaTagliaBox() {
   const navigate = useNavigate();
   const [url, setUrl] = useState("");
-  const [m, setM] = useState({ height_cm: "", chest_cm: "", waist_cm: "", hips_cm: "", shoulder_cm: "" });
+  const [m, setM] = useState({ height_cm: "", weight_kg: "", gender: "" });
   const [result, setResult] = useState(null);
   const [working, setWorking] = useState(false);
   const [needsFallback, setNeedsFallback] = useState(false);
@@ -30,26 +27,31 @@ export default function CalcolaTagliaBox() {
         const { data } = await api.get("/profile/measurements");
         if (data) setM((prev) => ({
           height_cm: data.height_cm ?? prev.height_cm,
-          chest_cm: data.chest_cm ?? prev.chest_cm,
-          waist_cm: data.waist_cm ?? prev.waist_cm,
-          hips_cm: data.hips_cm ?? prev.hips_cm,
-          shoulder_cm: data.shoulder_cm ?? prev.shoulder_cm,
+          weight_kg: data.weight_kg ?? prev.weight_kg,
+          gender: ["female", "male"].includes(data.gender) ? data.gender : prev.gender,
         }));
       } catch (_e) { /* ignore */ }
     })();
   }, []);
 
-  // Persist edits so the backend compares with the actually visible numbers.
+  const validHW = () => {
+    if (!(Number(m.height_cm) >= 120 && Number(m.height_cm) <= 230)) { toast.error("Inserisci l'altezza in cm (120-230)"); return false; }
+    if (!(Number(m.weight_kg) >= 40 && Number(m.weight_kg) <= 150)) { toast.error("Inserisci il peso in kg (40-150)"); return false; }
+    if (!m.gender) { toast.error("Scegli Uomo o Donna"); return false; }
+    return true;
+  };
+
+  // Estimate the body from height + weight + sex (no tape) before comparing with the brand chart.
   const persistMeasurements = async () => {
-    const payload = Object.fromEntries(
-      Object.entries(m).filter(([_, v]) => v !== "" && v !== null && v !== undefined)
-    );
-    if (Object.keys(payload).length === 0) return false;
-    try { await api.put("/profile/measurements", payload); return true; } catch { return false; }
+    try {
+      await api.post("/profile/quick-estimate", { height_cm: Number(m.height_cm), weight_kg: Number(m.weight_kg), gender: m.gender });
+      return true;
+    } catch { return false; }
   };
 
   const analyze = async () => {
     if (!url.trim()) { toast.error("Incolla prima il link del prodotto"); return; }
+    if (!validHW()) return;
     setWorking(true); setResult(null); setNeedsFallback(false); setReason("");
     await persistMeasurements();
     try {
@@ -154,31 +156,41 @@ export default function CalcolaTagliaBox() {
         />
       </div>
 
-      <div className="mt-6 grid grid-cols-2 md:grid-cols-5 gap-3">
+      <div className="mt-6 grid grid-cols-2 md:grid-cols-3 gap-3">
         {FIELDS.map((f) => (
           <label key={f.k} className="block">
             <span className="label-caps block mb-2">{f.l}</span>
             <div className="flex items-center border hairline focus-within:border-[#0A0A0A] transition-colors">
               <input
                 type="number"
-                step="0.1"
+                inputMode="numeric"
                 value={m[f.k] ?? ""}
                 onChange={(e) => setM((prev) => ({ ...prev, [f.k]: e.target.value === "" ? "" : Number(e.target.value) }))}
-                placeholder="—"
+                placeholder={f.ph}
                 className="w-full px-3 py-3 bg-transparent outline-none font-serif text-lg"
                 data-testid={`calcola-m-${f.k}`}
               />
-              <span className="px-3 text-xs text-neutral-500">cm</span>
+              <span className="px-3 text-xs text-neutral-500">{f.u}</span>
             </div>
           </label>
         ))}
+        <div className="col-span-2 md:col-span-1">
+          <span className="label-caps block mb-2">Sesso</span>
+          <div className="flex">
+            {[["male", "Uomo"], ["female", "Donna"]].map(([k, l]) => (
+              <button key={k} type="button" onClick={() => setM((prev) => ({ ...prev, gender: k }))}
+                className={`flex-1 py-3 label-caps border hairline transition-colors ${m.gender === k ? "bg-[#0A0A0A] !text-white border-[#0A0A0A]" : "bg-white hover:border-[#0A0A0A]"}`}
+                data-testid={`calcola-gender-${k}`}>{l}</button>
+            ))}
+          </div>
+        </div>
       </div>
 
       <div className="mt-6 flex items-center gap-3 flex-wrap">
         <button onClick={analyze} disabled={working} className="btn-primary" data-testid="calcola-cta">
           {working ? "Leggo il sito..." : (<><Ruler size={14} weight="bold" /> Calcola la mia taglia</>)}
         </button>
-        <span className="text-xs text-neutral-500">Leggiamo la tabella del brand e confrontiamo con le tue misure.</span>
+        <span className="text-xs text-neutral-500">Niente metro: stimiamo le tue misure da altezza, peso e sesso e le confrontiamo con la tabella del brand.</span>
       </div>
 
       {needsFallback && (

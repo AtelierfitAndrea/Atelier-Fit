@@ -156,3 +156,12 @@ body {
   * { @apply border-border; }
   body { @apply bg-background text-foreground; }
 }
+
+/* Black theme (public page + app header) */
+.theme-dark { background: #000000; color: #FFFFFF; --vfit-muted: #A3A3A3; --vfit-border: rgba(255,255,255,0.18); --vfit-text: #FFFFFF; }
+.theme-dark .btn-primary { background: #FFFFFF; color: #000000; border-color: #FFFFFF; }
+.theme-dark .btn-primary:hover { background: #8C7355; color: #FFFFFF; border-color: #8C7355; }
+.theme-dark .btn-ghost { background: transparent; color: #FFFFFF; border-color: rgba(255,255,255,0.6); }
+.theme-dark .btn-ghost:hover { background: #FFFFFF; color: #000000; }
+.theme-dark .text-neutral-500 { color: #A3A3A3; }
+.theme-dark .text-neutral-600, .theme-dark .text-neutral-700 { color: #D4D4D4; }

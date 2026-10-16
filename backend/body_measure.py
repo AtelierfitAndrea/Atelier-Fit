@@ -27,6 +27,28 @@ def _clamp(v: float, lo: float, hi: float) -> float:
     return max(lo, min(hi, v))
 
 
+def _regression(height_cm: float, bmi: float, g: str) -> dict:
+    return {
+        "chest": height_cm * (0.50 if g == "female" else 0.53) * (bmi / 22) ** 0.45,
+        "waist": height_cm * (0.40 if g == "female" else 0.45) * (bmi / 22) ** 0.75,
+        "hips": height_cm * (0.56 if g == "female" else 0.53) * (bmi / 22) ** 0.45,
+    }
+
+
+def estimate_from_height_weight(height_cm: float, weight_kg: float, gender: str) -> dict:
+    """No photo, no tape: population estimate from height (scale), weight (BMI) and sex."""
+    g = "male" if gender == "male" else "female"
+    bmi = weight_kg / ((height_cm / 100) ** 2)
+    reg = _regression(height_cm, bmi, g)
+    return {
+        "chest_cm": round(_clamp(reg["chest"], 65, 160)),
+        "waist_cm": round(_clamp(reg["waist"], 50, 160)),
+        "hips_cm": round(_clamp(reg["hips"], 70, 170)),
+        "shoulder_cm": round(_clamp(height_cm * (0.235 if g == "female" else 0.255) * (bmi / 22) ** 0.15, 30, 60)),
+        "inseam_cm": round(_clamp(height_cm * (0.45 if g == "female" else 0.46), 55, 100)),
+    }
+
+
 def estimate(features: dict, height_cm: float, weight_kg: Optional[float], gender: str) -> dict:
     g = "male" if gender == "male" else "female"
     bmi = weight_kg / ((height_cm / 100) ** 2) if weight_kg else None
@@ -38,11 +60,7 @@ def estimate(features: dict, height_cm: float, weight_kg: Optional[float], gende
     out = dict(photo)
     if bmi:
         # Population regression on BMI/height, blended with the photo estimate.
-        reg = {
-            "chest": height_cm * (0.50 if g == "female" else 0.53) * (bmi / 22) ** 0.45,
-            "waist": height_cm * (0.40 if g == "female" else 0.45) * (bmi / 22) ** 0.75,
-            "hips": height_cm * (0.56 if g == "female" else 0.53) * (bmi / 22) ** 0.45,
-        }
+        reg = _regression(height_cm, bmi, g)
         out = {k: 0.65 * photo[k] + 0.35 * reg[k] for k in photo}
 
     res = {

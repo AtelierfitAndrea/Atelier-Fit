@@ -13,23 +13,19 @@ export default function AppShell({ children }) {
 
   const navItem = ({ isActive }) =>
     `flex items-center gap-2 px-3 py-2 label-caps transition-colors duration-200 ${
-      isActive ? "text-[#0A0A0A] border-b border-[#0A0A0A]" : "text-neutral-500 hover:text-[#0A0A0A]"
+      isActive ? "!text-white border-b border-white" : "!text-neutral-400 hover:!text-white"
     }`;
 
   return (
     <div className="min-h-screen bg-[#FDFDFD]">
-      <header className="sticky top-0 z-30 bg-white/80 backdrop-blur-xl border-b hairline">
+      <header className="theme-dark sticky top-0 z-30 border-b hairline">
         <div className="max-w-[1400px] mx-auto px-6 md:px-10 flex items-center justify-between py-4">
           <div
             className="flex items-center gap-2 cursor-pointer"
             onClick={() => navigate("/dashboard")}
             data-testid="shell-brand"
           >
-            <div className="w-5 h-5 bg-[#0A0A0A]" />
-            <div>
-              <div className="font-serif text-lg tracking-tight leading-none" translate="no">Atelier Fit</div>
-              <div className="text-[10px] uppercase tracking-[0.2em] text-neutral-500 mt-0.5" translate="no">Il tuo sarto digitale</div>
-            </div>
+            <img src="/logo-white.png" alt="MY ATELIER" className="h-8 w-auto" translate="no" />
             <div className="ml-3">
               <LanguageSwitcher />
             </div>

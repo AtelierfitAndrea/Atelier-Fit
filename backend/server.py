@@ -17,7 +17,7 @@ import httpx
 from bs4 import BeautifulSoup
 import json as pyjson
 from cryptography.fernet import Fernet, InvalidToken
-from body_measure import estimate as estimate_body, brand_sizes
+from body_measure import estimate as estimate_body, estimate_from_height_weight, brand_sizes
 import re
 
 ROOT_DIR = Path(__file__).parent
@@ -88,6 +88,7 @@ class User(BaseModel):
 
 class Measurements(BaseModel):
     model_config = ConfigDict(extra="ignore")
+    method: Optional[str] = None  # 'auto_photo' | 'height_weight' | 'tape' 
     gender: Optional[str] = None  # 'female' | 'male' | 'unisex'
     height_cm: Optional[float] = None
     weight_kg: Optional[float] = None
@@ -410,6 +411,28 @@ async def _migrate_plaintext_personal_data() -> None:
         await _set_measurements(doc["user_id"], {k: v for k, v in doc.items() if k in _MEASURE_FIELDS}, doc.get("updated_at"))
     async for w in db.weight_history.find({"weight_kg": {"$exists": True}}, {"_id": 1, "weight_kg": 1}):
         await db.weight_history.update_one({"_id": w["_id"]}, {"$set": {"weight_enc": _enc(w["weight_kg"])}, "$unset": {"weight_kg": ""}})
+
+
+class QuickEstimateIn(BaseModel):
+    height_cm: float = Field(ge=120, le=230)
+    weight_kg: float = Field(ge=40, le=150)
+    gender: str = Field(pattern="^(female|male)$")
+
+
+@api_router.post("/profile/quick-estimate")
+async def quick_estimate(body: QuickEstimateIn, user: User = Depends(get_current_user)):
+    current = await _get_measurements(user.user_id)
+    patch = {"height_cm": body.height_cm, "weight_kg": body.weight_kg, "gender": body.gender}
+    # Photo or tape measurements are more precise: keep them unless height/sex changed.
+    keep = (current.get("method") in ("auto_photo", "tape")
+            and abs((current.get("height_cm") or 0) - body.height_cm) < 1
+            and current.get("gender") == body.gender)
+    if not keep:
+        est = estimate_from_height_weight(body.height_cm, body.weight_kg, body.gender)
+        patch.update({**est, "method": "height_weight", "brand_sizes": brand_sizes(est, body.gender)})
+    saved = await _set_measurements(user.user_id, patch, remove=() if keep else ("precision",))
+    await _compute_accuracy(user.user_id)
+    return {"measurements": saved, "kept_precise": keep}
 
 
 class FeatureRatios(BaseModel):
