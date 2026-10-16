@@ -1,0 +1,48 @@
+{
+  "summary": "Iteration 9 tested the auto-measure feature (Calcolo Automatico Taglia 98%) and the Fernet encryption of personal data. Backend: 10/11 new pytests pass (test_auto_measure_encryption.py), and test_family_profiles passes. Covered: the 98/85 precision values, the 6 brands, 400 on bad or non-JSON features, 422 on height/gender/weight out of range, 401 without auth, a measurements doc holding only {user_id, enc, updated_at}, weight_history writes weight_enc with no plaintext left, decrypted GET responses, the measure .bin file (encrypted=true) returning 404, delete-all marking the measure photo deleted (checked on a temporary user), B2B without weight, PUT measurements regression, and /size/recommend at 200. FAILED: the public, unauthenticated GET /api/fitting-accuracy/{user_id} still returns the decrypted 'weight'. Frontend on the live URL: the old manual inputs are gone; every auto-measure testid is present; the slider is 40-150; button and guide texts are correct; toasts appear for no photo, empty height and height 100; MediaPipe loads from jsdelivr + storage.googleapis and the whole flow takes about 1.6s; the result shows 6 brand-size cards, 98% with weight and 85% with 'Preferisco non indicare il peso', and 5 measures tagged '±2cm stima AI'; the avatar and FittingAccuracy refresh; the garment photo gives a friendly no_pose toast with no crash; /studio loads.",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "GET /api/fitting-accuracy/{user_id} (public, no auth)", "issue": "Returns the _compute_accuracy result, which includes 'weight': <decrypted kg> and missing_fields. Anyone who knows the user_id can read personal weight. This contradicts the encryption/privacy promise; only the B2B endpoint was sanitised. Repro: curl $URL/api/fitting-accuracy/<uid> -> {...,\"weight\":70.0}", "priority": "HIGH"}
+    ],
+    "minor": [
+      {"endpoint": "POST /api/profile/auto-measure (without weight_kg)", "issue": "_set_measurements skips None values, so a weight saved earlier stays stored (weight_kg 60 still present with precision 85). The user cannot remove their weight, and FittingAccuracy/avatar BMI keep using it. Either pop weight_kg when it is not provided, or keep it on purpose and say so in the UI."},
+      {"endpoint": "PUT /api/profile/measurements", "issue": "Updating chest/waist/etc. leaves the stored brand_sizes/precision/method='auto_photo' in place. The Profile page then preloads a stale brand-size result that contradicts the avatar sizes. Clear brand_sizes/method on manual PUT."},
+      {"endpoint": "POST /api/profile/auto-measure", "issue": "The photo upload is not validated (content-type, size or image check): any bytes are encrypted and stored."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "AutoMeasure submit button and selected gender toggle", "issue": "The .label-caps class (index.css, color: var(--vfit-muted)) overrides Tailwind text-white. Computed color is rgb(82,82,82) on #0A0A0A, so the main 'CALCOLA LA MIA TAGLIA AL 98%' CTA and the selected 'DONNA'/'UOMO' label are barely readable. Fix: use !text-white, or drop label-caps / set color inherit on those buttons.", "selector": "[data-testid=auto-measure-submit], [data-testid=auto-measure-gender-female]", "priority": "HIGH"}
+    ],
+    "integration_issues": [
+      {"flow": "Brand sizes vs avatar panel", "issue": "The avatar panel's TAGLIA TOP/BOTTOM (e.g. XS / S) uses a different sizing algorithm from the brand table (H&M bottom M for waist 73 / hips 92). The two disagree on the same page.", "affected_selectors": ["[data-testid=brand-size-H&M]"]}
+    ],
+    "design_issues": [
+      {"screen": "Profile auto-measure", "issues": ["CTA text has low contrast (see ui_bugs)", "The result card stays visible while a new calculation runs; no loading state on the old result"]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_auto_measure_encryption.py", "/app/test_reports/pytest/pytest_results.xml"],
+  "action_items": [
+    "HIGH: remove 'weight' (and preferably missing_fields) from the public GET /api/fitting-accuracy/{user_id} response, or require auth for it",
+    "HIGH: fix the CTA and selected-gender text contrast (.label-caps color overrides text-white)",
+    "Decide how a calculation without weight treats a previously stored weight (currently kept)",
+    "Invalidate brand_sizes/method/precision on manual PUT /profile/measurements",
+    "Align the avatar panel size logic with body_measure.brand_sizes (or show the H&M/standard size)",
+    "Optional: validate the auto-measure upload as an image with a size cap"
+  ],
+  "critical_code_review_comments": [
+    "server.py is 1851 lines; split out the encryption/measurements, files and accuracy routers",
+    "_dec returns None on InvalidToken. In _get_measurements this silently yields {} (all data lost in the UI) if DATA_ENCRYPTION_KEY is rotated; consider MultiFernet for key rotation",
+    "_compute_accuracy is called inside a public GET, so an anonymous caller can trigger a db.users write",
+    "pose.js: URL.createObjectURL preview is never revoked (AutoMeasure.pick)",
+    "The test_file_privacy.py failures (4) come from stale test data: the TEST_other_sess_1 user no longer exists in the DB, and the owner is on the SINGLE plan, so X-Profile-Id is ignored. They are not caused by this feature; the fixture should seed its own users"
+  ],
+  "updated_files": ["/app/backend/tests/test_auto_measure_encryption.py"],
+  "success_rate": {"backend": "91% (10/11 new tests; family profiles all pass)", "frontend": "90% (all flows work; CTA contrast bug)"},
+  "test_credentials": "Bearer/cookie session_token=fam_test_1791784817 (fam-owner-1791784817, SINGLE). A temporary TEST_am_* user was created for delete-all and removed afterwards.",
+  "seed_data_creation": "The fam-owner user now has auto_photo measurements (165cm, female, weight 60, precision 85) and several measure .bin files.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Run pytest tests/test_auto_measure_encryption.py; test_public_fitting_accuracy_no_weight should pass after the fix. Inspect Mongo with mongosh test_database. The UI flow takes about 2s; after the first run the Profile page preloads the last result, so wait for the 'Taglia calcolata' toast and not for auto-measure-result. Error toasts disappear within about 4s, so poll quickly.",
+  "rca of the issue": "Weight leak: only b2b_fitting_accuracy builds a sanitised response. public_fitting_accuracy (server.py ~868) returns _compute_accuracy() as-is, and that result includes 'weight': m.get('weight_kg') from the decrypted measurements. Contrast: the global .label-caps rule in index.css sets color: var(--vfit-muted); it is not in a lower @layer, so it beats Tailwind's text-white utility."
+}

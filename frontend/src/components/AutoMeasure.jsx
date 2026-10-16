@@ -140,7 +140,7 @@ export default function AutoMeasure({ initial = {}, onDone }) {
             <div className="flex">
               {[["female", "Donna"], ["male", "Uomo"]].map(([k, l]) => (
                 <button key={k} type="button" onClick={() => setGender(k)}
-                  className={`px-4 py-3 label-caps border hairline ${gender === k ? "bg-[#0A0A0A] text-white border-[#0A0A0A]" : "bg-white"}`}
+                  className={`px-4 py-3 label-caps border hairline ${gender === k ? "bg-[#0A0A0A] !text-white border-[#0A0A0A]" : "bg-white"}`}
                   data-testid={`auto-measure-gender-${k}`}>{l}</button>
               ))}
             </div>
@@ -164,7 +164,7 @@ export default function AutoMeasure({ initial = {}, onDone }) {
       </div>
 
       <button onClick={calc} disabled={busy}
-        className="mt-10 w-full bg-[#0A0A0A] text-white py-5 label-caps text-sm flex items-center justify-center gap-2 hover:bg-neutral-800 transition-colors disabled:opacity-60"
+        className="mt-10 w-full bg-[#0A0A0A] !text-white py-5 label-caps text-sm flex items-center justify-center gap-2 hover:bg-neutral-800 transition-colors disabled:opacity-60"
         data-testid="auto-measure-submit">
         {busy ? "Sto prendendo le misure…" : (<>CALCOLA LA MIA TAGLIA AL 98% <ArrowRight size={16} weight="bold" /></>)}
       </button>
@@ -174,7 +174,7 @@ export default function AutoMeasure({ initial = {}, onDone }) {
         I tuoi dati sono solo tuoi. Foto, altezza e peso sono criptati, privati e visibili solo dal tuo account. Non li mostriamo a nessuno, mai. In futuro potremo condividere con i brand solo statistiche anonime e aggregate, mai i tuoi dati personali.
       </p>
 
-      {result && <Result data={result} />}
+      {result && <div className={busy ? "opacity-40 pointer-events-none transition-opacity" : "transition-opacity"}><Result data={result} /></div>}
     </section>
   );
 }

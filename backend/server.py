@@ -392,8 +392,8 @@ async def _get_measurements(user_id: str) -> dict:
     return data
 
 
-async def _set_measurements(user_id: str, patch: dict, updated_at: Optional[str] = None) -> dict:
-    data = {k: v for k, v in (await _get_measurements(user_id)).items() if k != "updated_at"}
+async def _set_measurements(user_id: str, patch: dict, updated_at: Optional[str] = None, remove: tuple = ()) -> dict:
+    data = {k: v for k, v in (await _get_measurements(user_id)).items() if k != "updated_at" and k not in remove}
     data.update({k: v for k, v in patch.items() if v is not None and k != "updated_at"})
     now = updated_at or datetime.now(timezone.utc).isoformat()
     await db.measurements.update_one(
@@ -433,10 +433,18 @@ async def auto_measure(
         ratios = FeatureRatios(**pyjson.loads(features)).model_dump()
     except Exception:
         raise HTTPException(status_code=400, detail="Non riusciamo a leggere la tua figura: riprova con una foto intera, frontale, ben illuminata")
+    raw = await photo.read()
+    if len(raw) > 15 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="Foto troppo grande (max 15 MB)")
+    try:
+        from PIL import Image
+        import io
+        Image.open(io.BytesIO(raw)).verify()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Il file non è una foto valida")
     est = estimate_body(ratios, height_cm, weight_kg, gender)
     sizes = brand_sizes(est, gender)
     # The calculation photo is stored encrypted and never served back.
-    raw = await photo.read()
     path = f"{APP_NAME}/measure/{user.user_id}/{uuid.uuid4().hex}.bin"
     put_object(path, FERNET.encrypt(raw), "application/octet-stream")
     now = datetime.now(timezone.utc).isoformat()
@@ -448,7 +456,7 @@ async def auto_measure(
     saved = await _set_measurements(user.user_id, {
         **est, "height_cm": height_cm, "weight_kg": weight_kg, "gender": gender,
         "brand_sizes": sizes, "precision": precision, "method": "auto_photo",
-    }, now)
+    }, now, remove=() if weight_kg else ("weight_kg",))
     if weight_kg:
         await db.weight_history.insert_one({
             "id": str(uuid.uuid4()), "user_id": user.user_id, "weight_enc": _enc(weight_kg),
@@ -467,7 +475,7 @@ async def get_measurements(user: User = Depends(get_current_user)):
 @api_router.put("/profile/measurements")
 async def save_measurements(m: Measurements, user: User = Depends(get_current_user)):
     data = m.model_dump(exclude_none=True)
-    return await _set_measurements(user.user_id, data)
+    return await _set_measurements(user.user_id, data, remove=("brand_sizes", "precision", "method"))
 
 
 # ----- Weight history (check every 2 months) -----
@@ -871,7 +879,9 @@ async def public_fitting_accuracy(user_id: str):
     exists = await db.users.find_one({"user_id": user_id}, {"_id": 0, "user_id": 1})
     if not exists:
         raise HTTPException(status_code=404, detail="User not found")
-    return await _compute_accuracy(user_id)
+    data = await _compute_accuracy(user_id)
+    # Public: reliability signal only, never personal data.
+    return {k: data[k] for k in ("accuracy", "last_weight_update", "reliable", "weight_stale")}
 
 
 @api_router.get("/b2b/fitting-accuracy/{user_id}")

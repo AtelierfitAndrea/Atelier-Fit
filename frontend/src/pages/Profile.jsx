@@ -20,6 +20,9 @@ export default function Profile() {
     })();
   }, []);
 
+  // Same standard table as the brand sizes (H&M = standard, no offset).
+  const std = m.brand_sizes?.find((b) => b.brand === "H&M");
+
   return (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-10" data-testid="profile-root">
       <div className="lg:col-span-7">
@@ -37,7 +40,7 @@ export default function Profile() {
           {loaded && (
             <AutoMeasure
               initial={m}
-              onDone={(nm) => { setM((prev) => ({ ...prev, ...nm })); setAccuracyNonce((n) => n + 1); }}
+              onDone={(nm) => { setM({ gender: "female", ...nm }); setAccuracyNonce((n) => n + 1); }}
             />
           )}
 
@@ -51,8 +54,8 @@ export default function Profile() {
           <div className="border hairline p-6 bg-white">
             <Avatar3D measurements={m} />
             <div className="mt-6 grid grid-cols-2 gap-3 text-sm">
-              <Info label="Taglia top" value={m.chest_cm ? sizeFromChest(m.chest_cm) : "—"} />
-              <Info label="Taglia bottom" value={m.waist_cm ? sizeFromWaist(m.waist_cm) : "—"} />
+              <Info label="Taglia top" value={std?.top || (m.chest_cm ? sizeFromChest(m.chest_cm) : "—")} />
+              <Info label="Taglia bottom" value={std?.bottom || (m.waist_cm ? sizeFromWaist(m.waist_cm) : "—")} />
               <Info label="Scarpa (EU)" value={m.foot_cm ? Math.round(m.foot_cm * 1.5 + 2) : "—"} />
               <Info label="IMC" value={m.height_cm && m.weight_kg ? (m.weight_kg / ((m.height_cm/100)**2)).toFixed(1) : "—"} />
             </div>

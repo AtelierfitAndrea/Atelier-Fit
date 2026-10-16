@@ -92,3 +92,10 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 - Sotto l'outfit: Totale outfit (somma dei prezzi dei capi salvati) + link "Acquista"
 - Armadio: "Carica screenshot" sui capi segnaposto → PUT /api/wardrobe/garments/{id}/image
 - IncludedNote "Incluso nel tuo abbonamento Atelier Fit" accanto ai pulsanti di generazione (Single/Family/mese gratuito). La parola "Crediti" non era presente nell'interfaccia
+
+## 2026-06 — Calcolo Automatico Taglia 98% (DONE, iteration_9 + fix)
+- Profilo: tolto il form manuale; AutoMeasure.jsx a 3 step (foto intera, altezza + Donna/Uomo, slider peso 40-150 opzionale) + nota privacy
+- MediaPipe Pose (@mediapipe/tasks-vision) gira NEL BROWSER: landmark + maschera → rapporti delle larghezze (lib/pose.js, braccia limitate dalle distanze tra le articolazioni). Il backend body_measure.py: altezza = scala, peso/IMC = profondità + regressione; tabelle standard per 6 brand (Zara, H&M, Mango, Nike, Adidas, Uniqlo)
+- "Precisione stimata fino al 98%/85% · stima AI", "±2cm stima AI"
+- Cifratura Fernet (DATA_ENCRYPTION_KEY in backend/.env — DEVE esserci anche in produzione; se la chiave si perde, i dati non sono più leggibili): measurements.enc, weight_history.weight_enc, foto del calcolo .bin cifrata e mai restituita. Migrazione all'avvio
+- Gli endpoint B2B e il pubblico /api/fitting-accuracy/{id} non espongono più il peso né altri dati personali
