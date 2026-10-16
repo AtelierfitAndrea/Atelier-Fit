@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { LinkSimple, Camera, Sparkle, CheckCircle, CloudArrowUp, Warning, ArrowRight, X } from "@phosphor-icons/react";
+import { LinkSimple, Camera, Sparkle, CheckCircle, CloudArrowUp, ArrowRight, X } from "@phosphor-icons/react";
 import { api } from "@/lib/api";
 import { extractBodyRatios } from "@/lib/pose";
 
@@ -15,7 +15,6 @@ export default function CalcolaTagliaBox() {
   const [working, setWorking] = useState(false);
   const [result, setResult] = useState(null);
   const [needsFallback, setNeedsFallback] = useState(false);
-  const [reason, setReason] = useState("");
   const [chartText, setChartText] = useState("");
   const [textLoading, setTextLoading] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -60,13 +59,14 @@ export default function CalcolaTagliaBox() {
     if (!photo) { toast.error("Carica una tua foto intera"); return; }
     if (!savedHeight && !askHeight) { setAskHeight(true); return; }
     if (askHeight && !(Number(height) >= 120 && Number(height) <= 230)) { toast.error("Inserisci la tua altezza in cm (120-230)"); return; }
-    setWorking(true); setResult(null); setNeedsFallback(false); setReason("");
+    setWorking(true); setResult(null); setNeedsFallback(false);
     if (!(await measureFromPhoto())) { setWorking(false); return; }
     try {
       const { data } = await api.post("/product/analyze", { url });
       handleResult(data);
-    } catch (e) {
-      toast.error(e?.response?.data?.detail || "Analisi non riuscita");
+    } catch (_e) {
+      // Site blocked / unreadable: go straight to the screenshot box, no error for the user.
+      setNeedsFallback(true);
     } finally { setWorking(false); }
   };
 
@@ -100,15 +100,8 @@ export default function CalcolaTagliaBox() {
       setNeedsFallback(false);
       return;
     }
-    if (data.needs_screenshot) {
-      setNeedsFallback(true);
-      setReason(data.reason || "Il sito blocca la lettura automatica. Incolla la tabella o carica uno screenshot.");
-      if (fromFallback) {
-        toast.error("Non siamo riusciti a leggere la tabella. Riprova con dati più nitidi.");
-      }
-      return;
-    }
-    toast.error("Nessun risultato valido");
+    setNeedsFallback(true);
+    if (fromFallback) toast.error("Non siamo riusciti a leggere la tabella. Riprova con uno screenshot più nitido.");
   };
 
   const provalo = async () => {
@@ -205,7 +198,6 @@ export default function CalcolaTagliaBox() {
 
       {needsFallback && (
         <FallbackBlock
-          reason={reason}
           chartText={chartText}
           setChartText={setChartText}
           onAnalyzeText={analyzeText}
@@ -221,46 +213,41 @@ export default function CalcolaTagliaBox() {
   );
 }
 
-function FallbackBlock({ reason, chartText, setChartText, onAnalyzeText, onScreenshot, loading }) {
+function FallbackBlock({ chartText, setChartText, onAnalyzeText, onScreenshot, loading }) {
   return (
-    <div className="mt-6 border-t hairline pt-6 fade-up" data-testid="calcola-fallback">
-      <div className="label-caps mb-2 text-[#B91C1C] flex items-center gap-2">
-        <Warning size={14} weight="fill" /> {reason}
+    <div className="mt-6 border hairline p-5 md:p-6 fade-up" data-testid="calcola-fallback">
+      <div className="font-serif text-lg" data-testid="calcola-fallback-title">
+        Non riusciamo a leggere la tabella da questo link - Carica screenshot tabella taglie
       </div>
-      <div className="grid grid-cols-1 md:grid-cols-12 gap-4 mt-3">
-        <div className="md:col-span-8">
-          <label className="label-caps block mb-2">Incolla tabella taglie</label>
-          <textarea
-            value={chartText}
-            onChange={(e) => setChartText(e.target.value)}
-            placeholder={`es.\nS  Torace 86–90  Vita 70–74\nM  Torace 90–94  Vita 74–78\nL  Torace 94–98  Vita 78–82`}
-            rows={6}
-            className="w-full px-3 py-3 border hairline bg-transparent outline-none focus:border-[#0A0A0A] transition-colors font-mono text-sm"
-            data-testid="calcola-chart-text"
-          />
-          <button onClick={onAnalyzeText} disabled={loading} className="btn-primary mt-3" data-testid="calcola-text-cta">
-            {loading ? "Analizzo..." : "Analizza il testo"}
-          </button>
+      <label className={`mt-4 upload-zone p-5 flex items-center gap-3 cursor-pointer min-h-[120px] ${loading ? "opacity-60" : ""}`}>
+        <CloudArrowUp size={24} weight="duotone" />
+        <div>
+          <div className="font-serif text-base">{loading ? "Leggo la tabella…" : "Carica screenshot tabella taglie"}</div>
+          <div className="text-xs text-neutral-500">JPG / PNG / WEBP nitida</div>
         </div>
-        <div className="md:col-span-4">
-          <label className="label-caps block mb-2">…o carica screenshot</label>
-          <label className="upload-zone p-5 flex items-center gap-3 cursor-pointer min-h-[160px]">
-            <CloudArrowUp size={24} weight="duotone" />
-            <div>
-              <div className="font-serif text-base">Carica immagine</div>
-              <div className="text-xs text-neutral-500">JPG / PNG nitida</div>
-            </div>
-            <input
-              type="file"
-              accept="image/*"
-              className="hidden"
-              disabled={loading}
-              onChange={(e) => onScreenshot(e.target.files?.[0])}
-              data-testid="calcola-screenshot-input"
-            />
-          </label>
-        </div>
-      </div>
+        <input
+          type="file"
+          accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
+          className="hidden"
+          disabled={loading}
+          onChange={(e) => { onScreenshot(e.target.files?.[0]); e.target.value = ""; }}
+          data-testid="calcola-screenshot-input"
+        />
+      </label>
+      <details className="mt-4">
+        <summary className="label-caps cursor-pointer" data-testid="calcola-chart-text-toggle">Oppure incolla il testo della tabella</summary>
+        <textarea
+          value={chartText}
+          onChange={(e) => setChartText(e.target.value)}
+          placeholder={`es.\nS  Torace 86–90  Vita 70–74\nM  Torace 90–94  Vita 74–78`}
+          rows={5}
+          className="mt-3 w-full px-3 py-3 border hairline bg-transparent outline-none focus:border-[#0A0A0A] font-mono text-sm"
+          data-testid="calcola-chart-text"
+        />
+        <button onClick={onAnalyzeText} disabled={loading} className="btn-primary mt-3" data-testid="calcola-text-cta">
+          {loading ? "Analizzo..." : "Analizza il testo"}
+        </button>
+      </details>
     </div>
   );
 }
