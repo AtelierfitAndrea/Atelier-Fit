@@ -16,6 +16,8 @@ from emergentintegrations.llm.chat import LlmChat, UserMessage, ImageContent
 import httpx
 from bs4 import BeautifulSoup
 import json as pyjson
+from cryptography.fernet import Fernet, InvalidToken
+from body_measure import estimate as estimate_body, brand_sizes
 import re
 
 ROOT_DIR = Path(__file__).parent
@@ -216,6 +218,7 @@ async def startup():
         logger.info("Storage initialized")
     except Exception as e:
         logger.error(f"Storage init failed: {e}")
+    await _migrate_plaintext_personal_data()
 
 
 # ----- Auth routes -----
@@ -364,23 +367,107 @@ async def auth_logout(request: Request, response: Response):
     return {"ok": True}
 
 
+# ----- Encrypted personal data (height, weight, measurements, measure photo) -----
+FERNET = Fernet(os.environ["DATA_ENCRYPTION_KEY"].encode())
+_MEASURE_FIELDS = set(Measurements.model_fields) - {"updated_at"}
+
+
+def _enc(value) -> str:
+    return FERNET.encrypt(pyjson.dumps(value).encode()).decode()
+
+
+def _dec(token: str):
+    try:
+        return pyjson.loads(FERNET.decrypt(token.encode()))
+    except (InvalidToken, ValueError):
+        logger.error("decrypt failed")
+        return None
+
+
+async def _get_measurements(user_id: str) -> dict:
+    doc = await db.measurements.find_one({"user_id": user_id}, {"_id": 0}) or {}
+    data = (_dec(doc["enc"]) or {}) if doc.get("enc") else {k: v for k, v in doc.items() if k in _MEASURE_FIELDS}
+    if doc.get("updated_at"):
+        data["updated_at"] = doc["updated_at"]
+    return data
+
+
+async def _set_measurements(user_id: str, patch: dict, updated_at: Optional[str] = None) -> dict:
+    data = {k: v for k, v in (await _get_measurements(user_id)).items() if k != "updated_at"}
+    data.update({k: v for k, v in patch.items() if v is not None and k != "updated_at"})
+    now = updated_at or datetime.now(timezone.utc).isoformat()
+    await db.measurements.update_one(
+        {"user_id": user_id},
+        {"$set": {"user_id": user_id, "enc": _enc(data), "updated_at": now},
+         "$unset": {k: "" for k in _MEASURE_FIELDS}},
+        upsert=True,
+    )
+    return {**data, "updated_at": now}
+
+
+async def _migrate_plaintext_personal_data() -> None:
+    async for doc in db.measurements.find({"enc": {"$exists": False}}, {"_id": 0}):
+        await _set_measurements(doc["user_id"], {k: v for k, v in doc.items() if k in _MEASURE_FIELDS}, doc.get("updated_at"))
+    async for w in db.weight_history.find({"weight_kg": {"$exists": True}}, {"_id": 1, "weight_kg": 1}):
+        await db.weight_history.update_one({"_id": w["_id"]}, {"$set": {"weight_enc": _enc(w["weight_kg"])}, "$unset": {"weight_kg": ""}})
+
+
+class FeatureRatios(BaseModel):
+    shoulder_r: float = Field(gt=0.05, lt=0.5)
+    chest_r: float = Field(gt=0.05, lt=0.5)
+    waist_r: float = Field(gt=0.05, lt=0.5)
+    hips_r: float = Field(gt=0.05, lt=0.5)
+    inseam_r: float = Field(gt=0.3, lt=0.6)
+
+
+@api_router.post("/profile/auto-measure")
+async def auto_measure(
+    photo: UploadFile = File(...),
+    height_cm: float = Query(..., ge=120, le=230),
+    gender: str = Query(..., regex="^(female|male)$"),
+    features: str = Query(...),
+    weight_kg: Optional[float] = Query(None, ge=40, le=150),
+    user: User = Depends(get_current_user),
+):
+    try:
+        ratios = FeatureRatios(**pyjson.loads(features)).model_dump()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Non riusciamo a leggere la tua figura: riprova con una foto intera, frontale, ben illuminata")
+    est = estimate_body(ratios, height_cm, weight_kg, gender)
+    sizes = brand_sizes(est, gender)
+    # The calculation photo is stored encrypted and never served back.
+    raw = await photo.read()
+    path = f"{APP_NAME}/measure/{user.user_id}/{uuid.uuid4().hex}.bin"
+    put_object(path, FERNET.encrypt(raw), "application/octet-stream")
+    now = datetime.now(timezone.utc).isoformat()
+    await db.files.insert_one({
+        "id": str(uuid.uuid4()), "user_id": user.user_id, "kind": "measure", "storage_path": path,
+        "encrypted": True, "is_deleted": False, "created_at": now,
+    })
+    precision = 98 if weight_kg else 85
+    saved = await _set_measurements(user.user_id, {
+        **est, "height_cm": height_cm, "weight_kg": weight_kg, "gender": gender,
+        "brand_sizes": sizes, "precision": precision, "method": "auto_photo",
+    }, now)
+    if weight_kg:
+        await db.weight_history.insert_one({
+            "id": str(uuid.uuid4()), "user_id": user.user_id, "weight_enc": _enc(weight_kg),
+            "note": "Calcolo automatico", "recorded_at": now,
+        })
+    await _compute_accuracy(user.user_id)
+    return {"measurements": saved, "brand_sizes": sizes, "precision": precision}
+
+
 # ----- Profile / Measurements -----
 @api_router.get("/profile/measurements")
 async def get_measurements(user: User = Depends(get_current_user)):
-    doc = await db.measurements.find_one({"user_id": user.user_id}, {"_id": 0, "user_id": 0})
-    return doc or {}
+    return await _get_measurements(user.user_id)
 
 
 @api_router.put("/profile/measurements")
 async def save_measurements(m: Measurements, user: User = Depends(get_current_user)):
     data = m.model_dump(exclude_none=True)
-    data["updated_at"] = datetime.now(timezone.utc).isoformat()
-    await db.measurements.update_one(
-        {"user_id": user.user_id},
-        {"$set": {**data, "user_id": user.user_id}},
-        upsert=True,
-    )
-    return data
+    return await _set_measurements(user.user_id, data)
 
 
 # ----- Weight history (check every 2 months) -----
@@ -415,6 +502,9 @@ async def get_weight_history(user: User = Depends(get_current_user)):
     items = await db.weight_history.find(
         {"user_id": user.user_id}, {"_id": 0, "user_id": 0}
     ).sort("recorded_at", -1).to_list(200)
+    for it in items:
+        if "weight_enc" in it:
+            it["weight_kg"] = _dec(it.pop("weight_enc"))
     last_iso = items[0]["recorded_at"] if items else None
     return {"entries": items, "status": _weight_status(last_iso)}
 
@@ -434,19 +524,17 @@ async def add_weight_entry(entry: WeightEntry, user: User = Depends(get_current_
     doc = {
         "id": str(uuid.uuid4()),
         "user_id": user.user_id,
-        "weight_kg": entry.weight_kg,
+        "weight_enc": _enc(entry.weight_kg),
         "note": entry.note,
         "recorded_at": recorded_at,
     }
     await db.weight_history.insert_one(doc)
     # Keep current measurement in sync for size & avatar
-    await db.measurements.update_one(
-        {"user_id": user.user_id},
-        {"$set": {"user_id": user.user_id, "weight_kg": entry.weight_kg, "updated_at": recorded_at}},
-        upsert=True,
-    )
+    await _set_measurements(user.user_id, {"weight_kg": entry.weight_kg}, recorded_at)
     doc.pop("_id", None)
     doc.pop("user_id", None)
+    doc["weight_kg"] = entry.weight_kg
+    doc.pop("weight_enc", None)
     # Refresh accuracy snapshot
     await _compute_accuracy(user.user_id)
     return {"entry": doc, "status": _weight_status(recorded_at)}
@@ -677,7 +765,7 @@ ACCURACY_CORE = ["chest_cm", "waist_cm", "hips_cm"]
 
 
 async def _compute_accuracy(user_id: str) -> dict:
-    m = await db.measurements.find_one({"user_id": user_id}, {"_id": 0}) or {}
+    m = await _get_measurements(user_id)
     last_weight_doc = await db.weight_history.find_one(
         {"user_id": user_id}, {"_id": 0}, sort=[("recorded_at", -1)]
     )
@@ -800,7 +888,6 @@ async def b2b_fitting_accuracy(user_id: str):
         "accuracy": data["accuracy"],
         "last_weight_update": last_date,
         "is_reliable": data["reliable"],
-        "weight": data.get("weight"),
     }
 
 
@@ -843,6 +930,8 @@ def _path_owner(path: str) -> Optional[str]:
 @api_router.get("/files/{path:path}")
 async def files_get(path: str, request: Request, authorization: Optional[str] = Header(None)):
     # Private by default: only the account (and its family profiles) can view; shared outfits stay public.
+    if path.split("/")[1:2] == ["measure"]:
+        raise HTTPException(status_code=404, detail="File non trovato")
     if await db.files.find_one({"storage_path": path, "is_deleted": True}, {"_id": 1}):
         raise HTTPException(status_code=404, detail="File non trovato")
     if not await db.outfits.find_one({"result_path": path, "shared": True}, {"_id": 1}):
@@ -876,7 +965,7 @@ async def _mark_files_deleted(paths: list, user_id: str) -> None:
 async def photos_delete_all(user: User = Depends(get_current_user)):
     uid = user.user_id
     paths = set()
-    async for f in db.files.find({"user_id": uid, "kind": "person", "is_deleted": {"$ne": True}}, {"_id": 0, "storage_path": 1}):
+    async for f in db.files.find({"user_id": uid, "kind": {"$in": ["person", "measure"]}, "is_deleted": {"$ne": True}}, {"_id": 0, "storage_path": 1}):
         paths.add(f["storage_path"])
     tryons = await db.tryons.find({"user_id": uid}, {"_id": 0, "person_path": 1, "result_path": 1}).to_list(5000)
     outfits = await db.outfits.find({"user_id": uid}, {"_id": 0, "result_path": 1, "person_path": 1}).to_list(5000)
@@ -916,7 +1005,7 @@ async def tryon_generate(req: TryOnRequest, user: User = Depends(get_current_use
     if status["is_blocked"]:
         raise HTTPException(status_code=402, detail="Quota exhausted — subscribe or buy an extra try-on.")
     # Load measurements for prompt context
-    m_doc = await db.measurements.find_one({"user_id": user.user_id}, {"_id": 0, "user_id": 0}) or {}
+    m_doc = await _get_measurements(user.user_id)
     # Load both images
     person_bytes, person_ct = get_object(req.person_path)
     garment_bytes, garment_ct = get_object(req.garment_path)
@@ -1058,7 +1147,7 @@ async def b2b_try_on_log(user_id: str):
 # ----- Size recommendation standalone -----
 @api_router.get("/size/recommend")
 async def api_size_recommend(category: str = Query(...), user: User = Depends(get_current_user)):
-    m_doc = await db.measurements.find_one({"user_id": user.user_id}, {"_id": 0, "user_id": 0}) or {}
+    m_doc = await _get_measurements(user.user_id)
     return {"category": category, "size": recommend_size(m_doc, category)}
 
 
@@ -1209,7 +1298,7 @@ async def product_analyze(req: AnalyzeUrlRequest, user: User = Depends(get_curre
     url = (req.url or "").strip()
     if not re.match(r"^https?://", url):
         raise HTTPException(status_code=400, detail="URL non valido")
-    m_doc = await db.measurements.find_one({"user_id": user.user_id}, {"_id": 0, "user_id": 0}) or {}
+    m_doc = await _get_measurements(user.user_id)
     if not any(m_doc.get(k) for k in ("chest_cm", "waist_cm", "hips_cm", "height_cm")):
         raise HTTPException(status_code=400, detail="Aggiungi prima almeno torace, vita, fianchi o altezza nel profilo.")
     html = await _fetch_page(url)
@@ -1238,7 +1327,7 @@ class AnalyzeTextRequest(BaseModel):
 
 @api_router.post("/product/analyze-text")
 async def product_analyze_text(req: AnalyzeTextRequest, user: User = Depends(get_current_user)):
-    m_doc = await db.measurements.find_one({"user_id": user.user_id}, {"_id": 0, "user_id": 0}) or {}
+    m_doc = await _get_measurements(user.user_id)
     if not any(m_doc.get(k) for k in ("chest_cm", "waist_cm", "hips_cm", "height_cm")):
         raise HTTPException(status_code=400, detail="Aggiungi prima almeno torace, vita, fianchi o altezza nel profilo.")
     pseudo_text = f"URL: {req.url or 'n/a'}\n\nTABELLA TAGLIE INCOLLATA DAL CLIENTE:\n{req.chart_text}"
@@ -1728,7 +1817,7 @@ async def product_analyze_screenshot(
     url: Optional[str] = Query(None),
     user: User = Depends(get_current_user),
 ):
-    m_doc = await db.measurements.find_one({"user_id": user.user_id}, {"_id": 0, "user_id": 0}) or {}
+    m_doc = await _get_measurements(user.user_id)
     if not any(m_doc.get(k) for k in ("chest_cm", "waist_cm", "hips_cm", "height_cm")):
         raise HTTPException(status_code=400, detail="Aggiungi prima almeno torace, vita, fianchi o altezza nel profilo.")
     data = await file.read()
