@@ -11,6 +11,7 @@ export default function CalcolaTagliaBox() {
   const [photo, setPhoto] = useState(null);
   const [savedHeight, setSavedHeight] = useState(null);
   const [askHeight, setAskHeight] = useState(false);
+  const [lastPhotoAt, setLastPhotoAt] = useState(null);
   const [height, setHeight] = useState("");
   const [working, setWorking] = useState(false);
   const [result, setResult] = useState(null);
@@ -21,7 +22,10 @@ export default function CalcolaTagliaBox() {
   const photoRef = useRef();
 
   useEffect(() => {
-    api.get("/profile/measurements").then(({ data }) => setSavedHeight(data?.height_cm || null)).catch(() => {});
+    api.get("/profile/measurements").then(({ data }) => {
+      setSavedHeight(data?.height_cm || null);
+      setLastPhotoAt(data?.photo_measured_at || (data?.method === "auto_photo" ? data?.updated_at : null));
+    }).catch(() => {});
   }, []);
 
   const pickPhoto = (f) => {
@@ -45,6 +49,7 @@ export default function CalcolaTagliaBox() {
     try {
       const { data } = await api.post(`/profile/auto-measure?${params}`, fd, { headers: { "Content-Type": "multipart/form-data" } });
       setSavedHeight(data.measurements.height_cm);
+      setLastPhotoAt(data.measurements.photo_measured_at || new Date().toISOString());
       setAskHeight(false);
       return true;
     } catch (e) {
@@ -56,11 +61,12 @@ export default function CalcolaTagliaBox() {
 
   const analyze = async () => {
     if (!url.trim()) { toast.error("Incolla prima il link del prodotto"); return; }
-    if (!photo) { toast.error("Carica una tua foto intera"); return; }
-    if (!savedHeight && !askHeight) { setAskHeight(true); return; }
+    if (!photo && !lastPhotoAt) { toast.error("Carica una tua foto intera"); return; }
+    if (photo && !savedHeight && !askHeight) { setAskHeight(true); return; }
     if (askHeight && !(Number(height) >= 120 && Number(height) <= 230)) { toast.error("Inserisci la tua altezza in cm (120-230)"); return; }
     setWorking(true); setResult(null); setNeedsFallback(false);
-    if (!(await measureFromPhoto())) { setWorking(false); return; }
+    // A new photo is measured; otherwise the last photo's (encrypted) measurements are reused.
+    if (photo && !(await measureFromPhoto())) { setWorking(false); return; }
     try {
       const { data } = await api.post("/product/analyze", { url });
       handleResult(data);
@@ -165,6 +171,14 @@ export default function CalcolaTagliaBox() {
             <button type="button" onClick={() => photoRef.current?.click()} className="btn-ghost" data-testid="calcola-photo-change">Cambia foto</button>
             <button type="button" onClick={() => setPhoto(null)} className="text-neutral-500 hover:text-[#0A0A0A]" aria-label="Rimuovi" data-testid="calcola-photo-remove"><X size={16} /></button>
           </div>
+        ) : lastPhotoAt ? (
+          <div className="flex flex-wrap items-center gap-4 border hairline px-4 py-3" data-testid="calcola-last-photo">
+            <CheckCircle size={18} weight="fill" className="text-emerald-600" />
+            <span className="text-sm" data-testid="calcola-last-photo-text">
+              Usiamo la tua ultima foto intera (del {new Date(lastPhotoAt).toLocaleDateString("it-IT", { day: "2-digit", month: "2-digit" })})
+            </span>
+            <button type="button" onClick={() => photoRef.current?.click()} className="btn-ghost ml-auto" data-testid="calcola-last-photo-change">Cambia foto</button>
+          </div>
         ) : (
           <button type="button" onClick={() => photoRef.current?.click()}
             onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); pickPhoto(e.dataTransfer.files?.[0]); }}
@@ -207,7 +221,7 @@ export default function CalcolaTagliaBox() {
       )}
 
       {result?.ok && (
-        <GreenResult result={result} onProvalo={provalo} importing={importing} />
+        <GreenResult result={result} onProvalo={provalo} importing={importing} onNewScreenshot={() => setNeedsFallback(true)} />
       )}
     </section>
   );
@@ -252,10 +266,16 @@ function FallbackBlock({ chartText, setChartText, onAnalyzeText, onScreenshot, l
   );
 }
 
-function GreenResult({ result, onProvalo, importing }) {
-  const { recommended_size, explanation, brand, product_name, fit_notes } = result;
+function GreenResult({ result, onProvalo, importing, onNewScreenshot }) {
+  const { recommended_size, explanation, brand, product_name, fit_notes, saved_chart } = result;
   return (
     <div className="mt-6 fade-up" data-testid="calcola-result">
+      {saved_chart && (
+        <div className="mb-3 flex flex-wrap items-center gap-3 border hairline px-4 py-3" data-testid="calcola-saved-chart">
+          <span className="text-sm" data-testid="calcola-saved-chart-text">Tabella {saved_chart.brand} salvata dal tuo screenshot</span>
+          <button type="button" onClick={onNewScreenshot} className="btn-ghost ml-auto" data-testid="calcola-new-screenshot-btn">Usa uno screenshot nuovo</button>
+        </div>
+      )}
       <div className="border-2 p-6 md:p-8 flex flex-col md:flex-row items-start md:items-center gap-6" style={{ borderColor: "#059669", background: "#F0FDF4" }}>
         <CheckCircle size={48} weight="fill" className="text-emerald-600 shrink-0" />
         <div className="flex-1">

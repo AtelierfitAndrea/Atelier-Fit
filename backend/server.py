@@ -489,7 +489,7 @@ async def auto_measure(
     new_weight = weight_kg is not None and weight_kg != saved_m.get("weight_kg")
     saved = await _set_measurements(user.user_id, {
         **est, "height_cm": height_cm, "weight_kg": weight_kg, "gender": gender,
-        "brand_sizes": sizes, "precision": precision, "method": "auto_photo",
+        "brand_sizes": sizes, "precision": precision, "method": "auto_photo", "photo_measured_at": now,
     }, now, remove=("weight_kg",) if forget_weight else ())
     if new_weight:
         await db.weight_history.insert_one({
@@ -1337,6 +1337,54 @@ class AnalyzeUrlRequest(BaseModel):
     url: str
 
 
+_MARKETPLACES = {"amazon", "zalando", "asos", "ebay", "aliexpress", "farfetch", "yoox", "shein", "temu", "amzn"}
+_CAT_GROUP = {"top": "sopra", "outerwear": "sopra", "dress": "sopra", "bottom": "sotto", "shoes": "scarpe"}
+
+
+def _brand_key(url: str = "", brand: Optional[str] = None) -> Optional[str]:
+    if brand:
+        return re.sub(r"[^a-z0-9]", "", brand.lower()) or None
+    host = _host(url) if url and re.match(r"^https?://", url) else ""
+    parts = [p for p in host.split(".") if p not in ("www", "www2", "shop", "it", "com", "co", "uk", "eu", "de", "fr", "es")]
+    return parts[0] if parts else None
+
+
+async def _remember_chart(user: User, url: Optional[str], result: dict) -> None:
+    # Size charts read from the user's screenshot/text are kept per account, by brand + garment group.
+    if not result.get("ok") or not result.get("size_chart"):
+        return
+    key = _brand_key(url or "", result.get("brand")) or _brand_key(url or "")
+    if not key:
+        return
+    group = _CAT_GROUP.get((result.get("category") or "top").lower(), "sopra")
+    hosts = {k for k in (_brand_key(url or ""),) if k and k not in _MARKETPLACES}
+    await db.saved_size_charts.update_one(
+        {"account_id": user.account_id, "brand_key": key, "group": group},
+        {"$set": {"brand": result.get("brand") or key.capitalize(), "size_chart": result["size_chart"],
+                  "fit_notes": result.get("fit_notes"), "saved_at": datetime.now(timezone.utc).isoformat()},
+         "$addToSet": {"host_keys": {"$each": list(hosts)}}},
+        upsert=True,
+    )
+
+
+async def _analyze_with_saved_chart(user: User, url: str, m_doc: dict, category: Optional[str] = None) -> Optional[dict]:
+    hk = _brand_key(url)
+    if not hk or hk in _MARKETPLACES:
+        return None
+    q = {"account_id": user.account_id, "$or": [{"brand_key": hk}, {"host_keys": hk}]}
+    if category and _CAT_GROUP.get(category.lower()):
+        q["group"] = _CAT_GROUP[category.lower()]
+    saved = await db.saved_size_charts.find_one(q, {"_id": 0}, sort=[("saved_at", -1)])
+    if not saved:
+        return None
+    text = (f"URL: {url}\nBRAND: {saved['brand']}\nNOTE VESTIBILITÀ: {saved.get('fit_notes') or 'n/d'}\n\n"
+            f"TABELLA TAGLIE SALVATA DAL CLIENTE (JSON):\n{pyjson.dumps(saved['size_chart'], ensure_ascii=False)}")
+    result = await _call_llm_for_analysis(text, None, m_doc, hint_url=url)
+    if result.get("ok"):
+        result["saved_chart"] = {"brand": saved["brand"], "group": saved["group"], "saved_at": saved["saved_at"]}
+    return result
+
+
 @api_router.post("/product/analyze")
 async def product_analyze(req: AnalyzeUrlRequest, user: User = Depends(get_current_user)):
     url = (req.url or "").strip()
@@ -1347,9 +1395,16 @@ async def product_analyze(req: AnalyzeUrlRequest, user: User = Depends(get_curre
         raise HTTPException(status_code=400, detail="Aggiungi prima almeno torace, vita, fianchi o altezza nel profilo.")
     html = await _fetch_page(url)
     if not html:
+        saved = await _analyze_with_saved_chart(user, url, m_doc)
+        if saved and saved.get("ok"):
+            return saved
         return {"ok": False, "needs_screenshot": True, "reason": "Il sito ha bloccato la lettura automatica. Incolla la tabella taglie o carica uno screenshot."}
     condensed, product_image = _condense_html(html)
     result = await _call_llm_for_analysis(condensed, None, m_doc, hint_url=url)
+    if not result.get("ok"):
+        saved = await _analyze_with_saved_chart(user, url, m_doc, result.get("category"))
+        if saved and saved.get("ok"):
+            result = saved
     if product_image:
         result["product_image_url"] = product_image
     # Log the analysis for audit / brand reporting
@@ -1376,6 +1431,7 @@ async def product_analyze_text(req: AnalyzeTextRequest, user: User = Depends(get
         raise HTTPException(status_code=400, detail="Aggiungi prima almeno torace, vita, fianchi o altezza nel profilo.")
     pseudo_text = f"URL: {req.url or 'n/a'}\n\nTABELLA TAGLIE INCOLLATA DAL CLIENTE:\n{req.chart_text}"
     result = await _call_llm_for_analysis(pseudo_text, None, m_doc, hint_url=req.url or "")
+    await _remember_chart(user, req.url, result)
     await db.product_analyses.insert_one({
         "id": str(uuid.uuid4()),
         "user_id": user.user_id,
@@ -1867,6 +1923,7 @@ async def product_analyze_screenshot(
     data = await file.read()
     img_b64 = base64.b64encode(data).decode("utf-8")
     result = await _call_llm_for_analysis(None, img_b64, m_doc, hint_url=url or "")
+    await _remember_chart(user, url, result)
     await db.product_analyses.insert_one({
         "id": str(uuid.uuid4()),
         "user_id": user.user_id,
