@@ -110,3 +110,6 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 - Box Dashboard: solo Link + "Carica una foto intera" + testo dell'utente + "CALCOLA CON LA MIA FOTO"
 - La foto viene analizzata nel browser (MediaPipe) → POST /api/profile/auto-measure. L'altezza salvata fa da scala; se manca compare una sola volta "Quanto sei alto?" (viene salvata). Peso e sesso dal profilo se presenti; senza sesso precisione -10 (media dei modelli uomo/donna, tabelle unisex = uomo). Profilo: forget_weight=true quando si sceglie "Preferisco non indicare il peso"
 - /api/profile/quick-estimate resta nel backend ma non è più usato dal box
+
+## 2026-06 — Riordino Prova taglia (DONE, screenshot)
+- Ordine: Il capo | La tua foto (invertite) → Provalo → griglia outfit multi-brand → box privacy verde + box account personale (il box privacy in alto è stato tolto)

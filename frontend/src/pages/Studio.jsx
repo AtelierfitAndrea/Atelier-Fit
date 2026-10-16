@@ -101,9 +101,21 @@ export default function Studio() {
         <TryonCounter />
       </header>
 
-      <PrivacyBox testid="privacy-box-top" />
-
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        <UploadBox
+          title="Il capo"
+          hint="Foto prodotto dal tuo e-commerce preferito."
+          preview={garmentPreview}
+          onFile={async (f) => {
+            setGarmentPreview(URL.createObjectURL(f));
+            try {
+              const p = await uploadFile(f, "garment");
+              setGarmentPath(p);
+            } catch { toast.error("Upload failed"); }
+          }}
+          testid="upload-garment"
+          className="lg:col-span-5"
+        />
         <UploadBox
           title="La tua foto"
           hint="Meglio una foto a figura intera o del busto, sfondo neutro."
@@ -129,28 +141,9 @@ export default function Studio() {
           testid="upload-person"
           className="lg:col-span-5"
         />
-        <UploadBox
-          title="Il capo"
-          hint="Foto prodotto dal tuo e-commerce preferito."
-          preview={garmentPreview}
-          onFile={async (f) => {
-            setGarmentPreview(URL.createObjectURL(f));
-            try {
-              const p = await uploadFile(f, "garment");
-              setGarmentPath(p);
-            } catch { toast.error("Upload failed"); }
-          }}
-          testid="upload-garment"
-          className="lg:col-span-5"
-        />
         <div className="lg:col-span-2 flex items-center justify-center">
           <Sparkle size={56} weight="duotone" className="text-[#8C7355]" />
         </div>
-      </div>
-
-      <div className="space-y-3">
-        <PrivacyBox testid="privacy-box-bottom" />
-        <AccountPersonalBox />
       </div>
 
       <section className="border hairline p-6 md:p-8 bg-white">
@@ -218,6 +211,11 @@ export default function Studio() {
       )}
 
       <OutfitGrid personPath={personPath} uploadFile={uploadFile} />
+
+      <div className="space-y-3">
+        <PrivacyBox testid="privacy-box-bottom" />
+        <AccountPersonalBox />
+      </div>
     </div>
   );
 }
