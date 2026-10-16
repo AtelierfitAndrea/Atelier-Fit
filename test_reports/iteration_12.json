@@ -1,0 +1,20 @@
+{
+  "summary": "Iteration 12 tested the screenshot fallback in 'Calcola taglia da link' on the live URL (session fam_test_1791784817). 1) Full-body photo + blocked Zara URL (zara.com/it/it/giacca-p123.html): auto-measure returns 200, then POST /product/analyze returns 200 with ok:false/needs_screenshot. calcola-fallback appears with the exact title 'Non riusciamo a leggere la tabella da questo link - Carica screenshot tabella taglie'. There is no toast and no height question. calcola-screenshot-input accepts '.jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp'. 2) Uploading a PIL size-chart PNG calls POST /product/analyze-screenshot?url=..., which returns 200. calcola-result shows size S with an Italian reason based on the chart (Vita 70-74). The fallback box is hidden after the result, with no toast. 3) Simulated failures via route interception (/product/analyze 500 and network abort): the fallback appears in both cases with 0 toasts. 4) Text path: calcola-chart-text-toggle, then fill the textarea, then calcola-text-cta calls POST /product/analyze-text (200), giving result S with no toast. 5) calcola-help text is unchanged and the box layout is unchanged. 6) /studio regression: Il capo, La tua foto and the Provalo column appear in the same order. Gemini was called 2 times (screenshot + text).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "If analyze-screenshot or analyze-text returns ok:false, a toast is shown ('Non siamo riusciti a leggere la tabella...'). This is intentional and appears only in the fallback step. The link step never shows an error.",
+    "The visible screenshot upload zone (label) has no data-testid of its own. Only the hidden input has one. This is minor.",
+    "server.py is ~1895 lines; consider splitting the product/analysis routes into a router"
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (frontend-only request; endpoints exercised via UI all 200)", "frontend": "100%"},
+  "test_credentials": "session_token=fam_test_1791784817 cookie",
+  "seed_data_creation": "None (product_analyses audit rows created by the 3 analyze calls)",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "The Zara test URL quickly gives ok:false, so the fallback appears without a Gemini call. Use page.route on **/api/product/analyze to simulate a 500 or an abort. A PIL PNG chart works with analyze-screenshot. On /studio, the labels are uppercase in inner_text because of CSS, so match case-insensitively.",
+  "rca of the issue": "N/A"
+}

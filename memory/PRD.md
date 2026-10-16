@@ -113,3 +113,6 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 
 ## 2026-06 — Riordino Prova taglia (DONE, screenshot)
 - Ordine: Il capo | La tua foto (invertite) → Provalo → griglia outfit multi-brand → box privacy verde + box account personale (il box privacy in alto è stato tolto)
+
+## 2026-06 — Fallback screenshot della tabella taglie (DONE, iteration_12 100%)
+- Se il sito blocca, non trova la tabella o va in errore → compare in automatico il riquadro "Non riusciamo a leggere la tabella da questo link - Carica screenshot tabella taglie" (upload jpg/png/webp; il testo incollato resta come opzione secondaria). Nessun messaggio d'errore per l'utente
