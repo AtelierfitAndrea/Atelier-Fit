@@ -1,0 +1,23 @@
+{
+  "summary": "Tested the founder admin dashboard /admin-atelier-77 (backend + UI) and the coming-soon countdown. Everything requested passed. Backend: 5/5 pytest pass. They cover: 401 without cookie; 'Password errata' on a wrong password; login sets the httpOnly admin_token cookie with Path=/api/admin; stats return demo:true, 4 KPIs, categories in order Maglie/Pantaloni/Scarpe/Giacche, 10 products all with views >= 1000, Camicia lino/Chino slim/Blazer doppiopetto excluded, conversion = sales/views*100; logout removes the session on the server (the old token gets 401); 5 wrong passwords -> 429 'Troppi tentativi', and the correct password is also blocked during the lockout. UI: in a fresh browser context the admin route shows the login form, not the coming-soon page. Black background with gold accents. Error text shown. Dashboard shows the DATI DIMOSTRATIVI banner, the KPIs and the 4 HOT category tables with %. A reload keeps the session; logout goes back to login and stays there after a reload. Countdown d/h/m match the target 2026-10-25T00:00:00+02:00 and the seconds update. With Date.now mocked past the target, 'Ci siamo!' appears and the page stays coming soon. ?atelier=2026 opens the site; ?atelier=esci shows coming soon again. Grep: the password string is not in src or bundle.js, and /admin-atelier-77 appears only in the App.js route (not linked anywhere). admin_login_attempts cleaned. A transient 502 happened once because the environment restarted the services; it was not caused by the app.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [{"screen": "Admin dashboard KPIs", "issues": ["Intl it-IT does not group 4-digit numbers (shows 1284, 3417, 4876,40 €). Optional: add useGrouping:'always' or minimumGroupingDigits:1 to get 1.284."]}]
+  },
+  "test_report_links": ["/app/backend/tests/test_admin_atelier.py", "/app/test_reports/pytest/pytest_admin.xml"],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Lockout counts per IP taken from X-Forwarded-For[0], which the client can spoof. Acceptable for the MVP; it could also be combined with a global counter.",
+    "admin_sessions has no TTL index; expired sessions build up (minor).",
+    "AdminAtelier is imported eagerly in App.js; React.lazy would keep the admin UI code out of the public bundle (the password is not exposed either way)."
+  ],
+  "updated_files": ["/app/backend/tests/test_admin_atelier.py"],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "seed_data_creation": "None; admin_login_attempts cleaned after the tests",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "test_credentials": "Admin password AtelierFondatore2026! (bcrypt $2b$ hash in backend/.env ADMIN_PASSWORD_HASH)",
+  "context_for_next_testing_agent": "Admin tests in test_admin_atelier.py clean db.admin_login_attempts automatically through a fixture. To mock the countdown, override Date.now via page.evaluate after load (add_init_script + goto timed out once)."
+}

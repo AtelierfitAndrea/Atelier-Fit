@@ -128,3 +128,7 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 - 2026-06: gate coming soon: /?atelier=esci cancella atelier_owner e torna a COMING SOON. Redeploy avviato. Dominio myatelierapp.it: il record A è ancora 195.110.124.133 (Register.it) → l'utente deve impostare 162.159.142.117 + 172.66.2.113; il CNAME www è già corretto
 - 2026-06: stile coming soon dall'ultimo snippet dell'utente (h1 36px/letter-spacing 10px; p 12px/4px/opacità 0.6). atelier_owner ora vale "true" ("1" accettato ancora). Il controllo resta su pathname, non sull'intero URL: url.includes('/atelier') varrebbe per ogni visitatore di https://atelier.app/
 - 2026-06: health check pre-deploy: messo tra virgolette DATA_ENCRYPTION_KEY in backend/.env (stesso valore, iniziava con "-"). Seconda verifica del deployment_agent: PASS. iteration_15: decifratura e round trip 100%
+
+## 2026-06 — Dashboard fondatore + countdown (DONE, iteration_16 100%)
+- /admin-atelier-77 (non collegata, fuori dal blocco coming soon): password lato server (bcrypt ADMIN_PASSWORD_HASH in .env), cookie httpOnly admin_token 8h (path /api/admin), blocco dopo 5 errori per IP per 15 min. Stile nero/oro. KPI + PRODOTTI HOT (>=1000 views, 4 categorie, conversione). DATI DIMOSTRATIVI (MOCK, _DEMO_PRODUCTS in server.py)
+- Countdown sulla pagina COMING SOON fino al 2026-10-25T00:00+02:00, poi "Ci siamo!". Il sito si apre solo su ordine manuale dell'utente

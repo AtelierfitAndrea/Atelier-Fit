@@ -2,8 +2,8 @@ import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 
 const GOLD = "#D4AF37";
-const eur = (n) => new Intl.NumberFormat("it-IT", { style: "currency", currency: "EUR" }).format(n);
-const num = (n) => new Intl.NumberFormat("it-IT").format(n);
+const eur = (n) => new Intl.NumberFormat("it-IT", { style: "currency", currency: "EUR", useGrouping: "always" }).format(n);
+const num = (n) => new Intl.NumberFormat("it-IT", { useGrouping: "always" }).format(n);
 
 function Login({ onOk }) {
   const [pwd, setPwd] = useState("");
