@@ -368,6 +368,99 @@ async def auth_logout(request: Request, response: Response):
     return {"ok": True}
 
 
+# ----- Founder admin (single password, separate from user auth) -----
+import bcrypt
+import secrets as pysecrets
+
+ADMIN_SESSION_HOURS = 8
+ADMIN_MAX_FAILS = 5
+ADMIN_LOCK_MINUTES = 15
+
+
+class AdminLoginIn(BaseModel):
+    password: str
+
+
+def _client_ip(request: Request) -> str:
+    fwd = request.headers.get("x-forwarded-for", "")
+    return fwd.split(",")[0].strip() or (request.client.host if request.client else "unknown")
+
+
+@api_router.post("/admin/login")
+async def admin_login(body: AdminLoginIn, request: Request, response: Response):
+    ident = f"admin:{_client_ip(request)}"
+    now = datetime.now(timezone.utc)
+    att = await db.admin_login_attempts.find_one({"identifier": ident}, {"_id": 0}) or {}
+    locked_until = att.get("locked_until")
+    if locked_until and datetime.fromisoformat(locked_until) > now:
+        raise HTTPException(status_code=429, detail="Troppi tentativi. Riprova tra 15 minuti.")
+    if not bcrypt.checkpw(body.password.encode("utf-8"), os.environ["ADMIN_PASSWORD_HASH"].encode("utf-8")):
+        fails = att.get("fails", 0) + 1 if not locked_until else 1
+        upd = {"fails": fails, "locked_until": (now + timedelta(minutes=ADMIN_LOCK_MINUTES)).isoformat() if fails >= ADMIN_MAX_FAILS else None}
+        await db.admin_login_attempts.update_one({"identifier": ident}, {"$set": upd}, upsert=True)
+        raise HTTPException(status_code=401, detail="Password errata")
+    await db.admin_login_attempts.delete_one({"identifier": ident})
+    token = pysecrets.token_urlsafe(32)
+    expires = now + timedelta(hours=ADMIN_SESSION_HOURS)
+    await db.admin_sessions.insert_one({"token": token, "expires_at": expires.isoformat(), "created_at": now.isoformat()})
+    response.set_cookie("admin_token", token, httponly=True, secure=True, samesite="none", max_age=ADMIN_SESSION_HOURS * 3600, path="/api/admin")
+    return {"ok": True, "expires_at": expires.isoformat()}
+
+
+async def require_admin(request: Request):
+    token = request.cookies.get("admin_token")
+    sess = await db.admin_sessions.find_one({"token": token}, {"_id": 0}) if token else None
+    if not sess or datetime.fromisoformat(sess["expires_at"]) < datetime.now(timezone.utc):
+        raise HTTPException(status_code=401, detail="Accesso fondatore richiesto")
+    return True
+
+
+@api_router.post("/admin/logout")
+async def admin_logout(request: Request, response: Response):
+    token = request.cookies.get("admin_token")
+    if token:
+        await db.admin_sessions.delete_one({"token": token})
+    response.delete_cookie("admin_token", path="/api/admin", samesite="none", secure=True)
+    return {"ok": True}
+
+
+_DEMO_PRODUCTS = [
+    ("Maglie", "Zara", "T-shirt oversize cotone", 4820, 212, 19.95),
+    ("Maglie", "H&M", "Maglione girocollo lana", 2310, 64, 29.99),
+    ("Maglie", "Nike", "Felpa Club Fleece", 1290, 51, 59.99),
+    ("Maglie", "Mango", "Camicia lino", 740, 30, 35.99),
+    ("Pantaloni", "Levi's", "Jeans 501 Original", 3960, 158, 109.00),
+    ("Pantaloni", "Zara", "Pantaloni wide leg", 1875, 49, 39.95),
+    ("Pantaloni", "Uniqlo", "Chino slim", 910, 22, 39.90),
+    ("Scarpe", "Adidas", "Samba OG", 6120, 301, 120.00),
+    ("Scarpe", "Nike", "Air Force 1 '07", 5340, 236, 119.99),
+    ("Scarpe", "Veja", "Campo", 1140, 27, 150.00),
+    ("Giacche", "Mango", "Trench classico", 2780, 71, 119.99),
+    ("Giacche", "The North Face", "Nuptse 1996", 1960, 58, 330.00),
+    ("Giacche", "Zara", "Blazer doppiopetto", 990, 19, 69.95),
+]
+
+
+@api_router.get("/admin/stats")
+async def admin_stats(_: bool = Depends(require_admin)):
+    hot = {}
+    for cat, brand, name, views, sales, price in _DEMO_PRODUCTS:
+        if views < 1000:
+            continue
+        hot.setdefault(cat, []).append({
+            "brand": brand, "name": name, "views": views, "sales": sales,
+            "conversion": round(sales / views * 100, 2), "price": price,
+        })
+    for items in hot.values():
+        items.sort(key=lambda x: x["views"], reverse=True)
+    return {
+        "demo": True,
+        "kpi": {"subscribers_total": 1284, "visits_today": 3417, "paying_subscribers": 312, "revenue_total": 4876.40, "currency": "EUR"},
+        "hot_products": {c: hot.get(c, []) for c in ("Maglie", "Pantaloni", "Scarpe", "Giacche")},
+        "min_views": 1000,
+    }
+
+
 # ----- Encrypted personal data (height, weight, measurements, measure photo) -----
 FERNET = Fernet(os.environ["DATA_ENCRYPTION_KEY"].encode())
 _MEASURE_FIELDS = set(Measurements.model_fields) - {"updated_at"}

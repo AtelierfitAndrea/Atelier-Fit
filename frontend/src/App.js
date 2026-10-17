@@ -16,6 +16,7 @@ import AnalyzeProduct from "@/pages/AnalyzeProduct";
 import AppShell from "@/components/AppShell";
 import Terms from "@/pages/Terms";
 import ComingSoon, { useOwnerAccess } from "@/components/ComingSoon";
+import AdminAtelier from "@/pages/AdminAtelier";
 import SessionRevokedNotice from "@/components/SessionRevokedNotice";
 import "@/App.css";
 
@@ -35,6 +36,7 @@ function Protected({ children }) {
 function AppRouter() {
   const location = useLocation();
   const isOwner = useOwnerAccess();
+  if (location.pathname === "/admin-atelier-77") return <AdminAtelier />;
   if (!isOwner && location.pathname !== "/termini") return <ComingSoon />;
   if (location.pathname.startsWith("/atelier")) return <Navigate to="/" replace />;
   if (location.hash?.includes("session_id=")) {
