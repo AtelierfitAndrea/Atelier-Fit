@@ -126,3 +126,4 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 - Da fare quando si va live: togliere il blocco (una riga in App.js)
 - 2026-06: la pagina coming soon usa il design dell'utente (titolo testuale "MY ATELIER" + "MY ATELIER .APP - COMING SOON", niente logo immagine). Redeploy avviato
 - 2026-06: gate coming soon: /?atelier=esci cancella atelier_owner e torna a COMING SOON. Redeploy avviato. Dominio myatelierapp.it: il record A è ancora 195.110.124.133 (Register.it) → l'utente deve impostare 162.159.142.117 + 172.66.2.113; il CNAME www è già corretto
+- 2026-06: stile coming soon dall'ultimo snippet dell'utente (h1 36px/letter-spacing 10px; p 12px/4px/opacità 0.6). atelier_owner ora vale "true" ("1" accettato ancora). Il controllo resta su pathname, non sull'intero URL: url.includes('/atelier') varrebbe per ogni visitatore di https://atelier.app/

@@ -6,8 +6,8 @@ export function useOwnerAccess() {
   const viaLink = window.location.pathname.startsWith("/atelier") || params.get("atelier") === "2026";
   try {
     if (params.get("atelier") === "esci") { localStorage.removeItem(OWNER_KEY); return false; }
-    if (viaLink) localStorage.setItem(OWNER_KEY, "1");
-    return viaLink || localStorage.getItem(OWNER_KEY) === "1";
+    if (viaLink) localStorage.setItem(OWNER_KEY, "true");
+    return viaLink || ["true", "1"].includes(localStorage.getItem(OWNER_KEY));
   } catch {
     return viaLink;
   }
@@ -16,12 +16,12 @@ export function useOwnerAccess() {
 export default function ComingSoon() {
   return (
     <div
-      style={{ background: "#000", height: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", color: "white" }}
+      style={{ backgroundColor: "#000", width: "100vw", height: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", color: "#fff" }}
       translate="no"
       data-testid="coming-soon"
     >
-      <h1 style={{ letterSpacing: "8px", fontSize: "32px", fontWeight: 300 }} data-testid="coming-soon-title">MY ATELIER</h1>
-      <p style={{ marginTop: "20px", letterSpacing: "3px", opacity: 0.8 }} data-testid="coming-soon-text">MY ATELIER .APP - COMING SOON</p>
+      <h1 style={{ letterSpacing: "10px", fontSize: "36px", fontWeight: 300 }} data-testid="coming-soon-title">MY ATELIER</h1>
+      <p style={{ marginTop: "20px", letterSpacing: "4px", fontSize: "12px", opacity: 0.6 }} data-testid="coming-soon-text">MY ATELIER .APP - COMING SOON</p>
     </div>
   );
 }
