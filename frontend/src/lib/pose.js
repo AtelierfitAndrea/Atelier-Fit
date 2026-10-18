@@ -102,3 +102,72 @@ export async function extractBodyRatios(file) {
     inseam_r: inseam / bodyH,
   };
 }
+
+async function detectPart(file) {
+  const landmarker = await getLandmarker();
+  const bitmap = await createImageBitmap(file);
+  if (meanLuma(bitmap) < 55) { bitmap.close?.(); throw new Error("too_dark"); }
+  const res = landmarker.detect(bitmap);
+  const p = res.landmarks?.[0];
+  const maskObj = res.segmentationMasks?.[0];
+  if (!p || !maskObj) { bitmap.close?.(); throw new Error("no_pose"); }
+  const W = maskObj.width; const H = maskObj.height;
+  const mask = maskObj.getAsFloat32Array().slice();
+  maskObj.close();
+  const vis = (i) => (p[i].visibility ?? 1) >= 0.5;
+  let top = -1; let bottom = -1;
+  for (let y = 0; y < H && top < 0; y += 1) for (let x = 0; x < W; x += 4) if (mask[y * W + x] >= 0.5) { top = y; break; }
+  for (let y = H - 1; y >= 0 && bottom < 0; y -= 1) for (let x = 0; x < W; x += 4) if (mask[y * W + x] >= 0.5) { bottom = y; break; }
+  const hipY = ((p[23].y + p[24].y) / 2) * H;
+  const hipX = ((p[23].x + p[24].x) / 2) * W;
+  const hipJ = Math.hypot((p[23].x - p[24].x) * W, (p[23].y - p[24].y) * H);
+  return { bitmap, p, mask, W, H, vis, top, bottom, hipY, hipX, hipJ };
+}
+
+/** Mirror mode, little space: photo 1 = head→hips, photo 2 = hips→feet. Hips are the shared anchor. */
+export async function extractTwoPartRatios(upperFile, lowerFile) {
+  const u = await detectPart(upperFile);
+  if (![11, 12, 23, 24].every(u.vis)) { u.bitmap.close?.(); throw new Error("upper_no_hips"); }
+  if (!u.vis(0)) { u.bitmap.close?.(); throw new Error("no_head"); }
+  if (u.top <= u.H * 0.005) { u.bitmap.close?.(); throw new Error("cut_top"); }
+  const l = await detectPart(lowerFile);
+  const closeAll = () => { u.bitmap.close?.(); l.bitmap.close?.(); };
+  if (![23, 24].every(l.vis)) { closeAll(); throw new Error("lower_no_hips"); }
+  if (![27, 28].every(l.vis)) { closeAll(); throw new Error("no_feet"); }
+  if (l.bottom >= l.H - 2) { closeAll(); throw new Error("cut_bottom"); }
+
+  const { p, mask, W, H } = u;
+  const s = u.hipJ / l.hipJ;
+  const legLen = (l.bottom - l.hipY) * s;
+  const bodyH = (u.hipY - u.top) + legLen;
+  const sY = (p[11].y + p[12].y) / 2; const hY = (p[23].y + p[24].y) / 2; const torso = hY - sY;
+  const cx = (p[11].x + p[12].x + p[23].x + p[24].x) / 4;
+  const shoulder = Math.hypot((p[11].x - p[12].x) * W, (p[11].y - p[12].y) * H);
+  const chest = Math.min(median(bandWidths(mask, W, H, sY + 0.25 * torso, sY + 0.4 * torso, cx)), shoulder * 1.0);
+  const waist = Math.min(...bandWidths(mask, W, H, sY + 0.55 * torso, sY + 0.85 * torso, cx), chest * 0.88);
+  const hipBand = bandWidths(mask, W, H, hY - 0.05 * torso, Math.min(hY + 0.2 * torso, 0.995), cx);
+  const hips = Math.max(Math.min(Math.max(...hipBand), u.hipJ * 1.85), waist);
+  if (!chest || !Number.isFinite(waist) || !Number.isFinite(hips) || bodyH <= 0) { closeAll(); throw new Error("no_pose"); }
+
+  // Stitch: upper photo down to the hips + lower photo from the hips, scaled and centred on the hips.
+  const outH = Math.round(u.hipY + (l.H - l.hipY) * s);
+  const c = document.createElement("canvas");
+  c.width = W; c.height = outH;
+  const ctx = c.getContext("2d");
+  ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, W, outH);
+  ctx.drawImage(l.bitmap, u.hipX - l.hipX * s, u.hipY - l.hipY * s, l.W * s, l.H * s);
+  ctx.drawImage(u.bitmap, 0, 0, W, u.hipY, 0, 0, W, u.hipY);
+  closeAll();
+  const blob = await new Promise((r) => c.toBlob(r, "image/jpeg", 0.92));
+
+  return {
+    ratios: {
+      shoulder_r: shoulder / bodyH,
+      chest_r: chest / bodyH,
+      waist_r: waist / bodyH,
+      hips_r: hips / bodyH,
+      inseam_r: (legLen * 0.86) / bodyH,
+    },
+    file: new File([blob], "avatar.jpg", { type: "image/jpeg" }),
+  };
+}

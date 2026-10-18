@@ -43,7 +43,6 @@ function AppRouter() {
   }
   if (loading) return <div style={{ backgroundColor: "#000", minHeight: "100vh" }} data-testid="gate-loading" />;
   if (!user && location.pathname !== "/termini") return <ComingSoon />;
-  if (user && location.pathname === "/") return <Navigate to="/dashboard" replace />;
   return (
     <Routes>
       <Route path="/" element={<Landing />} />

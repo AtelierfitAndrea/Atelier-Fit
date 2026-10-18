@@ -1,18 +1,14 @@
-import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowRight, Ruler, Sparkle, TShirt } from "@phosphor-icons/react";
 import { useAuth } from "@/lib/auth";
 
 // REMINDER: DO NOT HARDCODE THE URL, OR ADD ANY FALLBACKS OR REDIRECT URLS, THIS BREAKS THE AUTH
 export default function Landing() {
-  const { user, loading } = useAuth();
+  const { user } = useAuth();
   const navigate = useNavigate();
 
-  useEffect(() => {
-    if (!loading && user) navigate("/dashboard", { replace: true });
-  }, [user, loading, navigate]);
-
   const handleLogin = () => {
+    if (user) { navigate("/dashboard"); return; }
     const redirectUrl = window.location.origin + "/dashboard";
     window.location.href = `https://auth.emergentagent.com/?redirect=${encodeURIComponent(redirectUrl)}`;
   };
@@ -28,7 +24,7 @@ export default function Landing() {
           <a href="#atelier" className="hover:text-[#8C7355]">Atelier</a>
         </nav>
         <button data-testid="landing-login-btn" onClick={handleLogin} className="btn-ghost">
-          Entra
+          {user ? "Entra nell'app" : "Entra"}
         </button>
       </header>
 
@@ -46,7 +42,7 @@ export default function Landing() {
           </p>
           <div className="mt-12 flex flex-wrap justify-center gap-4">
             <button data-testid="hero-cta-btn" onClick={handleLogin} className="btn-primary">
-              Inizia ora <ArrowRight size={16} weight="bold" />
+              {user ? "Entra nell'app" : "Inizia ora"} <ArrowRight size={16} weight="bold" />
             </button>
             <a href="#method" className="btn-ghost">Come funziona</a>
           </div>

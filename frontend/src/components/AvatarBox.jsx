@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import { Camera, CheckCircle, Trash } from "@phosphor-icons/react";
 import { api, fileUrl } from "@/lib/api";
 import { useAvatar } from "@/lib/avatar";
-import { extractBodyRatios } from "@/lib/pose";
+import { extractBodyRatios, extractTwoPartRatios } from "@/lib/pose";
 import AvatarCamera from "@/components/AvatarCamera";
 
 const POSE_ERRORS = {
@@ -14,6 +14,8 @@ const POSE_ERRORS = {
   cut_top: ["Foto tagliata in alto", "Lascia un po' di spazio sopra la testa."],
   cut_bottom: ["Foto tagliata in basso", "Lascia un po' di spazio sotto i piedi."],
   too_far: ["Sei troppo lontano", "Avvicinati: il corpo deve riempire quasi tutta l'altezza della foto."],
+  upper_no_hips: ["Foto 1/2: non vediamo i fianchi", "Nel busto inquadra dalla testa fino ai fianchi, con i fianchi sulla linea dorata."],
+  lower_no_hips: ["Foto 2/2: non vediamo i fianchi", "Nelle gambe parti dai fianchi, sulla linea dorata, fino ai piedi."],
   no_pose: ["Non vediamo bene la tua figura", "Mettiti in piedi, frontale, a corpo intero e con più luce."],
 };
 
@@ -105,15 +107,22 @@ export default function AvatarBox({ manage = false }) {
     } finally { setBusy(false); }
   };
 
-  const onCapture = async (file) => {
+  const onCapture = async (shot) => {
     setCamOpen(false);
     setIssue(null);
-    const preview = URL.createObjectURL(file);
+    let file = shot.upper || shot;
+    let preview = URL.createObjectURL(file);
     setPending({ file, preview, ratios: null, ask: false });
     setBusy(true);
     let ratios;
-    try { ratios = await extractBodyRatios(file); }
-    catch (e) { setIssue(e.message); setPending({ file, preview, ratios: null, ask: false, bad: true }); setBusy(false); return; }
+    try {
+      if (shot.upper) {
+        ({ ratios, file } = await extractTwoPartRatios(shot.upper, shot.lower));
+        preview = URL.createObjectURL(file);
+      } else {
+        ratios = await extractBodyRatios(file);
+      }
+    } catch (e) { setIssue(e.message); setPending({ file, preview, ratios: null, ask: false, bad: true }); setBusy(false); return; }
     setBusy(false);
     if (forceBody || !profile.height_cm || !profile.weight_kg) { setPending({ file, preview, ratios, ask: true }); return; }
     await upload(file, ratios);

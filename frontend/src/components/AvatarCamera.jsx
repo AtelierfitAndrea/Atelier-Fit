@@ -4,9 +4,33 @@ import { X, Timer, Camera, ArrowsClockwise } from "@phosphor-icons/react";
 const MODES = [
   { k: "environment", label: "Posteriore" },
   { k: "user", label: "Frontale" },
-  { k: "mirror", label: "Specchio" },
+  { k: "mirror", label: "Specchio da vicino" },
 ];
 const TIMER_S = 5;
+
+function UpperSilhouette() {
+  return (
+    <svg viewBox="0 0 100 120" className="absolute inset-0 m-auto h-[88%] pointer-events-none" aria-hidden="true" data-testid="avatar-camera-silhouette-upper">
+      <g fill="none" stroke="#fff" strokeOpacity="0.85" strokeWidth="1" strokeDasharray="3 2">
+        <ellipse cx="50" cy="16" rx="11" ry="13" />
+        <path d="M38 32 Q50 37 62 32 L82 42 Q86 45 86 52 L90 110 M38 32 L18 42 Q14 45 14 52 L10 110" />
+        <path d="M30 44 L30 112 Q50 118 70 112 L70 44" />
+      </g>
+      <line x1="0" x2="100" y1="108" y2="108" stroke="#D4AF37" strokeWidth="0.8" />
+    </svg>
+  );
+}
+
+function LowerSilhouette() {
+  return (
+    <svg viewBox="0 0 100 120" className="absolute inset-0 m-auto h-[88%] pointer-events-none" aria-hidden="true" data-testid="avatar-camera-silhouette-lower">
+      <line x1="0" x2="100" y1="10" y2="10" stroke="#D4AF37" strokeWidth="0.8" />
+      <g fill="none" stroke="#fff" strokeOpacity="0.85" strokeWidth="1" strokeDasharray="3 2">
+        <path d="M28 6 Q50 14 72 6 L66 112 M28 6 L34 112 M50 16 L48 108 M50 16 L52 108" />
+      </g>
+    </svg>
+  );
+}
 
 function Silhouette() {
   return (
@@ -28,6 +52,9 @@ export default function AvatarCamera({ open, onClose, onCapture }) {
   const [mode, setMode] = useState("environment");
   const [count, setCount] = useState(0);
   const [failed, setFailed] = useState(false);
+  const [upper, setUpper] = useState(null);
+  const twoStep = mode === "mirror";
+  useEffect(() => { setUpper(null); }, [mode, open]);
 
   useEffect(() => {
     if (!open) return undefined;
@@ -61,7 +88,13 @@ export default function AvatarCamera({ open, onClose, onCapture }) {
     // Mirror selfies are reversed: flip them back to the true orientation.
     if (mode === "mirror") { ctx.translate(c.width, 0); ctx.scale(-1, 1); }
     ctx.drawImage(v, 0, 0);
-    c.toBlob((b) => b && onCapture(new File([b], "avatar.jpg", { type: "image/jpeg" })), "image/jpeg", 0.92);
+    c.toBlob((b) => {
+      if (!b) return;
+      const f = new File([b], "avatar.jpg", { type: "image/jpeg" });
+      if (!twoStep) { onCapture(f); return; }
+      if (!upper) { setUpper(f); return; }
+      onCapture({ upper, lower: f });
+    }, "image/jpeg", 0.92);
   };
 
   if (!open) return null;
@@ -83,8 +116,14 @@ export default function AvatarCamera({ open, onClose, onCapture }) {
           <video ref={videoRef} autoPlay playsInline muted className="absolute inset-0 w-full h-full object-cover"
             style={{ transform: mode === "environment" ? "none" : "scaleX(-1)" }} data-testid="avatar-camera-video" />
         )}
-        {!failed && <Silhouette />}
-        {!failed && <p className="absolute top-3 inset-x-0 text-center text-xs text-white/80">Allinea il corpo intero, dalla testa ai piedi</p>}
+        {!failed && (twoStep ? (upper ? <LowerSilhouette /> : <UpperSilhouette />) : <Silhouette />)}
+        {!failed && (
+          <p className="absolute top-3 inset-x-0 text-center text-xs text-white/90 px-4" data-testid="avatar-camera-hint">
+            {twoStep
+              ? (upper ? "2/2 Gambe: dai fianchi ai piedi (i fianchi sulla linea dorata)" : "1/2 Busto: dalla testa ai fianchi (i fianchi sulla linea dorata)")
+              : "Allinea il corpo intero, dalla testa ai piedi"}
+          </p>
+        )}
         {count > 0 && <div className="absolute inset-0 flex items-center justify-center font-serif text-8xl text-white" data-testid="avatar-camera-countdown">{count}</div>}
       </div>
       {!failed && (
@@ -104,7 +143,9 @@ export default function AvatarCamera({ open, onClose, onCapture }) {
             </button>
             <button onClick={snap} aria-label="Scatta subito" className="text-white/80" data-testid="avatar-camera-snap-btn"><Camera size={26} /></button>
           </div>
-          <span className="text-[11px] text-white/60">Tocca il cerchio: scatto tra {TIMER_S} secondi</span>
+          <span className="text-[11px] text-white/60" data-testid="avatar-camera-step">
+            {twoStep ? `Specchio da vicino · scatto ${upper ? "2" : "1"} di 2 · timer ${TIMER_S}s` : `Tocca il cerchio: scatto tra ${TIMER_S} secondi`}
+          </span>
         </div>
       )}
     </div>
