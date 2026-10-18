@@ -7,7 +7,7 @@ import { useSubscription } from "@/lib/subscription";
 
 export default function PaywallModal() {
   const { t } = useI18n();
-  const { paywallOpen, closePaywall, refresh } = useSubscription();
+  const { paywallOpen, closePaywall } = useSubscription();
   const [processing, setProcessing] = useState(null); // "extra" | "single" | "family"
 
   useEffect(() => { if (!paywallOpen) setProcessing(null); }, [paywallOpen]);
@@ -17,16 +17,10 @@ export default function PaywallModal() {
   const buy = async (option) => {
     setProcessing(option);
     try {
-      const { data } = await api.post("/subscription/checkout", { option });
-      // Mock Stripe — immediately confirm
-      await new Promise((r) => setTimeout(r, 900));
-      await api.post("/subscription/confirm", { session_id: data.session_id });
-      toast.success(t("sub.paywall.success"));
-      await refresh();
-      closePaywall();
+      const { data } = await api.post("/subscription/checkout", { option, origin_url: window.location.origin });
+      window.location.href = data.checkout_url;
     } catch {
-      toast.error("Checkout failed");
-    } finally {
+      toast.error("Checkout non disponibile, riprova");
       setProcessing(null);
     }
   };

@@ -17,6 +17,7 @@ import AppShell from "@/components/AppShell";
 import Terms from "@/pages/Terms";
 import ComingSoon from "@/components/ComingSoon";
 import AdminAtelier from "@/pages/AdminAtelier";
+import PaymentResult from "@/pages/PaymentResult";
 import SessionRevokedNotice from "@/components/SessionRevokedNotice";
 import "@/App.css";
 
@@ -54,6 +55,8 @@ function AppRouter() {
       <Route path="/tryon/:id" element={<Protected><TryOnDetail /></Protected>} />
       <Route path="/settings" element={<Protected><Settings /></Protected>} />
       <Route path="/analyze" element={<Protected><AnalyzeProduct /></Protected>} />
+      <Route path="/payment/success" element={<Protected><PaymentResult /></Protected>} />
+      <Route path="/payment/cancel" element={<Protected><PaymentResult /></Protected>} />
     </Routes>
   );
 }

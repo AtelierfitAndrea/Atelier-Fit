@@ -19,6 +19,7 @@ import json as pyjson
 from cryptography.fernet import Fernet, InvalidToken
 from body_measure import estimate as estimate_body, estimate_from_height_weight, brand_sizes
 import re
+import stripe
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -27,6 +28,7 @@ load_dotenv(ROOT_DIR / '.env')
 mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
+stripe.api_key = os.environ['STRIPE_SECRET_KEY']
 
 EMERGENT_KEY = os.environ.get("EMERGENT_LLM_KEY")
 STORAGE_BASE = (os.environ.get("INTEGRATION_PROXY_URL") or "").strip() or "https://integrations.emergentagent.com"
@@ -694,12 +696,6 @@ async def delete_weight_entry(entry_id: str, user: User = Depends(get_current_us
 # ----- Subscription / Honeymoon logic -----
 HONEYMOON_DAYS = 30
 FREE_MONTHLY_LIMIT = 5
-PLAN_PRICES = {
-    "extra": {"amount_cents": 99, "label": "+1 try-on"},
-    "single": {"amount_cents": 299, "label": "Single Unlimited"},
-    "family": {"amount_cents": 499, "label": "Family Unlimited"},
-}
-
 
 def _parse_dt(v) -> Optional[datetime]:
     if not v:
@@ -725,6 +721,10 @@ async def get_subscription_status(user_id: str) -> dict:
     days_left_honeymoon = max(0, HONEYMOON_DAYS - days_since_signup)
 
     plan = user_doc.get("plan", "FREE")
+    exp = _parse_dt(user_doc.get("plan_expires_at"))
+    if plan in ("SINGLE", "FAMILY") and exp and exp <= now:
+        plan = "FREE"
+        await db.users.update_one({"user_id": user_id}, {"$set": {"plan": "FREE"}})
     extra_credits = int(user_doc.get("extra_tryon_credits", 0) or 0)
 
     # Monthly reset on the 1st of the month
@@ -755,6 +755,7 @@ async def get_subscription_status(user_id: str) -> dict:
         "is_blocked": is_blocked,
         "current_month": current_month,
         "member_since": created_at.isoformat(),
+        "plan_expires_at": user_doc.get("plan_expires_at") if plan in ("SINGLE", "FAMILY") else None,
     }
 
 
@@ -778,57 +779,114 @@ async def api_subscription_status(user: User = Depends(get_account_user)):
 
 class CheckoutRequest(BaseModel):
     option: str  # "extra" | "single" | "family"
+    origin_url: str
+
+
+STRIPE_LOOKUP = {"extra": "atelier_extra_once", "single": "atelier_single_30d", "family": "atelier_family_30d"}
+PLAN_DAYS = 30
 
 
 @api_router.post("/subscription/checkout")
 async def api_subscription_checkout(req: CheckoutRequest, user: User = Depends(get_account_user)):
-    """Mock Stripe checkout — returns a fake session ID for the frontend to confirm."""
-    if req.option not in PLAN_PRICES:
+    if req.option not in STRIPE_LOOKUP:
         raise HTTPException(status_code=400, detail="Invalid option")
-    session_id = f"mock_cs_{uuid.uuid4().hex[:16]}"
-    await db.stripe_sessions.insert_one({
-        "id": session_id,
-        "user_id": user.user_id,
-        "option": req.option,
-        "amount_cents": PLAN_PRICES[req.option]["amount_cents"],
-        "status": "pending",
-        "created_at": datetime.now(timezone.utc).isoformat(),
+    prices = stripe.Price.list(lookup_keys=[STRIPE_LOOKUP[req.option]], active=True, limit=1).data
+    if not prices:
+        raise HTTPException(status_code=500, detail="Prezzo non configurato")
+    price = prices[0]
+    origin = req.origin_url.rstrip("/")
+    kwargs = dict(
+        line_items=[{"price": price.id, "quantity": 1}],
+        mode="payment",
+        success_url=f"{origin}/payment/success?session_id={{CHECKOUT_SESSION_ID}}",
+        cancel_url=f"{origin}/payment/cancel",
+        customer_email=user.email or None,
+        metadata={"user_id": user.user_id, "option": req.option},
+    )
+    try:
+        session = stripe.checkout.Session.create(**kwargs, managed_payments={"enabled": True})
+    except stripe.error.InvalidRequestError as e:
+        msg = (e.user_message or str(e)).lower()
+        if "managed" not in msg and "ineligible" not in msg:
+            raise
+        session = stripe.checkout.Session.create(**kwargs, automatic_tax={"enabled": True}, billing_address_collection="required")
+    now = datetime.now(timezone.utc).isoformat()
+    await db.payment_transactions.insert_one({
+        "session_id": session.id, "user_id": user.user_id, "option": req.option,
+        "lookup_key": STRIPE_LOOKUP[req.option], "amount": price.unit_amount / 100.0, "currency": price.currency,
+        "status": "initiated", "payment_status": "pending", "applied": False, "created_at": now, "updated_at": now,
     })
-    return {
-        "session_id": session_id,
-        "option": req.option,
-        "amount_cents": PLAN_PRICES[req.option]["amount_cents"],
-        "mock": True,
-    }
+    return {"checkout_url": session.url, "session_id": session.id}
 
 
-class ConfirmRequest(BaseModel):
-    session_id: str
-
-
-@api_router.post("/subscription/confirm")
-async def api_subscription_confirm(req: ConfirmRequest, user: User = Depends(get_account_user)):
-    """Mock payment success — flips the stored session to paid and applies the plan."""
-    sess = await db.stripe_sessions.find_one({"id": req.session_id, "user_id": user.user_id}, {"_id": 0})
-    if not sess:
-        raise HTTPException(status_code=404, detail="Session not found")
-    if sess["status"] == "paid":
-        return await get_subscription_status(user.account_id)
-    option = sess["option"]
-    now_iso = datetime.now(timezone.utc).isoformat()
-    update = {"stripe_last_session": req.session_id, "stripe_last_paid_at": now_iso}
+async def _apply_paid_session(session_id: str) -> None:
+    # Atomic claim so the plan is granted exactly once (poll + webhook may race).
+    tx = await db.payment_transactions.find_one_and_update(
+        {"session_id": session_id, "payment_status": "paid", "applied": False},
+        {"$set": {"applied": True, "applied_at": datetime.now(timezone.utc).isoformat()}},
+    )
+    if not tx:
+        return
+    uid, option = tx["user_id"], tx["option"]
+    now = datetime.now(timezone.utc)
     if option == "extra":
-        await db.users.update_one({"user_id": user.user_id}, {"$inc": {"extra_tryon_credits": 1}, "$set": update})
-    elif option == "single":
-        update["plan"] = "SINGLE"
-        update["plan_started_at"] = now_iso
-        await db.users.update_one({"user_id": user.user_id}, {"$set": update})
-    elif option == "family":
-        update["plan"] = "FAMILY"
-        update["plan_started_at"] = now_iso
-        await db.users.update_one({"user_id": user.user_id}, {"$set": update})
-    await db.stripe_sessions.update_one({"id": req.session_id}, {"$set": {"status": "paid", "paid_at": now_iso}})
-    return await get_subscription_status(user.account_id)
+        await db.users.update_one({"user_id": uid}, {"$inc": {"extra_tryon_credits": 1}})
+        return
+    doc = await db.users.find_one({"user_id": uid}, {"_id": 0, "plan": 1, "plan_expires_at": 1}) or {}
+    plan = option.upper()
+    cur_exp = _parse_dt(doc.get("plan_expires_at"))
+    start = cur_exp if doc.get("plan") == plan and cur_exp and cur_exp > now else now
+    await db.users.update_one({"user_id": uid}, {"$set": {
+        "plan": plan, "plan_started_at": now.isoformat(),
+        "plan_expires_at": (start + timedelta(days=PLAN_DAYS)).isoformat(), "stripe_last_session": session_id,
+    }})
+
+
+async def _mark_paid(session_id: str, s) -> None:
+    await db.payment_transactions.update_one(
+        {"session_id": session_id, "payment_status": {"$ne": "paid"}},
+        {"$set": {"status": "completed", "payment_status": "paid", "stripe_payment_intent_id": s.get("payment_intent"),
+                  "updated_at": datetime.now(timezone.utc).isoformat()}},
+    )
+    await _apply_paid_session(session_id)
+
+
+@api_router.get("/payments/status/{session_id}")
+async def payment_status(session_id: str):
+    tx = await db.payment_transactions.find_one({"session_id": session_id}, {"_id": 0})
+    if not tx:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    if tx.get("payment_status") != "paid":
+        try:
+            s = stripe.checkout.Session.retrieve(session_id)
+            if s.payment_status == "paid" or s.status == "complete":
+                await _mark_paid(session_id, s)
+            elif s.status == "expired":
+                await db.payment_transactions.update_one({"session_id": session_id}, {"$set": {"status": "expired", "payment_status": "expired"}})
+            tx = await db.payment_transactions.find_one({"session_id": session_id}, {"_id": 0})
+        except stripe.error.StripeError as e:
+            logger.warning(f"stripe status check failed: {e}")
+    return {"session_id": session_id, "status": tx["status"], "payment_status": tx["payment_status"], "option": tx.get("option")}
+
+
+@api_router.post("/stripe/webhook")
+async def stripe_webhook(request: Request):
+    payload = await request.body()
+    try:
+        event = stripe.Webhook.construct_event(payload, request.headers.get("stripe-signature", ""), os.environ["STRIPE_WEBHOOK_SECRET"])
+    except (stripe.error.SignatureVerificationError, ValueError):
+        raise HTTPException(status_code=400, detail="Invalid signature")
+    obj, t = event["data"]["object"], event["type"]
+    if t in ("checkout.session.completed", "checkout.session.async_payment_succeeded") and obj.get("payment_status") == "paid":
+        await _mark_paid(obj["id"], obj)
+    elif t in ("checkout.session.async_payment_failed", "checkout.session.expired"):
+        st = "failed" if t.endswith("failed") else "expired"
+        await db.payment_transactions.update_one({"session_id": obj["id"], "payment_status": {"$ne": "paid"}},
+                                                 {"$set": {"status": st, "payment_status": st}})
+    elif t == "charge.refunded":
+        await db.payment_transactions.update_one({"stripe_payment_intent_id": obj.get("payment_intent")},
+                                                 {"$set": {"status": "refunded", "payment_status": "refunded"}})
+    return {"status": "ok"}
 
 
 @api_router.post("/subscription/cancel")
