@@ -37,7 +37,6 @@ function Protected({ children }) {
 function AppRouter() {
   const location = useLocation();
   const { user, loading } = useAuth();
-  if (location.pathname === "/admin-atelier-77") return <AdminAtelier />;
   if (location.hash?.includes("session_id=")) {
     return <AuthCallback />;
   }
@@ -55,8 +54,10 @@ function AppRouter() {
       <Route path="/tryon/:id" element={<Protected><TryOnDetail /></Protected>} />
       <Route path="/settings" element={<Protected><Settings /></Protected>} />
       <Route path="/analyze" element={<Protected><AnalyzeProduct /></Protected>} />
+      <Route path="/stanza" element={user?.is_owner ? <AdminAtelier /> : <Navigate to="/dashboard" replace />} />
       <Route path="/payment/success" element={<Protected><PaymentResult /></Protected>} />
       <Route path="/payment/cancel" element={<Protected><PaymentResult /></Protected>} />
+      <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
 }

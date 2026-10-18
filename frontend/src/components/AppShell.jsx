@@ -4,7 +4,7 @@ import { useI18n } from "@/lib/i18n";
 import LanguageSwitcher from "@/components/LanguageSwitcher";
 import FamilySwitcher from "@/components/FamilySwitcher";
 import TermsGate from "@/components/TermsGate";
-import { SignOut, House, User as UserIcon, TShirt, Sparkle, GearSix, MagnifyingGlass } from "@phosphor-icons/react";
+import { SignOut, House, User as UserIcon, TShirt, Sparkle, GearSix, MagnifyingGlass, Crown } from "@phosphor-icons/react";
 
 export default function AppShell({ children }) {
   const { user, logout } = useAuth();
@@ -51,6 +51,11 @@ export default function AppShell({ children }) {
             </NavLink>
           </nav>
           <div className="flex items-center gap-4">
+            {user?.is_owner && (
+              <Link to="/stanza" title="Stanza del Proprietario" className="text-[#D4AF37] hover:scale-110 transition-transform" data-testid="owner-crown-btn">
+                <Crown size={24} weight="fill" />
+              </Link>
+            )}
             <FamilySwitcher />
             {user?.picture && (
               <img src={user.picture} alt="" className="w-8 h-8 object-cover" style={{ borderRadius: 2 }} />

@@ -314,6 +314,7 @@ async def auth_me(user: User = Depends(get_account_user)):
     doc = await db.users.find_one({"user_id": user.user_id}, {"_id": 0, "terms_version": 1, "terms_accepted_at": 1}) or {}
     return {
         **user.model_dump(),
+        "is_owner": _is_owner_email(user.email),
         "terms_version": doc.get("terms_version"),
         "terms_accepted_at": doc.get("terms_accepted_at"),
         "terms_current_version": TERMS_VERSION,
@@ -381,60 +382,11 @@ async def auth_logout(request: Request, response: Response):
     return {"ok": True}
 
 
-# ----- Founder admin (single password, separate from user auth) -----
-import bcrypt
-import secrets as pysecrets
-
-ADMIN_SESSION_HOURS = 8
-ADMIN_MAX_FAILS = 5
-ADMIN_LOCK_MINUTES = 15
-
-
-class AdminLoginIn(BaseModel):
-    password: str
-
-
-def _client_ip(request: Request) -> str:
-    fwd = request.headers.get("x-forwarded-for", "")
-    return fwd.split(",")[0].strip() or (request.client.host if request.client else "unknown")
-
-
-@api_router.post("/admin/login")
-async def admin_login(body: AdminLoginIn, request: Request, response: Response):
-    ident = f"admin:{_client_ip(request)}"
-    now = datetime.now(timezone.utc)
-    att = await db.admin_login_attempts.find_one({"identifier": ident}, {"_id": 0}) or {}
-    locked_until = att.get("locked_until")
-    if locked_until and datetime.fromisoformat(locked_until) > now:
-        raise HTTPException(status_code=429, detail="Troppi tentativi. Riprova tra 15 minuti.")
-    if not bcrypt.checkpw(body.password.encode("utf-8"), os.environ["ADMIN_PASSWORD_HASH"].encode("utf-8")):
-        fails = att.get("fails", 0) + 1 if not locked_until else 1
-        upd = {"fails": fails, "locked_until": (now + timedelta(minutes=ADMIN_LOCK_MINUTES)).isoformat() if fails >= ADMIN_MAX_FAILS else None}
-        await db.admin_login_attempts.update_one({"identifier": ident}, {"$set": upd}, upsert=True)
-        raise HTTPException(status_code=401, detail="Password errata")
-    await db.admin_login_attempts.delete_one({"identifier": ident})
-    token = pysecrets.token_urlsafe(32)
-    expires = now + timedelta(hours=ADMIN_SESSION_HOURS)
-    await db.admin_sessions.insert_one({"token": token, "expires_at": expires.isoformat(), "created_at": now.isoformat()})
-    response.set_cookie("admin_token", token, httponly=True, secure=True, samesite="none", max_age=ADMIN_SESSION_HOURS * 3600, path="/api/admin")
-    return {"ok": True, "expires_at": expires.isoformat()}
-
-
-async def require_admin(request: Request):
-    token = request.cookies.get("admin_token")
-    sess = await db.admin_sessions.find_one({"token": token}, {"_id": 0}) if token else None
-    if not sess or datetime.fromisoformat(sess["expires_at"]) < datetime.now(timezone.utc):
-        raise HTTPException(status_code=401, detail="Accesso fondatore richiesto")
-    return True
-
-
-@api_router.post("/admin/logout")
-async def admin_logout(request: Request, response: Response):
-    token = request.cookies.get("admin_token")
-    if token:
-        await db.admin_sessions.delete_one({"token": token})
-    response.delete_cookie("admin_token", path="/api/admin", samesite="none", secure=True)
-    return {"ok": True}
+# ----- Owner room (visible only to OWNER_EMAILS accounts) -----
+async def require_owner(user: User = Depends(get_account_user)) -> User:
+    if not _is_owner_email(user.email):
+        raise HTTPException(status_code=403, detail="Solo per il proprietario")
+    return user
 
 
 _HOT_CATS = {"top": "Maglie", "dress": "Maglie", "bottom": "Pantaloni", "shoes": "Scarpe", "outerwear": "Giacche"}
@@ -442,7 +394,7 @@ _OPTION_LABEL = {"extra": "Una Tantum", "single": "Single", "family": "Family"}
 
 
 @api_router.get("/admin/stats")
-async def admin_stats(_: bool = Depends(require_admin)):
+async def admin_stats(_: User = Depends(require_owner)):
     now = datetime.now(timezone.utc)
     day = now.strftime("%Y-%m-%d")
     month = now.strftime("%Y-%m")

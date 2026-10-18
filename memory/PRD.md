@@ -157,3 +157,6 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 - FREE: 5 try-ons/month after 30-day honeymoon (DB monthly_tryon_count). When blocked: /api/upload and /api/tryon/generate → 402; frontend 402 interceptor opens paywall globally; Studio guards uploads. Counter: "Ti restano X prove gratuite".
 - /api/admin/stats now real: subscribers, distinct logins today, paying (active plan_expires_at), revenue total/month from paid payment_transactions (amount = Stripe amount_total), purchases per plan, last 10 payments, most analyzed products per category. Demo banner removed.
 - Tested iteration_18 (100%).
+
+## 2026-10-18 — Crown Owner Room
+- Removed /admin-atelier-77, /api/admin/login|logout and password. Owner (OWNER_EMAILS) sees gold Crown icon top-right → /stanza (real Stripe revenue, subscribers, last payments). Others: no icon, /stanza redirects, API 403.

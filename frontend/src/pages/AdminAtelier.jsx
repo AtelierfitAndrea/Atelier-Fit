@@ -1,34 +1,10 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { api } from "@/lib/api";
 
 const GOLD = "#D4AF37";
 const eur = (n) => new Intl.NumberFormat("it-IT", { style: "currency", currency: "EUR", useGrouping: "always" }).format(n);
 const num = (n) => new Intl.NumberFormat("it-IT", { useGrouping: "always" }).format(n);
-
-function Login({ onOk }) {
-  const [pwd, setPwd] = useState("");
-  const [err, setErr] = useState("");
-  const [busy, setBusy] = useState(false);
-  const submit = async (e) => {
-    e.preventDefault();
-    setBusy(true); setErr("");
-    try { await api.post("/admin/login", { password: pwd }); onOk(); }
-    catch (e2) { const d = e2?.response?.data?.detail; setErr(typeof d === "string" ? d : "Accesso non riuscito"); }
-    finally { setBusy(false); }
-  };
-  return (
-    <form onSubmit={submit} className="w-full max-w-sm" data-testid="admin-login-form">
-      <h1 className="text-center tracking-[0.5em] text-2xl font-light" style={{ color: GOLD }}>MY ATELIER</h1>
-      <p className="mt-2 text-center text-xs tracking-[0.3em] text-white/50">AREA FONDATORE</p>
-      <input type="password" value={pwd} onChange={(e) => setPwd(e.target.value)} autoFocus placeholder="Password"
-        className="mt-10 w-full bg-transparent border px-4 py-3 text-white outline-none" style={{ borderColor: `${GOLD}66` }}
-        data-testid="admin-password-input" />
-      {err && <p className="mt-3 text-sm text-red-400" data-testid="admin-login-error">{err}</p>}
-      <button type="submit" disabled={busy || !pwd} className="mt-6 w-full py-3 text-xs tracking-[0.3em] text-black disabled:opacity-50"
-        style={{ background: GOLD }} data-testid="admin-login-btn">{busy ? "…" : "ENTRA"}</button>
-    </form>
-  );
-}
 
 function Kpi({ label, value, testid }) {
   return (
@@ -97,17 +73,14 @@ export default function AdminAtelier() {
   const [stats, setStats] = useState(null);
   const [state, setState] = useState("loading");
 
-  const load = async () => {
-    try { const { data } = await api.get("/admin/stats"); setStats(data); setState("in"); }
-    catch { setState("login"); }
-  };
-  useEffect(() => { load(); }, []);
-
-  const logout = async () => { try { await api.post("/admin/logout"); } catch (_e) { /* ignore */ } setStats(null); setState("login"); };
+  useEffect(() => {
+    api.get("/admin/stats").then(({ data }) => { setStats(data); setState("in"); }).catch(() => setState("error"));
+  }, []);
 
   return (
     <div className="min-h-screen bg-black text-white" translate="no" data-testid="admin-page">
-      {state === "login" && <div className="min-h-screen flex items-center justify-center px-6"><Login onOk={load} /></div>}
+      {state === "loading" && <div className="min-h-screen flex items-center justify-center text-xs tracking-[0.3em] text-white/50">CARICAMENTO…</div>}
+      {state === "error" && <div className="min-h-screen flex items-center justify-center text-sm text-white/60" data-testid="admin-error">Dati non disponibili, riprova.</div>}
       {state === "in" && stats && (
         <div className="max-w-6xl mx-auto px-6 py-12">
           <div className="flex items-center justify-between">
@@ -115,7 +88,7 @@ export default function AdminAtelier() {
               <h1 className="tracking-[0.5em] text-2xl font-light" style={{ color: GOLD }}>MY ATELIER</h1>
               <p className="mt-1 text-xs tracking-[0.3em] text-white/50">DASHBOARD FONDATORE</p>
             </div>
-            <button onClick={logout} className="text-xs tracking-[0.3em] border px-4 py-2" style={{ borderColor: GOLD, color: GOLD }} data-testid="admin-logout-btn">ESCI</button>
+            <Link to="/dashboard" className="text-xs tracking-[0.3em] border px-4 py-2" style={{ borderColor: GOLD, color: GOLD }} data-testid="admin-back-btn">TORNA ALL'APP</Link>
           </div>
           {stats.demo && (
             <div className="mt-8 py-3 text-center text-sm tracking-[0.4em] font-semibold text-black" style={{ background: GOLD }} data-testid="admin-demo-banner">
