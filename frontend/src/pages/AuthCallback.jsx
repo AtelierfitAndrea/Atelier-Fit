@@ -25,7 +25,8 @@ export default function AuthCallback() {
         await api.post("/auth/session", { session_id: sid });
         window.history.replaceState(null, "", "/dashboard");
         await refresh();
-        navigate("/dashboard", { replace: true });
+        // Owner login from the Coming Soon page lands on the homepage preview.
+        navigate(window.location.pathname === "/" ? "/" : "/dashboard", { replace: true });
       } catch (e) {
         if (e?.response?.status === 403) sessionStorage.setItem("atelier_owner_denied", "1");
         navigate("/", { replace: true });

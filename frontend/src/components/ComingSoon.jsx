@@ -33,7 +33,7 @@ function OwnerLogin() {
   const [denied] = useState(() => sessionStorage.getItem(OWNER_DENIED_KEY) === "1");
   useEffect(() => { sessionStorage.removeItem(OWNER_DENIED_KEY); }, []);
   const login = () => {
-    const redirectUrl = window.location.origin + "/dashboard";
+    const redirectUrl = window.location.origin + "/";
     window.location.href = `https://auth.emergentagent.com/?redirect=${encodeURIComponent(redirectUrl)}`;
   };
   return (
