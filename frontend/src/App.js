@@ -16,7 +16,7 @@ import Settings from "@/pages/Settings";
 import AnalyzeProduct from "@/pages/AnalyzeProduct";
 import AppShell from "@/components/AppShell";
 import Terms from "@/pages/Terms";
-import ComingSoon from "@/components/ComingSoon";
+import ComingSoon, { LAUNCH_AT } from "@/components/ComingSoon";
 import AdminAtelier from "@/pages/AdminAtelier";
 import PaymentResult from "@/pages/PaymentResult";
 import SessionRevokedNotice from "@/components/SessionRevokedNotice";
@@ -42,7 +42,7 @@ function AppRouter() {
     return <AuthCallback />;
   }
   if (loading) return <div style={{ backgroundColor: "#000", minHeight: "100vh" }} data-testid="gate-loading" />;
-  if (!user && location.pathname !== "/termini") return <ComingSoon />;
+  if (!user && location.pathname !== "/termini" && Date.now() < LAUNCH_AT) return <ComingSoon />;
   return (
     <Routes>
       <Route path="/" element={<Landing />} />

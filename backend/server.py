@@ -146,9 +146,14 @@ async def get_account_user(
     user_doc = await db.users.find_one({"user_id": sess["user_id"]}, {"_id": 0})
     if not user_doc:
         raise HTTPException(status_code=401, detail="User not found")
-    if not _is_owner_email(user_doc.get("email")):
+    if _prelaunch_blocked(user_doc.get("email")):
         raise HTTPException(status_code=403, detail="prelaunch_owner_only")
     return User(**user_doc)
+
+
+def _prelaunch_blocked(email: Optional[str]) -> bool:
+    # Before LAUNCH_AT only OWNER_EMAILS may use the app; afterwards everyone can.
+    return datetime.now(timezone.utc) < datetime.fromisoformat(os.environ["LAUNCH_AT"]) and not _is_owner_email(email)
 
 
 def _is_owner_email(email: Optional[str]) -> bool:
@@ -267,7 +272,7 @@ async def auth_session(request: Request, response: Response):
         raise HTTPException(status_code=401, detail="Invalid session_id")
     data = r.json()
     email = data["email"]
-    if not _is_owner_email(email):
+    if _prelaunch_blocked(email):
         raise HTTPException(status_code=403, detail="prelaunch_owner_only")
     # Upsert user
     existing = await db.users.find_one({"email": email}, {"_id": 0})

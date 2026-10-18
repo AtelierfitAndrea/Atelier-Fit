@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 
 // Sab 24 → Dom 25 ottobre 2026, 00:00 ora italiana (CEST, UTC+2).
-const LAUNCH_AT = new Date("2026-10-25T00:00:00+02:00").getTime();
+export const LAUNCH_AT = new Date("2026-10-25T00:00:00+02:00").getTime();
 
 function Countdown() {
   const [now, setNow] = useState(Date.now());

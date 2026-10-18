@@ -204,3 +204,7 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 - AvatarCamera openNormalLens(): after getUserMedia, if track label is ultra-wide/dual/triple/tele (EN + IT: tripla/doppia/grandangol) switch to the normal back/front lens by deviceId; force zoom 1x via applyConstraints when supported. Both modes.
 - pose.js keepRealProportions(): leg fraction (hips→heels / total) clamped to [0.47, 0.60] with hips anchored → no stretched legs. No-anchor fallback: same scale 1:1, photo-2 waist (gold line 14%) aligned to photo-1 waist, seam at hips.
 - quick-estimate accepts force=true (used when 2-shot photo is not measurable). Tested iterations 28-29.
+
+## 2026-10-18 — Minimal landing + automatic launch
+- Landing.jsx reduced to: header logo + "Entra" (top-right), hero logo, slogan, "- by Andrea M.", description, footer Termini. Entra → /dashboard if logged, else Google login.
+- Automatic launch: backend LAUNCH_AT env ("2026-10-25T00:00:00+02:00") — _prelaunch_blocked() only before it; frontend ComingSoon only when !user && Date.now() < LAUNCH_AT (exported from ComingSoon.jsx). After launch everyone sees Landing and can sign up.
