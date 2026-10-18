@@ -196,6 +196,21 @@ function bodyRatios(u, l, reg) {
   return valid ? r : null;
 }
 
+// Hip-to-floor is ~45-53% of real height: if the stitch says otherwise, rescale the legs (hips stay anchored)
+// so busto and gambe keep 1:1 real proportions and the figure is never stretched or widened.
+const LEG_FRAC = [0.45, 0.53];
+function keepRealProportions(u, l, reg) {
+  const upperH = u.hipY - u.top;
+  const lowerPx = l.bottom - l.hipY;
+  if (upperH <= 0 || lowerPx <= 0) return reg;
+  const leg = reg.t + l.bottom * reg.s - u.hipY;
+  const frac = leg / (upperH + leg);
+  if (frac >= LEG_FRAC[0] && frac <= LEG_FRAC[1]) return reg;
+  const f = Math.min(LEG_FRAC[1], Math.max(LEG_FRAC[0], frac));
+  const s = (f * upperH / (1 - f)) / lowerPx;
+  return { ...reg, s, t: u.hipY - l.hipY * s, dx: u.hipX - l.hipX * s, corrected: true };
+}
+
 /**
  * Close-up 2-shot (photo 1 = head→mid-thigh, photo 2 = waist→feet). Never blocks:
  * returns the stitched photo always, ratios when measurable, and soft warnings.
@@ -211,6 +226,7 @@ export async function extractTwoPartRatios(upperFile, lowerFile) {
     if (![27, 28].every(l.vis) || l.bottom >= l.H - 2) warnings.push("cut_bottom");
     reg = registerParts(u, l) || { s: u.hipJ / l.hipJ, t: u.hipY - l.hipY * (u.hipJ / l.hipJ), dx: u.hipX - l.hipX * (u.hipJ / l.hipJ), seam: u.hipY };
     reg.seam = reg.seam || u.hipY;
+    reg = keepRealProportions(u, l, reg);
     ratios = bodyRatios(u, l, reg);
   }
   if (!ratios) warnings.push("no_measure");

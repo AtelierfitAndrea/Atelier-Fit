@@ -46,6 +46,29 @@ function Silhouette() {
   );
 }
 
+const VIDEO = { width: { ideal: 1080 }, height: { ideal: 1920 } };
+const NOT_NORMAL_LENS = /ultra|wide|dual|triple|tele|0[.,]5|macro/i;
+
+// Main 1x lens only: avoid the 0.5x ultra-wide (barrel distortion widens the body) and force zoom 1x.
+async function openNormalLens(facing) {
+  let st = await navigator.mediaDevices.getUserMedia({ video: { facingMode: facing, ...VIDEO }, audio: false });
+  try {
+    const devices = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === "videoinput");
+    const side = facing === "user" ? /front|user|anteriore|frontale/i : /back|rear|environment|posteriore/i;
+    const current = st.getVideoTracks()[0];
+    const curLabel = current?.label || "";
+    const normal = devices.find((d) => side.test(d.label) && !NOT_NORMAL_LENS.test(d.label));
+    if (normal && NOT_NORMAL_LENS.test(curLabel) && normal.deviceId !== current.getSettings?.().deviceId) {
+      st.getTracks().forEach((t) => t.stop());
+      st = await navigator.mediaDevices.getUserMedia({ video: { deviceId: { exact: normal.deviceId }, ...VIDEO }, audio: false });
+    }
+    const track = st.getVideoTracks()[0];
+    const zoom = track?.getCapabilities?.()?.zoom;
+    if (zoom && zoom.min <= 1 && zoom.max >= 1) await track.applyConstraints({ advanced: [{ zoom: 1 }] });
+  } catch (_e) { /* keep the default stream */ }
+  return st;
+}
+
 const say = (text) => {
   try {
     const synth = window.speechSynthesis;
@@ -78,7 +101,7 @@ export default function AvatarCamera({ open, onClose, onCapture, initialMode = "
     if (!open) return undefined;
     let cancelled = false;
     setFailed(false);
-    navigator.mediaDevices?.getUserMedia({ video: { facingMode: facing, width: { ideal: 1080 }, height: { ideal: 1920 } }, audio: false })
+    openNormalLens(facing)
       .then((st) => {
         if (cancelled) { st.getTracks().forEach((t) => t.stop()); return; }
         streamRef.current = st;
