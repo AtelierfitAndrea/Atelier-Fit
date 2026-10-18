@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "@/lib/api";
+import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid } from "recharts";
 
 const GOLD = "#D4AF37";
 const eur = (n) => new Intl.NumberFormat("it-IT", { style: "currency", currency: "EUR", useGrouping: "always" }).format(n);
@@ -34,6 +35,31 @@ function HotCategory({ name, items }) {
           </tbody>
         </table>
       )}
+    </div>
+  );
+}
+
+function RevenueChart({ data }) {
+  const rows = data.map((d) => ({ ...d, label: d.date.slice(8, 10) + "/" + d.date.slice(5, 7) }));
+  const total = data.reduce((a, d) => a + d.total, 0);
+  return (
+    <div className="mt-6 border p-6" style={{ borderColor: `${GOLD}40` }} data-testid="admin-revenue-chart">
+      <div className="flex justify-between text-xs tracking-[0.3em]">
+        <span style={{ color: GOLD }}>INCASSI ULTIMI 30 GIORNI</span>
+        <span className="text-white/60" data-testid="admin-revenue-chart-total">{eur(total)}</span>
+      </div>
+      <div className="mt-6 h-64">
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart data={rows}>
+            <CartesianGrid stroke="#ffffff14" vertical={false} />
+            <XAxis dataKey="label" tick={{ fill: "#ffffff80", fontSize: 10 }} axisLine={false} tickLine={false} interval={2} />
+            <YAxis tick={{ fill: "#ffffff80", fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={(v) => `${v}€`} width={40} />
+            <Tooltip cursor={{ fill: "#ffffff0d" }} contentStyle={{ background: "#000", border: `1px solid ${GOLD}`, color: "#fff" }}
+              formatter={(v, _n, p) => [`${eur(v)} · ${p.payload.count} pagamenti`, "Incasso"]} labelStyle={{ color: GOLD }} />
+            <Bar dataKey="total" fill={GOLD} radius={[2, 2, 0, 0]} />
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
     </div>
   );
 }
@@ -105,6 +131,7 @@ export default function AdminAtelier() {
             <Kpi label="INCASSO DEL MESE" value={eur(stats.kpi.revenue_month)} testid="admin-kpi-revenue-month" />
           </div>
           <h2 className="mt-14 text-sm tracking-[0.4em]" style={{ color: GOLD }}>PAGAMENTI STRIPE</h2>
+          <RevenueChart data={stats.daily_revenue} />
           <Payments byPlan={stats.by_plan} last={stats.last_payments} />
           <h2 className="mt-14 text-sm tracking-[0.4em]" style={{ color: GOLD }}>PRODOTTI HOT</h2>
           <p className="mt-1 text-xs text-white/40">I prodotti più analizzati dagli utenti, per categoria</p>

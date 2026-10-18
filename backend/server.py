@@ -432,7 +432,23 @@ async def admin_stats(_: User = Depends(require_owner)):
         "last_payments": [{"date": x["created_at"], "plan": _OPTION_LABEL.get(x["option"], x["option"]), "amount": x["amount"],
                            "email": emails.get(x["user_id"], "")} for x in last],
         "hot_products": hot,
+        "daily_revenue": await _daily_revenue(now),
     }
+
+
+async def _daily_revenue(now: datetime, days: int = 30) -> list:
+    since = (now - timedelta(days=days - 1)).strftime("%Y-%m-%d")
+    rows = await db.payment_transactions.aggregate([
+        {"$match": {"payment_status": "paid", "created_at": {"$gte": since}}},
+        {"$group": {"_id": {"$substrCP": ["$created_at", 0, 10]}, "total": {"$sum": "$amount"}, "count": {"$sum": 1}}},
+    ]).to_list(days + 1)
+    by_day = {r["_id"]: r for r in rows}
+    out = []
+    for i in range(days - 1, -1, -1):
+        d = (now - timedelta(days=i)).strftime("%Y-%m-%d")
+        r = by_day.get(d, {})
+        out.append({"date": d, "total": round(r.get("total", 0), 2), "count": r.get("count", 0)})
+    return out
 
 
 # ----- Encrypted personal data (height, weight, measurements, measure photo) -----

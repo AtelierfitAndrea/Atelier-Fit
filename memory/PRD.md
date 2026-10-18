@@ -160,3 +160,6 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 
 ## 2026-10-18 — Crown Owner Room
 - Removed /admin-atelier-77, /api/admin/login|logout and password. Owner (OWNER_EMAILS) sees gold Crown icon top-right → /stanza (real Stripe revenue, subscribers, last payments). Others: no icon, /stanza redirects, API 403.
+
+## 2026-10-18 — Revenue chart
+- /api/admin/stats returns daily_revenue (last 30 days, paid payment_transactions). Stanza shows gold bar chart (recharts) with tooltip amount + count.
