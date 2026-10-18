@@ -62,6 +62,7 @@ function BodyForm({ initial, onSubmit, onCancel }) {
 function Notes() {
   return (
     <div className="mt-4 space-y-1.5" data-testid="avatar-notes">
+      <p className="text-xs text-neutral-600" data-testid="avatar-modes-note">2 modalità: <b>1 foto intera</b> (telefono a 2-3 metri) oppure <b>2 scatti busto + gambe</b>, dedicata a chi ha poco spazio davanti allo specchio, circa 1 metro.</p>
       <p className="text-xs text-neutral-600">👙 Consiglio Atelier: con abbigliamento aderente o costume attendibilità 98%.</p>
       <p className="text-[11px] text-neutral-400" data-testid="avatar-privacy-note">🔒 La foto è criptata e visibile solo dal tuo account Atelier. Non la mostriamo a nessuno. Puoi cancellarla quando vuoi.</p>
     </div>

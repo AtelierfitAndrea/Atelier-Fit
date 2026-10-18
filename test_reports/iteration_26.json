@@ -1,0 +1,29 @@
+{
+  "summary": "Frontend test at mobile size 390x844, run on /dashboard as user_avatar_test (the user did not exist, so it was seeded and then removed). 4 of 5 features PASS. FAIL: avatar-modes-note does not exist anywhere in the source code or the live DOM, so the Home avatar box never says that there are 2 modes or 'circa 1 metro'. PASS, camera modes: the avatar-camera-mode-single label is '1 FOTO INTERA' and avatar-camera-mode-double is '2 SCATTI · POCO SPAZIO'. avatar-camera-mode-mirror is gone. avatar-camera-mode-desc switches correctly between 'Per chi ha poco spazio davanti allo specchio, circa 1 metro: busto e gambe in 2 scatti, li uniamo noi.' (double) and 'Il corpo intero in un solo scatto: appoggia il telefono a 2-3 metri.' (single). PASS, voice: speechSynthesis was stubbed. In single mode the timer says 'Foto intera' (it-IT). In double mode one timer click gives: 'Busto' (it-IT), countdown 4,3,2,1, snap 1 (upper image). About 40 ms later 'Gambe' (it-IT) is spoken and the countdown restarts automatically at 5,4,3,2,1, then snap 2 (lower image) and the camera closes. The whole sequence ran with no second click. Closing the camera mid-countdown stops the snap. PASS, preview: avatar-stitch-preview appears with the stitched blob in avatar-photo (960x1496). During the preview GET /api/profile/avatar path is null, no POST happened, and neither avatar-ready nor the body form shows. avatar-stitch-retake reopens the camera with double mode preselected. Redoing the 2 shots brings the preview back. avatar-stitch-confirm opens avatar-body-form (still no POST); after submitting 168/60 there is 1 POST (200), avatar-ready appears and the path is set. Measurements are 76/66/90/33/83. PASS, single-mode regression: with getUserMedia rejected, avatar-camera-fallback shows. Uploading /tmp/fullbody.jpg through avatar-camera-native-input gives a direct POST 200 with no preview (MutationObserver counted 0) and no body form (measurements already existed). The path changed and measurements are 76/65/89/33/80.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "AvatarBox (Home/Dashboard)", "issue": "The required note explaining both modes ('1 foto intera' / '2 scatti · poco spazio', for people with little space, about 1 metre) is not implemented. data-testid avatar-modes-note is missing. The camera description is the only place where '1 metro' appears.", "selector": "[data-testid='avatar-modes-note']", "priority": "MEDIUM"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "AvatarCamera fallback (no getUserMedia)", "issues": ["The mode buttons and description are hidden when the camera fails, so the 2-shot 'poco spazio' mode can't be used with the native camera. This is acceptable, but a short note would help."]}
+    ]
+  },
+  "test_report_links": [],
+  "action_items": [
+    "Add a note to AvatarBox.jsx, inside or above <Notes/> and visible before an avatar exists, with data-testid='avatar-modes-note'. Suggested text: 'Due modi: 1 foto intera (telefono a 2-3 metri) oppure 2 scatti · poco spazio (busto + gambe) per chi ha poco spazio davanti allo specchio, circa 1 metro.'"
+  ],
+  "critical_code_review_comments": [
+    "AvatarCamera: the mode buttons stay clickable during the countdown. Switching mode mid-timer runs setUpper(null)/setCount(0) and cancels cleanly, which is fine. say() calls synth.cancel() before every utterance, which is good.",
+    "AvatarBox onCapture: in the preview path, proceed() re-fetches measurements only after Conferma, which is correct. pending.preview blob URLs are never revoked (URL.revokeObjectURL), a minor memory leak on repeated Rifai.",
+    "AvatarBox: camMode is never reset to 'single' after a successful double save, so the next 'Cambia foto' opens in double mode. That may be intended (remembers the last mode)."
+  ],
+  "updated_files": ["/app/test_reports/iteration_26.json"],
+  "success_rate": {"backend": "n/a", "frontend": "80% (4/5 features; avatar-modes-note missing)"},
+  "seed_data_creation": "user_avatar_test was missing, so it was seeded in users with email andremo2014@gmail.com (required by the OWNER_EMAILS pre-launch gate), display_name Marta, terms_version 1.0-2026-06, plus session avatar_tok_test. After the tests the user, session, measurements and weight_history were deleted, and its files docs were marked is_deleted. user_389c87aaadc6 was not touched.",
+  "test_credentials": "Seed users.user_id=user_avatar_test with email andremo2014@gmail.com (non-owner emails get 403 prelaunch_owner_only) and user_sessions.session_token=avatar_tok_test. Set localStorage atelier_owner=1.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Mock: an init script overrides getUserMedia with canvas.captureStream(960x1000) drawing a contain-fit, pre-flipped image. The image switches automatically: SpeechSynthesis.prototype.speak is stubbed to record {text,lang} and set the image to 'up' on 'Busto' and 'lo' on 'Gambe'. Wrap HTMLCanvasElement.toBlob for 960x1000 canvases to log snaps. Flow: /dashboard → avatar-tap-zone → avatar-camera-mode-double → avatar-camera-timer-btn (a single click does both shots in about 11 s) → avatar-stitch-preview (about 2-3 s for mediapipe) → confirm/retake. Only avatar-modes-note needs a retest."
+}

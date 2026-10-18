@@ -124,7 +124,7 @@ export default function AvatarCamera({ open, onClose, onCapture, initialMode = "
       <div className="relative flex-1 overflow-hidden">
         {failed ? (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 text-white px-8 text-center" data-testid="avatar-camera-fallback">
-            <p className="text-sm text-white/70">Non riusciamo ad aprire la fotocamera qui. Consenti l&apos;accesso alla fotocamera o scatta con quella del telefono.</p>
+            <p className="text-sm text-white/70">Non riusciamo ad aprire la fotocamera qui. Consenti l&apos;accesso alla fotocamera o scatta con quella del telefono (1 foto intera). La modalità 2 scatti per poco spazio richiede l&apos;accesso alla fotocamera.</p>
             <button onClick={() => fileRef.current?.click()} className="bg-white text-black px-6 py-3 label-caps" data-testid="avatar-camera-native-btn">Apri fotocamera</button>
             <input ref={fileRef} type="file" accept="image/*" capture="environment" className="hidden"
               onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) onCapture(f); }} data-testid="avatar-camera-native-input" />

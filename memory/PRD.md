@@ -190,3 +190,8 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 - "/" for logged-in users shows the original Landing (slogan, "- by Andrea M.", description) with "Entra nell'app" → /dashboard. Not logged → Coming Soon.
 - Onboarding step 1 always asks Nome + altezza + peso (+ sesso) → quick-estimate (+weight_history "Iscrizione") + display-name. AvatarBox re-fetches profile before asking body data.
 - Tested iterations 22-25.
+
+## 2026-10-18 — Two avatar modes, stitch preview, voice guide
+- AvatarCamera modes: "1 foto intera" (single) / "2 scatti · poco spazio" (double, mirror-flip with rear cam), description "Per chi ha poco spazio davanti allo specchio, circa 1 metro"; front/back via flip button. Home note avatar-modes-note.
+- Voice (speechSynthesis it-IT): "Busto" / "Gambe" / "Foto intera" at timer start; legs timer auto-starts after shot 1.
+- 2-shot: stitched preview (avatar-stitch-preview) with Conferma / Rifai before saving. Tested iteration_26.
