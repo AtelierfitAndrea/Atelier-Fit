@@ -3,6 +3,7 @@ import { useI18n } from "@/lib/i18n";
 import { useSubscription } from "@/lib/subscription";
 
 const CARDS = [
+  { key: "free",   variant: "white", kicker: "freeKicker",   price: "freeTitle",   sub: "freeSub",   cta: "freeCta", included: true },
   { key: "extra",  variant: "white", kicker: "extraKicker",  price: "extraTitle",  sub: "extraSub",  cta: "extraCta"  },
   { key: "single", variant: "black", kicker: "singleKicker", price: "singleTitle", sub: "singleSub", cta: "singleCta", popular: true },
   { key: "family", variant: "white", kicker: "familyKicker", price: "familyTitle", sub: "familySub", cta: "familyCta" },
@@ -41,6 +42,7 @@ export default function PricingCards() {
         </h2>
         <span className="label-caps text-neutral-500">{t("sub.pricing.subtitle")}</span>
       </div>
+      <p className="mt-3 text-sm text-neutral-600" data-testid="pricing-free-note">{t("sub.pricing.freeNote")}</p>
 
       <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
         {CARDS.map((c) => {
@@ -52,7 +54,7 @@ export default function PricingCards() {
             <button
               key={c.key}
               type="button"
-              onClick={openPaywall}
+              onClick={c.included ? undefined : openPaywall}
               className={`relative text-left border p-6 flex flex-col gap-5 transition-all duration-200 ${base}`}
               data-testid={`pricing-card-${c.key}`}
             >
@@ -76,7 +78,7 @@ export default function PricingCards() {
                 className={`mt-auto inline-flex items-center justify-center w-full px-5 py-4 label-caps border transition-colors ${
                   isBlack
                     ? "bg-white text-[#0A0A0A] border-white"
-                    : "bg-[#0A0A0A] text-white border-[#0A0A0A]"
+                    : "bg-[#0A0A0A] !text-white border-[#0A0A0A]"
                 }`}
               >
                 {t(`sub.pricing.${c.cta}`)}

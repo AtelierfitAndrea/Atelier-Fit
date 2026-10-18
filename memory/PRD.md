@@ -142,3 +142,6 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 ## 2026-10-18 — Clean hands + contact email
 - HANDS_RULE added to single try-on and outfit prompts (+ system messages): hands always tattoo-free, no propagation of neck/body tattoos, negative prompt "tattoos on hands".
 - Coming Soon: centered "studio@myatelierapp.it" (mailto) under "Accesso proprietario".
+
+## 2026-10-18 — FREE plan card
+- PricingCards: FREE (0€, 5 prove/mese, non-paying, no paywall) → UNA TANTUM → SINGLE (Più scelto); FAMILY kept below. Note "Dopo il primo mese gratis illimitato..." (IT/EN/FR/DE).
