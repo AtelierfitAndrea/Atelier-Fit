@@ -1,5 +1,6 @@
 from fastapi import FastAPI, APIRouter, HTTPException, Request, Response, UploadFile, File, Depends, Header, Query, Cookie
 from fastapi.responses import JSONResponse
+from starlette.concurrency import run_in_threadpool
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -787,10 +788,13 @@ PLAN_DAYS = 30
 
 
 @api_router.post("/subscription/checkout")
-async def api_subscription_checkout(req: CheckoutRequest, user: User = Depends(get_account_user)):
+async def api_subscription_checkout(req: CheckoutRequest, request: Request, user: User = Depends(get_account_user)):
     if req.option not in STRIPE_LOOKUP:
         raise HTTPException(status_code=400, detail="Invalid option")
-    prices = stripe.Price.list(lookup_keys=[STRIPE_LOOKUP[req.option]], active=True, limit=1).data
+    origin_hdr = (request.headers.get("origin") or "").rstrip("/")
+    if origin_hdr and origin_hdr != req.origin_url.rstrip("/"):
+        raise HTTPException(status_code=400, detail="Origin non valida")
+    prices = await run_in_threadpool(lambda: stripe.Price.list(lookup_keys=[STRIPE_LOOKUP[req.option]], active=True, limit=1).data)
     if not prices:
         raise HTTPException(status_code=500, detail="Prezzo non configurato")
     price = prices[0]
@@ -801,18 +805,18 @@ async def api_subscription_checkout(req: CheckoutRequest, user: User = Depends(g
         success_url=f"{origin}/payment/success?session_id={{CHECKOUT_SESSION_ID}}",
         cancel_url=f"{origin}/payment/cancel",
         customer_email=user.email or None,
-        metadata={"user_id": user.user_id, "option": req.option},
+        metadata={"user_id": user.account_id, "option": req.option},
     )
     try:
-        session = stripe.checkout.Session.create(**kwargs, managed_payments={"enabled": True})
+        session = await run_in_threadpool(lambda: stripe.checkout.Session.create(**kwargs, managed_payments={"enabled": True}))
     except stripe.error.InvalidRequestError as e:
         msg = (e.user_message or str(e)).lower()
         if "managed" not in msg and "ineligible" not in msg:
             raise
-        session = stripe.checkout.Session.create(**kwargs, automatic_tax={"enabled": True}, billing_address_collection="required")
+        session = await run_in_threadpool(lambda: stripe.checkout.Session.create(**kwargs, automatic_tax={"enabled": True}, billing_address_collection="required"))
     now = datetime.now(timezone.utc).isoformat()
     await db.payment_transactions.insert_one({
-        "session_id": session.id, "user_id": user.user_id, "option": req.option,
+        "session_id": session.id, "user_id": user.account_id, "option": req.option,
         "lookup_key": STRIPE_LOOKUP[req.option], "amount": price.unit_amount / 100.0, "currency": price.currency,
         "status": "initiated", "payment_status": "pending", "applied": False, "created_at": now, "updated_at": now,
     })
@@ -858,8 +862,8 @@ async def payment_status(session_id: str):
         raise HTTPException(status_code=404, detail="Transaction not found")
     if tx.get("payment_status") != "paid":
         try:
-            s = stripe.checkout.Session.retrieve(session_id)
-            if s.payment_status == "paid" or s.status == "complete":
+            s = await run_in_threadpool(stripe.checkout.Session.retrieve, session_id)
+            if s.payment_status == "paid":
                 await _mark_paid(session_id, s)
             elif s.status == "expired":
                 await db.payment_transactions.update_one({"session_id": session_id}, {"$set": {"status": "expired", "payment_status": "expired"}})
@@ -892,7 +896,7 @@ async def stripe_webhook(request: Request):
 @api_router.post("/subscription/cancel")
 async def api_subscription_cancel(user: User = Depends(get_account_user)):
     """Downgrade back to FREE (demo helper)."""
-    await db.users.update_one({"user_id": user.user_id}, {"$set": {"plan": "FREE"}})
+    await db.users.update_one({"user_id": user.account_id}, {"$set": {"plan": "FREE"}})
     return await get_subscription_status(user.account_id)
 
 

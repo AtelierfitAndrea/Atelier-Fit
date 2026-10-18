@@ -1,0 +1,38 @@
+{
+  "summary": "Tested the real Stripe (test mode) one-time checkout end to end as the owner (Bearer/cookie owner_tok_test). Backend: 8/8 pytest pass. Checkout works for extra/single/family and returns a checkout.stripe.com URL and a cs_test_ id. An invalid option returns 400, no auth returns 401, missing origin returns 422, an unknown session returns 404, an unpaid session returns pending/initiated, and a bad webhook signature returns 400. E2E with card 4242: (1) UNA TANTUM payment -> /payment/success -> /dashboard with toast 'Pagamento confermato'. extra_credits went from 0 to 1 and stayed at 1 after 5 more concurrent polls (applied=true, idempotent). (2) Cancel via the back link on Stripe -> /payment/cancel -> /dashboard with toast 'Pagamento annullato: nessun addebito.' Plan stayed unchanged. (3) SINGLE payment -> toast -> plan SINGLE, plan_expires_at now+30d, 'Piano attuale: Single Illimitato' strip shown and pricing cards hidden. Pricing order is FREE, UNA TANTUM, SINGLE (Più scelto) in row 1 and FAMILY below. Clicking FREE does not open the paywall. Cleanup: called POST /api/subscription/cancel (plan FREE) and restored extra_tryon_credits to its original 0 directly in Mongo.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/subscription/checkout + _apply_paid_session + /api/subscription/cancel", "issue": "These use user.user_id (metadata/tx user_id), but get_subscription_status reads user.account_id (owner_id or user_id). If a family sub-profile buys a plan, it is written to the sub-profile doc and never shows on the account. Use user.account_id consistently, or block checkout for is_family_profile users."},
+      {"endpoint": "Stripe prices (setup_stripe.py)", "issue": "Tax is added on top of the price: the 0.99€ price showed as 1.21€ at checkout (IVA 22% added) and US$1.41 by default with a US locale. The UI promises 0.99/2.99/4.99€. If those should be final consumer prices, set tax_behavior='inclusive' on the prices. payment_transactions.amount stores 0.99, not the amount actually charged."},
+      {"endpoint": "POST /api/subscription/checkout", "issue": "origin_url from the client is used as-is for success/cancel URLs (open-redirect risk). Whitelist it against the allowed frontend origin."},
+      {"endpoint": "checkout/payment_status", "issue": "Synchronous stripe SDK calls run inside async handlers and block the event loop. Use run_in_threadpool or the SDK's async methods."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Dashboard pricing cards", "issues": ["The SINGLE/FAMILY cards say 'AL MESE', and the footer says 'Primo mese gratis, disdici quando vuoi'. Both suggest a recurring subscription, but the plans are one-time 30-day passes. Reword to e.g. '30 giorni · nessun rinnovo'.", "The 'PIÙ SCELTO' badge has low contrast (light text on a muted brown badge; looks faded)."]},
+      {"screen": "Dashboard after SINGLE purchase", "issues": ["The Piano attuale strip shows no expiry date (plan_expires_at), and its button says 'ABBONAMENTO' although there is no auto-renew.", "The honeymoon banner and the 'AGGIORNA ORA' CTA still show while a paid plan is active."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_stripe_checkout.py", "/app/test_reports/pytest/pytest_stripe.xml"],
+  "action_items": [
+    "Use user.account_id in checkout metadata/tx and in subscription/cancel (or block family sub-profiles from checkout)",
+    "Decide on tax: make the Stripe prices tax-inclusive so 0.99/2.99/4.99€ is what users pay",
+    "Validate origin_url against the allowed frontend origin",
+    "Copy: remove 'al mese'/'disdici' recurring wording; show the plan expiry date in the Piano attuale strip"
+  ],
+  "critical_code_review_comments": [
+    "Idempotency is correctly done with an atomic find_one_and_update on applied=False (verified with 5 concurrent polls)",
+    "The /subscription/cancel 'demo helper' is still exposed in prod and lets a paid user drop to FREE without a refund. Fine for testing, but consider removing it or making it admin-only",
+    "server.py is 2141 lines: split the payments code into its own module"
+  ],
+  "updated_files": ["/app/backend/tests/test_stripe_checkout.py"],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "seed_data_creation": "11 payment_transactions docs for user_389c87aaadc6 (2 paid test-mode: extra + single; the rest pending). Owner restored to plan FREE, extra_tryon_credits=0.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Stripe Checkout selectors: #cardNumber #cardExpiry #cardCvc #billingName #billingCountry (select 'IT'; Italy needs no address), uncheck #enableStripePass, submit [data-testid=hosted-payment-submit-button]. The cancel link is a[href*='payment/cancel']. The Coming-soon gate is bypassed with localStorage atelier_owner=1. Always call POST /api/subscription/cancel afterwards and reset extra_tryon_credits."
+}

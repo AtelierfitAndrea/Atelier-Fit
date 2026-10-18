@@ -16,7 +16,7 @@ export default function HoneymoonBanner() {
     try { if (dismissed) localStorage.setItem(KEY, "1"); } catch (_e) { /* ignore */ }
   }, [dismissed]);
 
-  if (!status || !status.honeymoon_active || dismissed) return null;
+  if (!status || !status.honeymoon_active || dismissed || ["SINGLE", "FAMILY"].includes(status.plan)) return null;
 
   return (
     <div

@@ -29,12 +29,12 @@ def ensure_catalog():
         product = get_or_create_product(entry)
         for p in entry["prices"]:
             existing = stripe.Price.list(lookup_keys=[p["lookup_key"]], active=True, limit=1).data
-            if existing and (existing[0].unit_amount != p["amount"] or existing[0].currency != p["currency"]):
+            if existing and (existing[0].unit_amount != p["amount"] or existing[0].currency != p["currency"] or existing[0].tax_behavior != "inclusive"):
                 stripe.Price.modify(existing[0].id, active=False)
                 existing = []
             if not existing:
                 stripe.Price.create(product=product.id, unit_amount=p["amount"], currency=p["currency"],
-                                    lookup_key=p["lookup_key"], transfer_lookup_key=True)
+                                    lookup_key=p["lookup_key"], transfer_lookup_key=True, tax_behavior="inclusive")
             print("ok", p["lookup_key"])
 
 

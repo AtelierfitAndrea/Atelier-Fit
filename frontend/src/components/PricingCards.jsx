@@ -24,6 +24,11 @@ export default function PricingCards() {
             <div>
               <div className="label-caps text-neutral-500">{t("sub.current")}</div>
               <div className="font-serif text-2xl mt-1">{planLabel}</div>
+              {status.plan_expires_at && (
+                <div className="text-sm text-neutral-600 mt-1" data-testid="pricing-plan-expiry">
+                  Attivo fino al {new Date(status.plan_expires_at).toLocaleDateString("it-IT", { day: "numeric", month: "long", year: "numeric" })}
+                </div>
+              )}
             </div>
           </div>
           <a href="/settings" className="btn-ghost" data-testid="pricing-manage-link">
@@ -59,7 +64,7 @@ export default function PricingCards() {
               data-testid={`pricing-card-${c.key}`}
             >
               {c.popular && (
-                <span className="absolute -top-3 left-6 bg-[#8C7355] text-white label-caps px-2 py-1">
+                <span className="absolute -top-3 left-6 bg-[#8C7355] !text-white label-caps px-2 py-1 font-semibold">
                   {t("sub.pricing.popular")}
                 </span>
               )}

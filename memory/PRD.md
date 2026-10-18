@@ -145,3 +145,10 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 
 ## 2026-10-18 — FREE plan card
 - PricingCards: FREE (0€, 5 prove/mese, non-paying, no paywall) → UNA TANTUM → SINGLE (Più scelto); FAMILY kept below. Note "Dopo il primo mese gratis illimitato..." (IT/EN/FR/DE).
+
+## 2026-10-18 — Real Stripe (test mode, claimable sandbox IT)
+- Replaced mock checkout. POST /api/subscription/checkout {option, origin_url} → Stripe Checkout (one-time, managed payments w/ fallback to automatic tax). Prices EUR tax-inclusive via setup_stripe.py lookup keys atelier_extra_once 0.99 / atelier_single_30d 2.99 / atelier_family_30d 4.99.
+- GET /api/payments/status/{sid} (poll fallback) + POST /api/stripe/webhook; idempotent _apply_paid_session (atomic applied flag). Single/Family = 30 days (plan_expires_at, extends if renewed, auto-downgrade to FREE on expiry).
+- Frontend: PaywallModal redirects to Stripe; /payment/success & /payment/cancel (PaymentResult.jsx) → /dashboard with toast. Pricing texts "30 giorni", "Pagamento unico… IVA inclusa", expiry shown in Piano attuale strip.
+- Removed /subscription/confirm mock. Tested iteration_17 (100%).
+- Backlog: claim Stripe sandbox (onboarding link) to go live; real admin KPIs from payment_transactions.
