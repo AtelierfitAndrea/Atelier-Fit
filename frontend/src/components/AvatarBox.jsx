@@ -14,8 +14,8 @@ const POSE_ERRORS = {
   cut_top: ["Foto tagliata in alto", "Lascia un po' di spazio sopra la testa."],
   cut_bottom: ["Foto tagliata in basso", "Lascia un po' di spazio sotto i piedi."],
   too_far: ["Sei troppo lontano", "Avvicinati: il corpo deve riempire quasi tutta l'altezza della foto."],
-  upper_no_hips: ["Foto 1/2: non vediamo i fianchi", "Nel busto inquadra dalla testa fino ai fianchi, con i fianchi sulla linea dorata."],
-  lower_no_hips: ["Foto 2/2: non vediamo i fianchi", "Nelle gambe parti dai fianchi, sulla linea dorata, fino ai piedi."],
+  upper_no_hips: ["Foto 1/2: non vediamo i fianchi", "Nel busto inquadra dalla testa fino a metà coscia, con i fianchi sulla linea dorata."],
+  lower_no_hips: ["Foto 2/2: non vediamo i fianchi", "Nelle gambe parti dalla vita, sulla linea dorata, fino ai piedi."],
   no_pose: ["Non vediamo bene la tua figura", "Mettiti in piedi, frontale, a corpo intero e con più luce."],
 };
 

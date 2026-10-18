@@ -16,7 +16,7 @@ function UpperSilhouette() {
         <path d="M38 32 Q50 37 62 32 L82 42 Q86 45 86 52 L90 110 M38 32 L18 42 Q14 45 14 52 L10 110" />
         <path d="M30 44 L30 112 Q50 118 70 112 L70 44" />
       </g>
-      <line x1="0" x2="100" y1="108" y2="108" stroke="#D4AF37" strokeWidth="0.8" />
+      <line x1="0" x2="100" y1="96" y2="96" stroke="#D4AF37" strokeWidth="0.8" />
     </svg>
   );
 }
@@ -24,7 +24,7 @@ function UpperSilhouette() {
 function LowerSilhouette() {
   return (
     <svg viewBox="0 0 100 120" className="absolute inset-0 m-auto h-[88%] pointer-events-none" aria-hidden="true" data-testid="avatar-camera-silhouette-lower">
-      <line x1="0" x2="100" y1="10" y2="10" stroke="#D4AF37" strokeWidth="0.8" />
+      <line x1="0" x2="100" y1="14" y2="14" stroke="#D4AF37" strokeWidth="0.8" />
       <g fill="none" stroke="#fff" strokeOpacity="0.85" strokeWidth="1" strokeDasharray="3 2">
         <path d="M28 6 Q50 14 72 6 L66 112 M28 6 L34 112 M50 16 L48 108 M50 16 L52 108" />
       </g>
@@ -120,7 +120,7 @@ export default function AvatarCamera({ open, onClose, onCapture }) {
         {!failed && (
           <p className="absolute top-3 left-1/2 -translate-x-1/2 w-[92%] max-w-md text-center text-xs text-white bg-black/70 backdrop-blur-sm px-4 py-2 rounded-full" data-testid="avatar-camera-hint">
             {twoStep
-              ? (upper ? "2/2 Gambe: dai fianchi ai piedi (i fianchi sulla linea dorata)" : "1/2 Busto: dalla testa ai fianchi (i fianchi sulla linea dorata)")
+              ? (upper ? "2/2 Gambe: dalla vita ai piedi (la vita sulla linea dorata)" : "1/2 Busto: dalla testa a metà coscia (i fianchi sulla linea dorata)")
               : "Allinea il corpo intero, dalla testa ai piedi"}
           </p>
         )}

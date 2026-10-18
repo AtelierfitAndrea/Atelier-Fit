@@ -128,7 +128,8 @@ function profile(d, y0, y1) {
 /** Finds scale s and offsets (t, dx) so that photo-2 rows y2 map to photo-1 rows y1 = t + s*y2, by matching the overlapping silhouette. */
 function registerParts(u, l) {
   const torso = u.hipY - ((u.p[11].y + u.p[12].y) / 2) * u.H;
-  const a = profile(u, u.hipY - 0.35 * torso, u.H - 3).filter((r) => r.w > 0);
+  // Skip the last rows of photo 1: the segmentation mask tapers at the frame edge.
+  const a = profile(u, u.hipY - 0.35 * torso, u.H * 0.97).filter((r) => r.w > 0);
   const b = profile(l, 0, Math.min(l.bottom, l.hipY + (l.bottom - l.hipY) * 0.6));
   if (a.length < 20 || b.length < 20) return null;
   const bw = new Map(b.map((r) => [r.y, r]));
@@ -141,7 +142,7 @@ function registerParts(u, l) {
       for (let i = 0; i < a.length; i += 2) {
         const r2 = bw.get(Math.round((a[i].y - t) / s));
         if (!r2 || !r2.w) continue;
-        err += Math.abs(a[i].w - s * r2.w) / a[i].w; n += 1;
+        err += Math.min(0.5, Math.abs(a[i].w - s * r2.w) / Math.max(a[i].w, s * r2.w)); n += 1;
       }
       if (n >= 12) {
         const cost = err / n + 0.15 / Math.sqrt(n);
