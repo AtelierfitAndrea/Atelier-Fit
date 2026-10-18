@@ -43,6 +43,7 @@ api.interceptors.response.use(
       try { localStorage.setItem(SESSION_REVOKED_KEY, "1"); } catch (_e) { /* ignore */ }
       window.dispatchEvent(new Event("atelier-session-revoked"));
     }
+    if (error?.response?.status === 402) window.dispatchEvent(new Event("atelier-paywall"));
     return Promise.reject(error);
   }
 );

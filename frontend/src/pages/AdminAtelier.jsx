@@ -43,24 +43,52 @@ function HotCategory({ name, items }) {
   return (
     <div className="border p-6" style={{ borderColor: `${GOLD}40` }} data-testid={`admin-hot-${name.toLowerCase()}`}>
       <div className="text-xs tracking-[0.3em]" style={{ color: GOLD }}>{name.toUpperCase()}</div>
-      {items.length === 0 ? <p className="mt-4 text-sm text-white/40">Nessun prodotto sopra soglia</p> : (
+      {items.length === 0 ? <p className="mt-4 text-sm text-white/40">Nessun prodotto analizzato</p> : (
         <table className="mt-4 w-full text-sm">
           <thead><tr className="text-left text-[10px] tracking-[0.2em] text-white/40">
-            <th className="py-2 font-normal">PRODOTTO</th><th className="font-normal text-right">VIEWS</th>
-            <th className="font-normal text-right">VENDITE</th><th className="font-normal text-right">CONV.</th>
+            <th className="py-2 font-normal">PRODOTTO</th><th className="font-normal text-right">ANALISI</th>
           </tr></thead>
           <tbody>
             {items.map((p) => (
-              <tr key={p.name} className="border-t border-white/10">
+              <tr key={`${p.brand}-${p.name}`} className="border-t border-white/10">
                 <td className="py-2"><span className="text-white/50">{p.brand}</span> · {p.name}</td>
-                <td className="text-right">{num(p.views)}</td>
-                <td className="text-right">{num(p.sales)}</td>
-                <td className="text-right" style={{ color: GOLD }}>{p.conversion.toLocaleString("it-IT")}%</td>
+                <td className="text-right" style={{ color: GOLD }}>{num(p.views)}</td>
               </tr>
             ))}
           </tbody>
         </table>
       )}
+    </div>
+  );
+}
+
+function Payments({ byPlan, last }) {
+  return (
+    <div className="mt-6 grid grid-cols-1 lg:grid-cols-3 gap-4">
+      <div className="border p-6" style={{ borderColor: `${GOLD}40` }} data-testid="admin-by-plan">
+        <div className="text-xs tracking-[0.3em]" style={{ color: GOLD }}>ACQUISTI PER PIANO</div>
+        {byPlan.map((p) => (
+          <div key={p.label} className="mt-4 flex justify-between text-sm border-t border-white/10 pt-3">
+            <span>{p.label}</span><span className="text-white/60">{num(p.count)} · <span style={{ color: GOLD }}>{eur(p.total)}</span></span>
+          </div>
+        ))}
+      </div>
+      <div className="lg:col-span-2 border p-6" style={{ borderColor: `${GOLD}40` }} data-testid="admin-last-payments">
+        <div className="text-xs tracking-[0.3em]" style={{ color: GOLD }}>ULTIMI 10 PAGAMENTI</div>
+        {last.length === 0 ? <p className="mt-4 text-sm text-white/40">Nessun pagamento ancora</p> : (
+          <table className="mt-4 w-full text-sm">
+            <tbody>
+              {last.map((x, i) => (
+                <tr key={i} className="border-t border-white/10">
+                  <td className="py-2 text-white/50">{new Date(x.date).toLocaleString("it-IT", { dateStyle: "short", timeStyle: "short" })}</td>
+                  <td>{x.email}</td><td>{x.plan}</td>
+                  <td className="text-right" style={{ color: GOLD }}>{eur(x.amount)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
     </div>
   );
 }
@@ -96,12 +124,17 @@ export default function AdminAtelier() {
           )}
           <div className="mt-8 grid grid-cols-2 lg:grid-cols-4 gap-4">
             <Kpi label="ISCRITTI TOTALI" value={num(stats.kpi.subscribers_total)} testid="admin-kpi-subscribers" />
-            <Kpi label="VISITE OGGI" value={num(stats.kpi.visits_today)} testid="admin-kpi-visits" />
+            <Kpi label="ACCESSI OGGI" value={num(stats.kpi.logins_today)} testid="admin-kpi-visits" />
             <Kpi label="ABBONATI PAGANTI" value={num(stats.kpi.paying_subscribers)} testid="admin-kpi-paying" />
             <Kpi label="INCASSO TOTALE" value={eur(stats.kpi.revenue_total)} testid="admin-kpi-revenue" />
           </div>
+          <div className="mt-4 grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <Kpi label="INCASSO DEL MESE" value={eur(stats.kpi.revenue_month)} testid="admin-kpi-revenue-month" />
+          </div>
+          <h2 className="mt-14 text-sm tracking-[0.4em]" style={{ color: GOLD }}>PAGAMENTI STRIPE</h2>
+          <Payments byPlan={stats.by_plan} last={stats.last_payments} />
           <h2 className="mt-14 text-sm tracking-[0.4em]" style={{ color: GOLD }}>PRODOTTI HOT</h2>
-          <p className="mt-1 text-xs text-white/40">Solo prodotti con almeno {num(stats.min_views)} visualizzazioni · conversione = vendite / views</p>
+          <p className="mt-1 text-xs text-white/40">I prodotti più analizzati dagli utenti, per categoria</p>
           <div className="mt-6 grid grid-cols-1 lg:grid-cols-2 gap-4">
             {Object.entries(stats.hot_products).map(([cat, items]) => <HotCategory key={cat} name={cat} items={items} />)}
           </div>

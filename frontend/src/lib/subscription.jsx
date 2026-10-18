@@ -19,6 +19,12 @@ export function SubscriptionProvider({ children }) {
 
   useEffect(() => { if (user) refresh(); else { setStatus(null); setLoading(false); } }, [user, refresh]);
 
+  useEffect(() => {
+    const open = () => { setPaywallOpen(true); refresh(); };
+    window.addEventListener("atelier-paywall", open);
+    return () => window.removeEventListener("atelier-paywall", open);
+  }, [refresh]);
+
   return (
     <Ctx.Provider value={{
       status,

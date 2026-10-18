@@ -28,7 +28,7 @@ const DICTIONARIES = {
     },
     sub: {
       honeymoonBanner: "Primo mese tutto illimitato gratis. Dal secondo mese scegli tu come continuare — sempre 5 prove free al mese incluse.",
-      counter: "Ti restano {n}/5 prove free questo mese",
+      counter: "Ti restano {n} prove gratuite",
       counterZero: "Prove free esaurite — sblocca per continuare",
       honeymoonBadge: "Luna di miele · {n} giorni rimanenti",
       honeymoonUnlimited: "Illimitato gratis",
@@ -171,7 +171,7 @@ const DICTIONARIES = {
     },
     sub: {
       honeymoonBanner: "First month fully unlimited, free. From month two, you choose how to continue — 5 free try-ons/month always included.",
-      counter: "{n}/5 free try-ons left this month",
+      counter: "{n} free try-ons left",
       counterZero: "Free try-ons used up — unlock to continue",
       honeymoonBadge: "Honeymoon · {n} days left",
       honeymoonUnlimited: "Unlimited, free",
@@ -310,7 +310,7 @@ const DICTIONARIES = {
     },
     sub: {
       honeymoonBanner: "Premier mois entièrement illimité, gratuit. Dès le mois 2, vous choisissez — 5 essayages gratuits/mois toujours inclus.",
-      counter: "Il vous reste {n}/5 essayages gratuits ce mois-ci",
+      counter: "Il vous reste {n} essayages gratuits",
       counterZero: "Essayages gratuits épuisés — débloquez pour continuer",
       honeymoonBadge: "Lune de miel · {n} jours restants",
       honeymoonUnlimited: "Illimité, gratuit",
@@ -449,7 +449,7 @@ const DICTIONARIES = {
     },
     sub: {
       honeymoonBanner: "Erster Monat komplett unbegrenzt, gratis. Ab dem zweiten Monat entscheidest du — 5 kostenlose Try-ons/Monat immer inklusive.",
-      counter: "Du hast noch {n}/5 kostenlose Try-ons diesen Monat",
+      counter: "Du hast noch {n} kostenlose Try-ons",
       counterZero: "Kostenlose Try-ons aufgebraucht — jetzt freischalten",
       honeymoonBadge: "Honeymoon · {n} Tage übrig",
       honeymoonUnlimited: "Unbegrenzt, gratis",

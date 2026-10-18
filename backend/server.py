@@ -437,40 +437,49 @@ async def admin_logout(request: Request, response: Response):
     return {"ok": True}
 
 
-_DEMO_PRODUCTS = [
-    ("Maglie", "Zara", "T-shirt oversize cotone", 4820, 212, 19.95),
-    ("Maglie", "H&M", "Maglione girocollo lana", 2310, 64, 29.99),
-    ("Maglie", "Nike", "Felpa Club Fleece", 1290, 51, 59.99),
-    ("Maglie", "Mango", "Camicia lino", 740, 30, 35.99),
-    ("Pantaloni", "Levi's", "Jeans 501 Original", 3960, 158, 109.00),
-    ("Pantaloni", "Zara", "Pantaloni wide leg", 1875, 49, 39.95),
-    ("Pantaloni", "Uniqlo", "Chino slim", 910, 22, 39.90),
-    ("Scarpe", "Adidas", "Samba OG", 6120, 301, 120.00),
-    ("Scarpe", "Nike", "Air Force 1 '07", 5340, 236, 119.99),
-    ("Scarpe", "Veja", "Campo", 1140, 27, 150.00),
-    ("Giacche", "Mango", "Trench classico", 2780, 71, 119.99),
-    ("Giacche", "The North Face", "Nuptse 1996", 1960, 58, 330.00),
-    ("Giacche", "Zara", "Blazer doppiopetto", 990, 19, 69.95),
-]
+_HOT_CATS = {"top": "Maglie", "dress": "Maglie", "bottom": "Pantaloni", "shoes": "Scarpe", "outerwear": "Giacche"}
+_OPTION_LABEL = {"extra": "Una Tantum", "single": "Single", "family": "Family"}
 
 
 @api_router.get("/admin/stats")
 async def admin_stats(_: bool = Depends(require_admin)):
-    hot = {}
-    for cat, brand, name, views, sales, price in _DEMO_PRODUCTS:
-        if views < 1000:
-            continue
-        hot.setdefault(cat, []).append({
-            "brand": brand, "name": name, "views": views, "sales": sales,
-            "conversion": round(sales / views * 100, 2), "price": price,
-        })
-    for items in hot.values():
-        items.sort(key=lambda x: x["views"], reverse=True)
+    now = datetime.now(timezone.utc)
+    day = now.strftime("%Y-%m-%d")
+    month = now.strftime("%Y-%m")
+    paid_q = {"payment_status": "paid"}
+    subscribers = await db.users.count_documents({"is_family_profile": {"$ne": True}})
+    logins_today = await db.user_sessions.count_documents({"created_at": {"$gte": day}})
+    paying = await db.users.count_documents({"plan": {"$in": ["SINGLE", "FAMILY"]}, "plan_expires_at": {"$gt": now.isoformat()}})
+    agg = await db.payment_transactions.aggregate([
+        {"$match": paid_q},
+        {"$group": {"_id": "$option", "count": {"$sum": 1}, "total": {"$sum": "$amount"},
+                    "month": {"$sum": {"$cond": [{"$eq": [{"$substrCP": ["$created_at", 0, 7]}, month]}, "$amount", 0]}}}},
+    ]).to_list(10)
+    by_plan = {o: {"label": lbl, "count": 0, "total": 0.0} for o, lbl in _OPTION_LABEL.items()}
+    for a in agg:
+        if a["_id"] in by_plan:
+            by_plan[a["_id"]].update(count=a["count"], total=round(a["total"], 2))
+    last = await db.payment_transactions.find(paid_q, {"_id": 0, "user_id": 1, "option": 1, "amount": 1, "created_at": 1}).sort("created_at", -1).to_list(10)
+    emails = {u["user_id"]: u.get("email", "") async for u in db.users.find({"user_id": {"$in": [x["user_id"] for x in last]}}, {"_id": 0, "user_id": 1, "email": 1})}
+    hot_rows = await db.product_analyses.aggregate([
+        {"$match": {"result.ok": True}},
+        {"$group": {"_id": {"brand": "$result.brand", "name": "$result.product_name", "cat": "$result.category"}, "views": {"$sum": 1}}},
+        {"$sort": {"views": -1}}, {"$limit": 60},
+    ]).to_list(60)
+    hot = {c: [] for c in ("Maglie", "Pantaloni", "Scarpe", "Giacche")}
+    for r in hot_rows:
+        cat = _HOT_CATS.get((r["_id"].get("cat") or "").lower())
+        if cat and len(hot[cat]) < 5:
+            hot[cat].append({"brand": r["_id"].get("brand") or "—", "name": r["_id"].get("name") or "Prodotto", "views": r["views"]})
     return {
-        "demo": True,
-        "kpi": {"subscribers_total": 1284, "visits_today": 3417, "paying_subscribers": 312, "revenue_total": 4876.40, "currency": "EUR"},
-        "hot_products": {c: hot.get(c, []) for c in ("Maglie", "Pantaloni", "Scarpe", "Giacche")},
-        "min_views": 1000,
+        "demo": False,
+        "kpi": {"subscribers_total": subscribers, "logins_today": logins_today, "paying_subscribers": paying,
+                "revenue_total": round(sum(a["total"] for a in agg), 2), "revenue_month": round(sum(a["month"] for a in agg), 2),
+                "currency": "EUR"},
+        "by_plan": list(by_plan.values()),
+        "last_payments": [{"date": x["created_at"], "plan": _OPTION_LABEL.get(x["option"], x["option"]), "amount": x["amount"],
+                           "email": emails.get(x["user_id"], "")} for x in last],
+        "hot_products": hot,
     }
 
 
@@ -850,6 +859,7 @@ async def _mark_paid(session_id: str, s) -> None:
     await db.payment_transactions.update_one(
         {"session_id": session_id, "payment_status": {"$ne": "paid"}},
         {"$set": {"status": "completed", "payment_status": "paid", "stripe_payment_intent_id": s.get("payment_intent"),
+                  **({"amount": s.get("amount_total") / 100.0} if s.get("amount_total") is not None else {}),
                   "updated_at": datetime.now(timezone.utc).isoformat()}},
     )
     await _apply_paid_session(session_id)
@@ -1105,6 +1115,8 @@ async def b2b_fitting_accuracy(user_id: str):
 # ----- File upload / serve -----
 @api_router.post("/upload")
 async def upload(kind: str = Query(..., regex="^(person|garment)$"), file: UploadFile = File(...), user: User = Depends(get_current_user)):
+    if (await get_subscription_status(user.account_id))["is_blocked"]:
+        raise HTTPException(status_code=402, detail="Prove gratuite esaurite: scegli un piano per continuare.")
     ext = (file.filename or "img").rsplit(".", 1)[-1].lower()
     if ext not in ("jpg", "jpeg", "png", "webp"):
         ext = "png"

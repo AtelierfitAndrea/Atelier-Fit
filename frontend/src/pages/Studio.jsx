@@ -56,6 +56,7 @@ export default function Studio() {
   };
 
   const uploadFile = async (file, kind) => {
+    if (subStatus?.is_blocked) { openPaywall(); throw new Error("blocked"); }
     const fd = new FormData();
     fd.append("file", file);
     const { data } = await api.post(`/upload?kind=${kind}`, fd, { headers: { "Content-Type": "multipart/form-data" } });
@@ -107,11 +108,12 @@ export default function Studio() {
           hint="Foto prodotto dal tuo e-commerce preferito."
           preview={garmentPreview}
           onFile={async (f) => {
+            if (subStatus?.is_blocked) { openPaywall(); return; }
             setGarmentPreview(URL.createObjectURL(f));
             try {
               const p = await uploadFile(f, "garment");
               setGarmentPath(p);
-            } catch { toast.error("Upload failed"); }
+            } catch (e) { if (e?.response?.status !== 402) toast.error("Upload failed"); }
           }}
           testid="upload-garment"
           className="lg:col-span-5"
@@ -131,12 +133,13 @@ export default function Studio() {
             </button>
           ) : null}
           onFile={async (f) => {
+            if (subStatus?.is_blocked) { openPaywall(); return; }
             setPersonPreview(URL.createObjectURL(f));
             try {
               const p = await uploadFile(f, "person");
               setPersonPath(p);
               try { localStorage.setItem(basePhotoKey(), p); } catch (_e) { /* ignore */ }
-            } catch { toast.error("Upload failed"); }
+            } catch (e) { if (e?.response?.status !== 402) toast.error("Upload failed"); }
           }}
           testid="upload-person"
           className="lg:col-span-5"
