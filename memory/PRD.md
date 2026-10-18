@@ -163,3 +163,7 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 
 ## 2026-10-18 — Revenue chart
 - /api/admin/stats returns daily_revenue (last 30 days, paid payment_transactions). Stanza shows gold bar chart (recharts) with tooltip amount + count.
+
+## 2026-10-18 — Owner room cleanup
+- Deleted all 11 fake/test users + their data from preview DB (only owner remains).
+- Stats exclude owner accounts (OWNER_EMAILS + their family profiles) everywhere; revenue/payments count only livemode=True Stripe payments (stored at checkout). Shows 0 when empty.

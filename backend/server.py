@@ -393,15 +393,28 @@ _HOT_CATS = {"top": "Maglie", "dress": "Maglie", "bottom": "Pantaloni", "shoes":
 _OPTION_LABEL = {"extra": "Una Tantum", "single": "Single", "family": "Family"}
 
 
+async def _owner_user_ids() -> list:
+    # Owner accounts (and their family profiles) never count in the owner-room stats.
+    emails = [e.strip().lower() for e in os.environ["OWNER_EMAILS"].split(",") if e.strip()]
+    owners = await db.users.distinct("user_id", {"email": {"$in": emails}})
+    return owners + await db.users.distinct("user_id", {"owner_id": {"$in": owners}})
+
+
+def _real_paid_query(excl: list) -> dict:
+    # Only live-mode Stripe payments from real customers.
+    return {"payment_status": "paid", "livemode": True, "user_id": {"$nin": excl}}
+
+
 @api_router.get("/admin/stats")
 async def admin_stats(_: User = Depends(require_owner)):
     now = datetime.now(timezone.utc)
     day = now.strftime("%Y-%m-%d")
     month = now.strftime("%Y-%m")
-    paid_q = {"payment_status": "paid"}
-    subscribers = await db.users.count_documents({"is_family_profile": {"$ne": True}})
-    logins_today = len(await db.user_sessions.distinct("user_id", {"created_at": {"$gte": day}}))
-    paying = await db.users.count_documents({"plan": {"$in": ["SINGLE", "FAMILY"]}, "plan_expires_at": {"$gt": now.isoformat()}})
+    excl = await _owner_user_ids()
+    paid_q = _real_paid_query(excl)
+    subscribers = await db.users.count_documents({"is_family_profile": {"$ne": True}, "user_id": {"$nin": excl}})
+    logins_today = len(await db.user_sessions.distinct("user_id", {"created_at": {"$gte": day}, "user_id": {"$nin": excl}}))
+    paying = await db.users.count_documents({"plan": {"$in": ["SINGLE", "FAMILY"]}, "plan_expires_at": {"$gt": now.isoformat()}, "user_id": {"$nin": excl}})
     agg = await db.payment_transactions.aggregate([
         {"$match": paid_q},
         {"$group": {"_id": "$option", "count": {"$sum": 1}, "total": {"$sum": "$amount"},
@@ -414,7 +427,7 @@ async def admin_stats(_: User = Depends(require_owner)):
     last = await db.payment_transactions.find(paid_q, {"_id": 0, "user_id": 1, "option": 1, "amount": 1, "created_at": 1}).sort("created_at", -1).to_list(10)
     emails = {u["user_id"]: u.get("email", "") async for u in db.users.find({"user_id": {"$in": [x["user_id"] for x in last]}}, {"_id": 0, "user_id": 1, "email": 1})}
     hot_rows = await db.product_analyses.aggregate([
-        {"$match": {"result.ok": True}},
+        {"$match": {"result.ok": True, "user_id": {"$nin": excl}}},
         {"$group": {"_id": {"brand": "$result.brand", "name": "$result.product_name", "cat": "$result.category"}, "views": {"$sum": 1}}},
         {"$sort": {"views": -1}}, {"$limit": 60},
     ]).to_list(60)
@@ -432,14 +445,14 @@ async def admin_stats(_: User = Depends(require_owner)):
         "last_payments": [{"date": x["created_at"], "plan": _OPTION_LABEL.get(x["option"], x["option"]), "amount": x["amount"],
                            "email": emails.get(x["user_id"], "")} for x in last],
         "hot_products": hot,
-        "daily_revenue": await _daily_revenue(now),
+        "daily_revenue": await _daily_revenue(now, paid_q),
     }
 
 
-async def _daily_revenue(now: datetime, days: int = 30) -> list:
+async def _daily_revenue(now: datetime, paid_q: dict, days: int = 30) -> list:
     since = (now - timedelta(days=days - 1)).strftime("%Y-%m-%d")
     rows = await db.payment_transactions.aggregate([
-        {"$match": {"payment_status": "paid", "created_at": {"$gte": since}}},
+        {"$match": {**paid_q, "created_at": {"$gte": since}}},
         {"$group": {"_id": {"$substrCP": ["$created_at", 0, 10]}, "total": {"$sum": "$amount"}, "count": {"$sum": 1}}},
     ]).to_list(days + 1)
     by_day = {r["_id"]: r for r in rows}
@@ -795,7 +808,8 @@ async def api_subscription_checkout(req: CheckoutRequest, request: Request, user
     await db.payment_transactions.insert_one({
         "session_id": session.id, "user_id": user.account_id, "option": req.option,
         "lookup_key": STRIPE_LOOKUP[req.option], "amount": price.unit_amount / 100.0, "currency": price.currency,
-        "status": "initiated", "payment_status": "pending", "applied": False, "created_at": now, "updated_at": now,
+        "status": "initiated", "payment_status": "pending", "applied": False, "livemode": bool(session.livemode),
+        "created_at": now, "updated_at": now,
     })
     return {"checkout_url": session.url, "session_id": session.id}
 
