@@ -8,9 +8,36 @@ import { extractBodyRatios } from "@/lib/pose";
 import AvatarCamera from "@/components/AvatarCamera";
 
 const POSE_ERRORS = {
-  no_pose: "Non vediamo bene la tua figura. Riprova con più luce, frontale e a corpo intero.",
-  not_full_body: "Serve il corpo intero: dalla testa ai piedi, ben visibili.",
+  too_dark: ["Foto troppo buia", "Accendi una luce o mettiti davanti a una finestra, poi riscatta."],
+  no_head: ["Non vediamo la testa", "Inquadra tutto il corpo: la testa deve essere dentro la foto."],
+  no_feet: ["Non vediamo i piedi", "Allontana il telefono o abbassalo: i piedi devono essere visibili."],
+  cut_top: ["Foto tagliata in alto", "Lascia un po' di spazio sopra la testa."],
+  cut_bottom: ["Foto tagliata in basso", "Lascia un po' di spazio sotto i piedi."],
+  too_far: ["Sei troppo lontano", "Avvicinati: il corpo deve riempire quasi tutta l'altezza della foto."],
+  no_pose: ["Non vediamo bene la tua figura", "Mettiti in piedi, frontale, a corpo intero e con più luce."],
 };
+const AVATAR_REFRESH_DAYS = 60;
+
+function PhotoIssue({ code, onRetake }) {
+  const [title, hint] = POSE_ERRORS[code] || POSE_ERRORS.no_pose;
+  return (
+    <div className="mt-4 border-2 border-[#B91C1C] bg-[#FEF2F2] p-4 fade-up" data-testid="avatar-photo-issue">
+      <div className="font-serif text-lg text-[#991B1B]" data-testid="avatar-photo-issue-title">{title}</div>
+      <p className="text-sm text-[#7F1D1D] mt-1">{hint} La foto non è stata salvata.</p>
+      <button onClick={onRetake} className="btn-primary mt-3" data-testid="avatar-retake-btn">Riscatta la foto</button>
+    </div>
+  );
+}
+
+function RefreshReminder({ since, onRetake }) {
+  return (
+    <div className="mt-4 border hairline bg-[#FFFBEB] p-4" data-testid="avatar-refresh-reminder">
+      <div className="font-serif text-lg">Sono passati più di 2 mesi</div>
+      <p className="text-sm text-neutral-700 mt-1">La tua foto Avatar è del {new Date(since).toLocaleDateString("it-IT")}. Rifalla per misure sempre precise.</p>
+      <button onClick={onRetake} className="btn-primary mt-3" data-testid="avatar-refresh-btn">Rifai la foto</button>
+    </div>
+  );
+}
 
 function BodyForm({ initial, onSubmit, onCancel }) {
   const [h, setH] = useState(initial.height_cm || "");
@@ -51,11 +78,12 @@ function Notes() {
 }
 
 export default function AvatarBox({ manage = false }) {
-  const { avatar, setAvatar } = useAvatar();
+  const { avatar, setAvatar, profileName } = useAvatar();
   const [camOpen, setCamOpen] = useState(false);
   const [pending, setPending] = useState(null);
   const [busy, setBusy] = useState(false);
   const [profile, setProfile] = useState({});
+  const [issue, setIssue] = useState(null);
 
   useEffect(() => {
     if (!manage && window.location.hash === "#il-mio-avatar") setTimeout(() => document.getElementById("il-mio-avatar")?.scrollIntoView({ behavior: "smooth" }), 300);
@@ -80,12 +108,13 @@ export default function AvatarBox({ manage = false }) {
 
   const onCapture = async (file) => {
     setCamOpen(false);
+    setIssue(null);
     const preview = URL.createObjectURL(file);
     setPending({ file, preview, ratios: null, ask: false });
     setBusy(true);
     let ratios;
     try { ratios = await extractBodyRatios(file); }
-    catch (e) { toast.error(POSE_ERRORS[e.message] || "Analisi non riuscita, riprova"); setPending(null); setBusy(false); return; }
+    catch (e) { setIssue(e.message); setPending({ file, preview, ratios: null, ask: false, bad: true }); setBusy(false); return; }
     setBusy(false);
     if (!profile.height_cm || !profile.weight_kg) { setPending({ file, preview, ratios, ask: true }); return; }
     await upload(file, ratios);
@@ -101,7 +130,7 @@ export default function AvatarBox({ manage = false }) {
   return (
     <section id="il-mio-avatar" className="border hairline bg-white p-6 md:p-8" translate="no" data-testid={manage ? "avatar-settings" : "avatar-box"}>
       <div className="flex items-end justify-between gap-4 flex-wrap">
-        <h2 className="font-serif text-3xl md:text-4xl tracking-tighter leading-[1]">Il Mio Avatar</h2>
+        <h2 className="font-serif text-3xl md:text-4xl tracking-tighter leading-[1]">Il Mio Avatar{profileName ? <span className="text-[#8C7355]"> · {profileName}</span> : null}</h2>
         {avatar?.path && !pending && (
           <span className="flex items-center gap-2 text-xs text-emerald-700" data-testid="avatar-ready">
             <CheckCircle size={16} weight="fill" /> Misure e outfit attivi
@@ -127,6 +156,10 @@ export default function AvatarBox({ manage = false }) {
             <p className="text-sm text-neutral-700">Una sola foto per tutto: le tue misure sono calcolate e la usiamo per ogni prova e outfit.
               {!manage && <> Per cambiarla vai in <Link to="/settings" className="underline" data-testid="avatar-settings-link">Impostazioni</Link>.</>}
             </p>
+          )}
+          {issue && <PhotoIssue code={issue} onRetake={() => { setIssue(null); setPending(null); setCamOpen(true); }} />}
+          {!manage && !pending && avatar?.created_at && (Date.now() - new Date(avatar.created_at).getTime()) / 864e5 > AVATAR_REFRESH_DAYS && (
+            <RefreshReminder since={avatar.created_at} onRetake={() => setCamOpen(true)} />
           )}
           {pending?.ask && (
             <BodyForm initial={profile} onCancel={() => setPending(null)} onSubmit={(b) => upload(pending.file, pending.ratios, b)} />

@@ -43,16 +43,32 @@ function bandWidths(mask, W, H, y0, y1, cx) {
 }
 
 /** Runs MediaPipe Pose in the browser and returns body proportions (ratios of the body height). */
+// Average brightness 0-255 on a small thumbnail.
+function meanLuma(bitmap) {
+  const c = document.createElement("canvas");
+  c.width = 64; c.height = 64;
+  const ctx = c.getContext("2d");
+  ctx.drawImage(bitmap, 0, 0, 64, 64);
+  const d = ctx.getImageData(0, 0, 64, 64).data;
+  let sum = 0;
+  for (let i = 0; i < d.length; i += 4) sum += 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+  return sum / (d.length / 4);
+}
+
 export async function extractBodyRatios(file) {
   const landmarker = await getLandmarker();
   const bitmap = await createImageBitmap(file);
+  if (meanLuma(bitmap) < 55) { bitmap.close?.(); throw new Error("too_dark"); }
   const res = landmarker.detect(bitmap);
   bitmap.close?.();
   const p = res.landmarks?.[0];
   const maskObj = res.segmentationMasks?.[0];
   if (!p || !maskObj) throw new Error("no_pose");
-  const needed = [0, 11, 12, 23, 24, 27, 28];
-  if (needed.some((i) => (p[i].visibility ?? 1) < 0.5)) { maskObj.close(); throw new Error("not_full_body"); }
+  const vis = (i) => (p[i].visibility ?? 1) >= 0.5;
+  const fail = (code) => { maskObj.close(); throw new Error(code); };
+  if (![11, 12, 23, 24].every(vis)) fail("no_pose");
+  if (!vis(0)) fail("no_head");
+  if (![27, 28].every(vis)) fail("no_feet");
 
   const W = maskObj.width; const H = maskObj.height;
   const mask = maskObj.getAsFloat32Array();
@@ -62,7 +78,10 @@ export async function extractBodyRatios(file) {
   for (let y = 0; y < H && top < 0; y += 1) for (let x = 0; x < W; x += 4) if (mask[y * W + x] >= 0.5) { top = y; break; }
   for (let y = H - 1; y >= 0 && bottom < 0; y -= 1) for (let x = 0; x < W; x += 4) if (mask[y * W + x] >= 0.5) { bottom = y; break; }
   const bodyH = bottom - top;
-  if (top < 0 || bodyH < H * 0.4) throw new Error("not_full_body");
+  if (top < 0) throw new Error("no_pose");
+  if (top <= H * 0.005) throw new Error("cut_top");
+  if (bottom >= H - 2) throw new Error("cut_bottom");
+  if (bodyH < H * 0.4) throw new Error("too_far");
 
   const sY = (p[11].y + p[12].y) / 2; const hY = (p[23].y + p[24].y) / 2; const torso = hY - sY;
   const cx = (p[11].x + p[12].x + p[23].x + p[24].x) / 4;

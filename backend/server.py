@@ -626,8 +626,9 @@ async def _measure_and_save(user: User, raw: bytes, ratios: dict, height_cm, wei
 # ----- Il Mio Avatar: one full-body photo for measurements + try-ons -----
 @api_router.get("/profile/avatar")
 async def get_avatar(user: User = Depends(get_current_user)):
-    doc = await db.users.find_one({"user_id": user.user_id}, {"_id": 0, "avatar_path": 1, "avatar_at": 1}) or {}
-    return {"path": doc.get("avatar_path"), "created_at": doc.get("avatar_at")}
+    doc = await db.users.find_one({"user_id": user.user_id}, {"_id": 0, "avatar_path": 1, "avatar_at": 1, "is_family_profile": 1, "name": 1}) or {}
+    return {"path": doc.get("avatar_path"), "created_at": doc.get("avatar_at"),
+            "profile_name": doc.get("name") if doc.get("is_family_profile") else None}
 
 
 @api_router.post("/profile/avatar")
