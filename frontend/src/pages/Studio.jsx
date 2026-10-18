@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { api, fileUrl, basePhotoKey } from "@/lib/api";
+import { api, fileUrl } from "@/lib/api";
+import { useAvatar } from "@/lib/avatar";
+import { Link } from "react-router-dom";
 import { useSubscription } from "@/lib/subscription";
 import TryonCounter from "@/components/TryonCounter";
 import { CloudArrowUp, Sparkle, ArrowRight } from "@phosphor-icons/react";
@@ -22,9 +24,9 @@ export default function Studio() {
   const { status: subStatus, openPaywall, refresh: refreshSub } = useSubscription();
   const location = useLocation();
   const preset = location.state?.preset || null;
-  const [personPath, setPersonPath] = useState(null);
+  const { avatar } = useAvatar();
+  const personPath = avatar?.path || null;
   const [garmentPath, setGarmentPath] = useState(preset?.garment_path || null);
-  const [personPreview, setPersonPreview] = useState(null);
   const [garmentPreview, setGarmentPreview] = useState(preset?.garment_path ? fileUrl(preset.garment_path) : null);
   const [category, setCategory] = useState(preset?.category || "top");
   const [name, setName] = useState(preset?.name || "");
@@ -34,26 +36,11 @@ export default function Studio() {
 
   // Load the user's saved base photo once, so future try-ons don't ask for it.
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem(basePhotoKey());
-      if (saved) {
-        setPersonPath(saved);
-        setPersonPreview(fileUrl(saved));
-      }
-    } catch (_e) { /* ignore */ }
     if (preset?.chosen_size || preset?.name) {
       toast.success(`Capo pronto: ${preset?.name || "prodotto"} · taglia ${preset?.chosen_size || "—"}`);
     }
      
   }, []);
-
-  const changePhoto = () => {
-    if (personPath) api.delete(`/files/${personPath}`).catch(() => {});
-    try { localStorage.removeItem(basePhotoKey()); } catch (_e) { /* ignore */ }
-    setPersonPath(null);
-    setPersonPreview(null);
-    toast.message("Carica una nuova foto");
-  };
 
   const uploadFile = async (file, kind) => {
     if (subStatus?.is_blocked) { openPaywall(); throw new Error("blocked"); }
@@ -65,7 +52,7 @@ export default function Studio() {
 
   const generate = async () => {
     if (!personPath || !garmentPath) {
-      toast.error("Carica entrambe le foto prima");
+      toast.error(personPath ? "Carica prima il capo" : "Crea prima il tuo Avatar nella Home");
       return;
     }
     if (subStatus?.is_blocked) { openPaywall(); return; }
@@ -118,32 +105,7 @@ export default function Studio() {
           testid="upload-garment"
           className="lg:col-span-5"
         />
-        <UploadBox
-          title="La tua foto"
-          hint="Meglio una foto a figura intera o del busto, sfondo neutro."
-          preview={personPreview}
-          topRight={personPath ? (
-            <button
-              type="button"
-              onClick={(e) => { e.stopPropagation(); changePhoto(); }}
-              className="label-caps border hairline px-2 py-1 bg-white hover:bg-[#0A0A0A] hover:text-white transition-colors"
-              data-testid="change-person-photo-btn"
-            >
-              Cambia foto
-            </button>
-          ) : null}
-          onFile={async (f) => {
-            if (subStatus?.is_blocked) { openPaywall(); return; }
-            setPersonPreview(URL.createObjectURL(f));
-            try {
-              const p = await uploadFile(f, "person");
-              setPersonPath(p);
-              try { localStorage.setItem(basePhotoKey(), p); } catch (_e) { /* ignore */ }
-            } catch (e) { if (e?.response?.status !== 402) toast.error("Upload failed"); }
-          }}
-          testid="upload-person"
-          className="lg:col-span-5"
-        />
+        <AvatarPanel path={personPath} />
         <div className="lg:col-span-2 flex items-center justify-center">
           <Sparkle size={56} weight="duotone" className="text-[#8C7355]" />
         </div>
@@ -218,6 +180,25 @@ export default function Studio() {
       <div className="space-y-3">
         <PrivacyBox testid="privacy-box-bottom" />
         <AccountPersonalBox />
+      </div>
+    </div>
+  );
+}
+
+function AvatarPanel({ path }) {
+  return (
+    <div className="upload-zone p-6 min-h-[380px] flex flex-col lg:col-span-5" data-testid="studio-avatar">
+      <div className="label-caps">Il Mio Avatar</div>
+      <p className="text-xs text-neutral-500 mt-1">La tua foto unica, usata per tutte le prove.</p>
+      <div className="flex-1 mt-6 relative overflow-hidden" style={{ aspectRatio: "4/5" }}>
+        {path ? (
+          <img src={fileUrl(path)} alt="" className="absolute inset-0 w-full h-full object-cover" data-testid="studio-avatar-photo" />
+        ) : (
+          <Link to="/dashboard#il-mio-avatar" className="absolute inset-0 flex flex-col items-center justify-center text-neutral-500 text-center px-6" data-testid="studio-avatar-create">
+            <span className="font-serif text-lg">Crea il tuo Avatar</span>
+            <span className="text-xs mt-2">Una foto in Home, poi è pronta per ogni prova</span>
+          </Link>
+        )}
       </div>
     </div>
   );

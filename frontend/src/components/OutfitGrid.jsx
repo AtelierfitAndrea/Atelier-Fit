@@ -163,7 +163,7 @@ export default function OutfitGrid({ personPath, uploadFile }) {
   const busy = SLOTS.some((s) => items[s.k]?.uploading);
 
   const generate = async () => {
-    if (!personPath) { toast.error("Carica prima la tua foto in \"La tua foto\""); return; }
+    if (!personPath) { toast.error("Crea prima il tuo Avatar nella Home"); return; }
     if (!ready.length) { toast.error("Carica almeno 1 capo"); return; }
     if (status?.is_blocked) { openPaywall(); return; }
     setGenerating(true);

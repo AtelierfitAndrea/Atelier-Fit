@@ -70,6 +70,8 @@ def get_object(path: str) -> tuple:
         headers={"X-Storage-Key": key}, timeout=60
     )
     resp.raise_for_status()
+    if "/avatar/" in path:
+        return FERNET.decrypt(resp.content), "image/jpeg"
     return resp.content, resp.headers.get("Content-Type", "application/octet-stream")
 
 
@@ -554,14 +556,11 @@ async def auto_measure(
         ratios = FeatureRatios(**pyjson.loads(features)).model_dump()
     except Exception:
         raise HTTPException(status_code=400, detail="Non riusciamo a leggere la tua figura: riprova con una foto intera, frontale, ben illuminata")
-    saved_m = await _get_measurements(user.user_id)
-    # Missing values fall back to the ones already saved in the profile.
-    height_cm = height_cm or saved_m.get("height_cm")
-    if not height_cm:
-        raise HTTPException(status_code=400, detail="need_height")
-    if weight_kg is None and not forget_weight:
-        weight_kg = saved_m.get("weight_kg")
-    gender = gender or (saved_m.get("gender") if saved_m.get("gender") in ("female", "male") else None)
+    raw = await _read_photo(photo)
+    return await _measure_and_save(user, raw, ratios, height_cm, weight_kg, gender, forget_weight, store_photo=True)
+
+
+async def _read_photo(photo: UploadFile) -> bytes:
     raw = await photo.read()
     if len(raw) > 15 * 1024 * 1024:
         raise HTTPException(status_code=413, detail="Foto troppo grande (max 15 MB)")
@@ -571,16 +570,34 @@ async def auto_measure(
         Image.open(io.BytesIO(raw)).verify()
     except Exception:
         raise HTTPException(status_code=400, detail="Il file non è una foto valida")
+    return raw
+
+
+async def _resolve_body_inputs(user: User, height_cm, weight_kg, gender, forget_weight):
+    saved_m = await _get_measurements(user.user_id)
+    # Missing values fall back to the ones already saved in the profile.
+    height_cm = height_cm or saved_m.get("height_cm")
+    if not height_cm:
+        raise HTTPException(status_code=400, detail="need_height")
+    if weight_kg is None and not forget_weight:
+        weight_kg = saved_m.get("weight_kg")
+    gender = gender or (saved_m.get("gender") if saved_m.get("gender") in ("female", "male") else None)
+    return saved_m, height_cm, weight_kg, gender
+
+
+async def _measure_and_save(user: User, raw: bytes, ratios: dict, height_cm, weight_kg, gender, forget_weight, store_photo: bool):
+    saved_m, height_cm, weight_kg, gender = await _resolve_body_inputs(user, height_cm, weight_kg, gender, forget_weight)
     est = estimate_body(ratios, height_cm, weight_kg, gender)
     sizes = brand_sizes(est, gender)
-    # The calculation photo is stored encrypted and never served back.
-    path = f"{APP_NAME}/measure/{user.user_id}/{uuid.uuid4().hex}.bin"
-    put_object(path, FERNET.encrypt(raw), "application/octet-stream")
     now = datetime.now(timezone.utc).isoformat()
-    await db.files.insert_one({
-        "id": str(uuid.uuid4()), "user_id": user.user_id, "kind": "measure", "storage_path": path,
-        "encrypted": True, "is_deleted": False, "created_at": now,
-    })
+    if store_photo:
+        # The calculation photo is stored encrypted and never served back.
+        path = f"{APP_NAME}/measure/{user.user_id}/{uuid.uuid4().hex}.bin"
+        put_object(path, FERNET.encrypt(raw), "application/octet-stream")
+        await db.files.insert_one({
+            "id": str(uuid.uuid4()), "user_id": user.user_id, "kind": "measure", "storage_path": path,
+            "encrypted": True, "is_deleted": False, "created_at": now,
+        })
     precision = (98 if weight_kg else 85) - (0 if gender else 10)
     new_weight = weight_kg is not None and weight_kg != saved_m.get("weight_kg")
     saved = await _set_measurements(user.user_id, {
@@ -594,6 +611,56 @@ async def auto_measure(
         })
     await _compute_accuracy(user.user_id)
     return {"measurements": saved, "brand_sizes": sizes, "precision": precision}
+
+
+# ----- Il Mio Avatar: one full-body photo for measurements + try-ons -----
+@api_router.get("/profile/avatar")
+async def get_avatar(user: User = Depends(get_current_user)):
+    doc = await db.users.find_one({"user_id": user.user_id}, {"_id": 0, "avatar_path": 1, "avatar_at": 1}) or {}
+    return {"path": doc.get("avatar_path"), "created_at": doc.get("avatar_at")}
+
+
+@api_router.post("/profile/avatar")
+async def set_avatar(
+    photo: UploadFile = File(...),
+    features: Optional[str] = Query(None),
+    height_cm: Optional[float] = Query(None, ge=120, le=230),
+    gender: Optional[str] = Query(None, regex="^(female|male)$"),
+    weight_kg: Optional[float] = Query(None, ge=40, le=150),
+    user: User = Depends(get_current_user),
+):
+    ratios = None
+    if features:
+        try:
+            ratios = FeatureRatios(**pyjson.loads(features)).model_dump()
+        except Exception:
+            raise HTTPException(status_code=400, detail="Non riusciamo a leggere la tua figura: riprova con una foto intera, frontale, ben illuminata")
+        await _resolve_body_inputs(user, height_cm, weight_kg, gender, False)
+    raw = await _read_photo(photo)
+    path = f"{APP_NAME}/avatar/{user.user_id}/{uuid.uuid4().hex}.bin"
+    put_object(path, FERNET.encrypt(raw), "application/octet-stream")
+    now = datetime.now(timezone.utc).isoformat()
+    await db.files.insert_one({
+        "id": str(uuid.uuid4()), "user_id": user.user_id, "kind": "avatar", "storage_path": path,
+        "encrypted": True, "is_deleted": False, "created_at": now,
+    })
+    old = (await db.users.find_one({"user_id": user.user_id}, {"_id": 0, "avatar_path": 1}) or {}).get("avatar_path")
+    await db.users.update_one({"user_id": user.user_id}, {"$set": {"avatar_path": path, "avatar_at": now}})
+    if old:
+        await _mark_files_deleted([old], user.user_id)
+    out = {"avatar": {"path": path, "created_at": now}}
+    if ratios:
+        out.update(await _measure_and_save(user, raw, ratios, height_cm, weight_kg, gender, False, store_photo=False))
+    return out
+
+
+@api_router.delete("/profile/avatar")
+async def delete_avatar(user: User = Depends(get_current_user)):
+    old = (await db.users.find_one({"user_id": user.user_id}, {"_id": 0, "avatar_path": 1}) or {}).get("avatar_path")
+    if old:
+        await _mark_files_deleted([old], user.user_id)
+    await db.users.update_one({"user_id": user.user_id}, {"$unset": {"avatar_path": "", "avatar_at": ""}})
+    return {"deleted": bool(old)}
 
 
 # ----- Profile / Measurements -----
@@ -1168,7 +1235,7 @@ async def _mark_files_deleted(paths: list, user_id: str) -> None:
 async def photos_delete_all(user: User = Depends(get_current_user)):
     uid = user.user_id
     paths = set()
-    async for f in db.files.find({"user_id": uid, "kind": {"$in": ["person", "measure"]}, "is_deleted": {"$ne": True}}, {"_id": 0, "storage_path": 1}):
+    async for f in db.files.find({"user_id": uid, "kind": {"$in": ["person", "measure", "avatar"]}, "is_deleted": {"$ne": True}}, {"_id": 0, "storage_path": 1}):
         paths.add(f["storage_path"])
     tryons = await db.tryons.find({"user_id": uid}, {"_id": 0, "person_path": 1, "result_path": 1}).to_list(5000)
     outfits = await db.outfits.find({"user_id": uid}, {"_id": 0, "result_path": 1, "person_path": 1}).to_list(5000)
@@ -1179,6 +1246,7 @@ async def photos_delete_all(user: User = Depends(get_current_user)):
     await _mark_files_deleted(sorted(paths), uid)
     await db.tryons.delete_many({"user_id": uid})
     await db.outfits.delete_many({"user_id": uid})
+    await db.users.update_one({"user_id": uid}, {"$unset": {"avatar_path": "", "avatar_at": ""}})
     return {"deleted_photos": len(paths), "deleted_tryons": len(tryons), "deleted_outfits": len(outfits)}
 
 
@@ -1858,6 +1926,8 @@ async def _compose_outfit(user: User, person_path: Optional[str], items: list, l
     """Layer the given garment images on the user's base photo; returns (person_path, result_path)."""
     # Resolve person photo — prefer explicit path, else latest person file for the user
     if not person_path:
+        person_path = (await db.users.find_one({"user_id": user.user_id}, {"_id": 0, "avatar_path": 1}) or {}).get("avatar_path")
+    if not person_path:
         last_file = await db.files.find_one(
             {"user_id": user.user_id, "kind": "person", "is_deleted": {"$ne": True}},
             {"_id": 0, "storage_path": 1},
@@ -1866,7 +1936,7 @@ async def _compose_outfit(user: User, person_path: Optional[str], items: list, l
         if last_file:
             person_path = last_file["storage_path"]
     if not person_path:
-        raise HTTPException(status_code=400, detail="Carica prima una tua foto nel Prova taglia")
+        raise HTTPException(status_code=400, detail="Crea prima il tuo Avatar nella Home")
     # Build the multi-image prompt
     person_bytes, _ = get_object(person_path)
     person_b64 = base64.b64encode(person_bytes).decode("utf-8")

@@ -10,6 +10,7 @@ import HoneymoonBanner from "@/components/HoneymoonBanner";
 import TryonCounter from "@/components/TryonCounter";
 import PricingCards from "@/components/PricingCards";
 import CalcolaTagliaBox from "@/components/CalcolaTagliaBox";
+import AvatarBox from "@/components/AvatarBox";
 import { useSubscription } from "@/lib/subscription";
 
 export default function Dashboard() {
@@ -108,6 +109,8 @@ export default function Dashboard() {
           )}
         </div>
       </section>
+
+      <AvatarBox />
 
       <CalcolaTagliaBox />
 

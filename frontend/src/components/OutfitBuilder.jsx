@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { LinkSimple, Plus, Trash, ShoppingBag, FloppyDisk, ShareNetwork, X } from "@phosphor-icons/react";
-import { api, fileUrl, basePhotoKey } from "@/lib/api";
+import { api, fileUrl } from "@/lib/api";
+import { useAvatar } from "@/lib/avatar";
 import IncludedNote from "@/components/IncludedNote";
 
 
@@ -12,6 +13,7 @@ function priceFmt(n, cur = "EUR") {
 }
 
 export default function OutfitBuilder() {
+  const { avatar } = useAvatar();
   const [url, setUrl] = useState("");
   const [adding, setAdding] = useState(false);
   const [garments, setGarments] = useState([]);
@@ -85,7 +87,7 @@ export default function OutfitBuilder() {
       toast.error(`Serve una foto reale del capo: ${noPhoto.map((g) => g.name).join(", ")}. Caricala nello Studio o usa un altro capo.`);
       return;
     }
-    const personPath = (() => { try { return localStorage.getItem(basePhotoKey()); } catch { return null; } })();
+    const personPath = avatar?.path;
     setGenerating(true); setResult(null);
     try {
       const { data } = await api.post("/outfit/generate", {

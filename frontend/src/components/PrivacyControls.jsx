@@ -6,6 +6,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { api, basePhotoKey, setActiveProfile } from "@/lib/api";
+import { useAvatar } from "@/lib/avatar";
 
 function Confirm({ trigger, title, text, action, onConfirm, testid }) {
   return (
@@ -28,12 +29,14 @@ function Confirm({ trigger, title, text, action, onConfirm, testid }) {
 }
 
 export function DeletePhotosSection() {
+  const { setAvatar } = useAvatar();
   const [working, setWorking] = useState(false);
   const run = async () => {
     setWorking(true);
     try {
       const { data } = await api.post("/photos/delete-all");
       try { localStorage.removeItem(basePhotoKey()); } catch (_e) { /* ignore */ }
+      setAvatar(null);
       toast.success(`Fatto: ${data.deleted_photos} foto cancellate`);
     } catch { toast.error("Cancellazione non riuscita"); }
     finally { setWorking(false); }

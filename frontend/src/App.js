@@ -3,6 +3,7 @@ import { Toaster } from "sonner";
 import { AuthProvider, useAuth } from "@/lib/auth";
 import { I18nProvider } from "@/lib/i18n";
 import { SubscriptionProvider } from "@/lib/subscription";
+import { AvatarProvider } from "@/lib/avatar";
 import PaywallModal from "@/components/PaywallModal";
 import Landing from "@/pages/Landing";
 import AuthCallback from "@/pages/AuthCallback";
@@ -67,12 +68,14 @@ export default function App() {
     <I18nProvider>
       <AuthProvider>
         <SubscriptionProvider>
+          <AvatarProvider>
           <BrowserRouter>
             <AppRouter />
             <PaywallModal />
             <Toaster position="top-center" theme="light" />
             <SessionRevokedNotice />
           </BrowserRouter>
+          </AvatarProvider>
         </SubscriptionProvider>
       </AuthProvider>
     </I18nProvider>

@@ -4,6 +4,7 @@ import { api } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 import { useSubscription } from "@/lib/subscription";
 import { DeletePhotosSection, DevicesSection } from "@/components/PrivacyControls";
+import AvatarBox from "@/components/AvatarBox";
 
 export default function Settings() {
   const { t } = useI18n();
@@ -60,6 +61,7 @@ export default function Settings() {
           <Info label={t("sub.settings.extraCredits")} value={String(status.extra_credits)} />
         </div>
       </div>
+      <div className="mt-8"><AvatarBox manage /></div>
       <DeletePhotosSection />
       <DevicesSection />
     </div>

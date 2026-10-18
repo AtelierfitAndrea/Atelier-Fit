@@ -3,7 +3,8 @@ import { api } from "@/lib/api";
 import Avatar3D from "@/components/Avatar3D";
 import WeightTracker from "@/components/WeightTracker";
 import FittingAccuracy from "@/components/FittingAccuracy";
-import AutoMeasure from "@/components/AutoMeasure";
+import MeasureResult from "@/components/AutoMeasure";
+import { Link } from "react-router-dom";
 
 export default function Profile() {
   const [m, setM] = useState({ gender: "female" });
@@ -29,7 +30,7 @@ export default function Profile() {
         <div className="label-caps mb-3">La tua silhouette</div>
         <h1 className="font-serif text-4xl md:text-5xl tracking-tighter">Misure corporee</h1>
         <p className="mt-4 text-neutral-600 max-w-lg leading-relaxed">
-          Una foto, la tua altezza e il tuo peso: al resto pensa il tuo sarto digitale.
+          Calcolate in automatico dalla foto del tuo Avatar. Per cambiarla vai in Impostazioni.
         </p>
 
         <div className="mt-8">
@@ -37,12 +38,14 @@ export default function Profile() {
         </div>
 
         <div className="mt-10 space-y-10">
-          {loaded && (
-            <AutoMeasure
-              initial={m}
-              onDone={(nm) => { setM({ gender: "female", ...nm }); setAccuracyNonce((n) => n + 1); }}
-            />
-          )}
+          {loaded && (m.brand_sizes ? (
+            <MeasureResult data={{ measurements: m, brand_sizes: m.brand_sizes, precision: m.precision }} />
+          ) : (
+            <Link to="/dashboard#il-mio-avatar" className="block border hairline p-6 bg-white hover:border-[#0A0A0A]" data-testid="profile-create-avatar">
+              <div className="font-serif text-xl">Crea il tuo Avatar</div>
+              <p className="text-sm text-neutral-600 mt-1">Una sola foto in Home: calcoliamo le misure in automatico.</p>
+            </Link>
+          ))}
 
           <WeightTracker onChange={() => setAccuracyNonce((n) => n + 1)} />
         </div>
