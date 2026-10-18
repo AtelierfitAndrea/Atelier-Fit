@@ -138,3 +138,7 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 - Backend: OWNER_EMAILS env allowlist enforced in /auth/session and every authenticated request (403 prelaunch_owner_only). Owner exempt from 1-device limit (4 devices).
 - /admin-atelier-77 still password-protected.
 - Backlog: at launch, remove/disable OWNER_EMAILS gate; real Stripe; real admin KPIs.
+
+## 2026-10-18 — Clean hands + contact email
+- HANDS_RULE added to single try-on and outfit prompts (+ system messages): hands always tattoo-free, no propagation of neck/body tattoos, negative prompt "tattoos on hands".
+- Coming Soon: centered "studio@myatelierapp.it" (mailto) under "Accesso proprietario".

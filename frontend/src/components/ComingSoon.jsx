@@ -42,6 +42,9 @@ function OwnerLogin() {
       <button onClick={login} style={{ background: "none", border: "none", color: "#fff", opacity: 0.35, fontSize: "10px", letterSpacing: "3px", cursor: "pointer", textTransform: "uppercase" }} data-testid="owner-login-link">
         Accesso proprietario
       </button>
+      <a href="mailto:studio@myatelierapp.it" style={{ display: "block", marginTop: "10px", color: "#fff", fontSize: "11px", letterSpacing: "2px", fontWeight: 300, textDecoration: "none", opacity: 0.85 }} data-testid="contact-email">
+        studio@myatelierapp.it
+      </a>
     </div>
   );
 }

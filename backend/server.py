@@ -1134,6 +1134,14 @@ async def files_delete(path: str, user: User = Depends(get_current_user)):
     return {"deleted": True}
 
 
+HANDS_RULE = (
+    "HANDS — STRICT:\n"
+    "• Hands, fingers and wrists must be CLEAN natural skin: absolutely NO tattoos, ink, drawings or markings on the hands.\n"
+    "• Do NOT propagate, copy or extend neck/arm/body tattoos onto the hands — tattoos stay ONLY where they are in IMAGE 1, never on hands.\n"
+    "• NEGATIVE PROMPT: tattoos on hands, ink on fingers, tattoos on wrists, hand tattoos, finger tattoos.\n"
+)
+
+
 # ----- Try-on generation -----
 class TryOnRequest(BaseModel):
     person_path: str
@@ -1180,8 +1188,8 @@ async def tryon_generate(req: TryOnRequest, user: User = Depends(get_current_use
         f"the ONLY person who may appear in the output. IMAGE 2 shows a {category} to be worn.\n\n"
         f"ABSOLUTE REQUIREMENTS — identity preservation is top priority:\n"
         f"• Keep the EXACT face, head, hair, skin tone, body proportions and pose from IMAGE 1 — pixel-level fidelity.\n"
-        f"• Keep every visible tattoo, mole, scar, piercing, jewellery and personal detail EXACTLY as in IMAGE 1.\n"
-        f"• Keep the person's hands, fingers and nails IDENTICAL to IMAGE 1 — do NOT substitute with other hands.\n"
+        f"• Keep every visible tattoo (except on hands), mole, scar, piercing, jewellery and personal detail EXACTLY as in IMAGE 1.\n"
+        f"• Keep the shape, pose, fingers and nails of the person's hands as in IMAGE 1 — do NOT substitute with other hands (hands always tattoo-free).\n"
         f"• Keep the ORIGINAL BACKGROUND and lighting from IMAGE 1 unchanged (room, wall, floor, props, shadows).\n"
         f"• Framing must match IMAGE 1 — do NOT crop the head, do NOT zoom in or out, keep the same aspect and composition.\n"
         f"• The output must contain exactly ONE person — the same person as IMAGE 1. No stock models, no replacement body, no extra people.\n\n"
@@ -1194,7 +1202,8 @@ async def tryon_generate(req: TryOnRequest, user: User = Depends(get_current_use
         f"• Do NOT alter the face, head, hair or hands.\n"
         f"• Do NOT replace the background with a studio or neutral backdrop.\n"
         f"• Do NOT cut, crop or extend the head/arms/legs beyond the original frame.\n"
-        f"• Do NOT invent new tattoos, jewellery or accessories that are not in IMAGE 1.\n"
+        f"• Do NOT invent new tattoos, jewellery or accessories that are not in IMAGE 1.\n\n"
+        f"{HANDS_RULE}"
         f"{measurements_desc}"
     )
 
@@ -1207,6 +1216,7 @@ async def tryon_generate(req: TryOnRequest, user: User = Depends(get_current_use
             "Your only job is to re-dress the SAME person in the SAME scene, "
             "preserving face, hands, tattoos, hair, pose and the original background. "
             "Never generate stock models, replacement bodies, or neutral studios. "
+            "Hands must always be clean, with no tattoos. "
             "The person in IMAGE 1 must remain fully recognisable."
         ),
     )
@@ -1820,8 +1830,8 @@ async def _compose_outfit(user: User, person_path: Optional[str], items: list, l
         f"{chr(10).join(layer_lines)}\n\n"
         "ABSOLUTE RULES — identity and scene preservation have top priority:\n"
         "• Keep the EXACT face, head, hair, skin tone, body proportions and pose from IMAGE 1 — pixel-level fidelity.\n"
-        "• Keep every visible tattoo, mole, scar, piercing and jewellery EXACTLY as in IMAGE 1.\n"
-        "• Keep the person's hands, fingers and nails IDENTICAL to IMAGE 1 — do NOT substitute hands.\n"
+        "• Keep every visible tattoo (except on hands), mole, scar, piercing and jewellery EXACTLY as in IMAGE 1.\n"
+        "• Keep the shape, pose, fingers and nails of the person's hands as in IMAGE 1 — do NOT substitute hands (hands always tattoo-free).\n"
         "• Keep the ORIGINAL BACKGROUND and lighting of IMAGE 1 unchanged (room, wall, floor, props, shadows).\n"
         "• Framing must match IMAGE 1 — do NOT crop the head, do NOT zoom, keep the same composition.\n"
         "• Exactly ONE person in the output — the same as IMAGE 1. No stock models, no extra people.\n\n"
@@ -1830,7 +1840,8 @@ async def _compose_outfit(user: User, person_path: Optional[str], items: list, l
         f"{layer_order_text}\n"
         "• Preserve each garment's exact colour, pattern, cut and material from its product shot.\n"
         "• Natural fabric drape, folds and shadows that match IMAGE 1 lighting.\n\n"
-        "FORBIDDEN: altering face/hands, replacing the background with a studio, cropping the head, adding items not provided."
+        "FORBIDDEN: altering face/hands, replacing the background with a studio, cropping the head, adding items not provided.\n\n"
+        + HANDS_RULE
     )
 
     session_id = f"outfit-{user.user_id}-{uuid.uuid4().hex[:8]}"
@@ -1839,7 +1850,7 @@ async def _compose_outfit(user: User, person_path: Optional[str], items: list, l
         session_id=session_id,
         system_message=(
             "Virtual try-on for multi-item outfits. Preserve the person's face, hands, tattoos, pose and background exactly. "
-            "Compose all provided garments on the SAME person in a SINGLE image."
+            "Compose all provided garments on the SAME person in a SINGLE image. Hands must always be clean, with no tattoos."
         ),
     )
     chat.with_model("gemini", "gemini-3.1-flash-image-preview").with_params(modalities=["image", "text"])
