@@ -130,7 +130,7 @@ function registerParts(u, l) {
   const torso = u.hipY - ((u.p[11].y + u.p[12].y) / 2) * u.H;
   // Skip the last rows of photo 1: the segmentation mask tapers at the frame edge.
   const a = profile(u, u.hipY - 0.35 * torso, u.H * 0.97).filter((r) => r.w > 0);
-  const b = profile(l, 0, Math.min(l.bottom, l.hipY + (l.bottom - l.hipY) * 0.6));
+  const b = profile(l, l.H * 0.03, Math.min(l.bottom, l.hipY + (l.bottom - l.hipY) * 0.6));
   if (a.length < 20 || b.length < 20) return null;
   const bw = new Map(b.map((r) => [r.y, r]));
   let best = null;

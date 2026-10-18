@@ -1,0 +1,25 @@
+{
+  "summary": "Third retest of the mirror 2-shot stitch, run in a fresh browser context (no cached bundle) with the same mock as iteration_24: canvas.captureStream 960x1000, upper.jpg then lower.jpg contain-fit, mirror mode, two snaps, user_avatar_test at 168 cm / 60 kg. PASS. The real drawImage(l.bitmap, dx, t, l.W*s, l.H*s) call gives dx=0.5, t=575, w=960, h=1000, so s=1.000. Ground truth is s=1.0, t≈576-577, dx=0: t is off by about 1.5 px, s and dx are exact. Before the fix it was s=0.906, t=538, dx=41.5. POST /api/profile/avatar returned 200 about 1.75 s after the second snap. Ratios: shoulder 0.1616, chest 0.1616, waist 0.1422, hips 0.1887, inseam 0.4952. Stitched measurements are 76/65/89/33/83 against single-shot 76/65/89/33/80: chest, waist, hips and shoulder are exact, and inseam is +3 cm (+3.75%), inside the 5% target. Seam is invisible: the stitch canvas is 960x1496 and the upper image is pasted down to y=859.66. Mean abs grey diff across the seam (rows 858 vs 861) is 1.58, against control rows at mean 1.41 and max 2.11. Rows from 700 to 1400 differ from the PIL-rebuilt fullbody ground truth by only 0.4-1.9 grey levels. A visual crop of the seam shows no step or offset. Hints PASS, checked in the live DOM: step 1 '1/2 Busto: dalla testa a metà coscia (i fianchi sulla linea dorata)', step 2 '2/2 Gambe: dalla vita ai piedi (la vita sulla linea dorata)', and the lower silhouette renders on step 2.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": ["/tmp/harness3.js", "/tmp/stitched_it25.jpg", "/tmp/seam25.jpg"],
+  "action_items": [
+    "LOW, optional: inseam is still +3.75% (83 vs 80). As noted in iteration_24, legLen = feetY - u.hipY uses the photo-1 hip landmark, which drifts up near the frame edge. Using hipRef = (u.hipY + t + s*l.hipY)/2 should bring the inseam to about 80.",
+    "LOW, code/brief mismatch: the review request says profile b starts at l.H*0.03, but pose.js still calls profile(l, 0, ...). It works as is; either apply the change or drop it from the notes."
+  ],
+  "critical_code_review_comments": [
+    "registerParts: profile a now stops at u.H*0.97 and the per-row error is now min(0.5, |a-sb|/max(a,sb)). Together these fix the registration on this mock.",
+    "chest_r == shoulder_r: chest is still capped at the shoulder width. This is pre-existing and unchanged."
+  ],
+  "updated_files": ["/app/test_reports/iteration_25.json"],
+  "success_rate": {"backend": "n/a", "frontend": "100% (registration, measurements within 5%, seam, hints, timing)"},
+  "seed_data_creation": "None. user_avatar_test now holds the stitched 2-shot avatar with measurements 76/65/89/33/83 at 168 cm / 60 kg. user_389c87aaadc6 was not touched.",
+  "test_credentials": "cookie session_token=avatar_tok_test (user_avatar_test), localStorage atelier_owner=1",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Mock: an init script sets getUserMedia to return the captureStream of a 960x1000 canvas that draws the image pre-flipped, because the app un-flips it in mirror mode. Call window.__setImg('lo') after snap 1. Wrap drawImage to log the 5-arg ImageBitmap call (dx, t, W*s, H*s). Wrap toBlob to grab the 960x>1000 stitch canvas. Flow: /settings → avatar-change-btn → avatar-camera-mode-mirror → avatar-camera-snap-btn x2 → wait for the POST /api/profile/avatar response. Ground truth: s=1, t≈576, dx=0. Single-shot baseline at 168 cm: 76/65/89/33/80."
+}

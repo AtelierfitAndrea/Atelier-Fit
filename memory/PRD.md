@@ -184,3 +184,9 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 - OnboardingGate (after terms): step 1 name → PUT /api/profile/display-name (users.display_name); step 2 Avatar photo (skippable "Lo faccio dopo"). Home h1 "Benvenuto, {Nome}".
 - GET /profile/avatar returns reminder_due (last of avatar_at / latest weight > 60 days, not snoozed). UpdateReminderBanner on Home: "Ciao {Nome}, vuoi aggiornare foto/peso per mantenere la precisione al 98%?" — Aggiorna ora (opens camera + always shows height/weight form), Ricorda più tardi (POST /profile/reminder/snooze, 7 days). Old weight banner + avatar refresh panel removed.
 - Mobile header no longer overflows. Tested iteration_21 (100%).
+
+## 2026-10-18 — Mirror close-up 2-shot + landing restored
+- "Specchio da vicino": 2 guided shots (1/2 Busto testa→metà coscia, 2/2 Gambe vita→piedi), own silhouettes + gold line, 5s timer. pose.js extractTwoPartRatios: registerParts() matches overlapping silhouette width profiles (scale s, offset t, dx) → stitched JPEG avatar + ratios (tested: within 5% of single shot, invisible seam).
+- "/" for logged-in users shows the original Landing (slogan, "- by Andrea M.", description) with "Entra nell'app" → /dashboard. Not logged → Coming Soon.
+- Onboarding step 1 always asks Nome + altezza + peso (+ sesso) → quick-estimate (+weight_history "Iscrizione") + display-name. AvatarBox re-fetches profile before asking body data.
+- Tested iterations 22-25.
