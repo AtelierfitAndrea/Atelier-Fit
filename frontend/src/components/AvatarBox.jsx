@@ -120,11 +120,12 @@ export default function AvatarBox({ manage = false }) {
   }, [manage]);
   useEffect(() => { api.get("/profile/measurements").then(({ data }) => setProfile(data || {})).catch(() => {}); }, []);
 
-  const upload = async (file, ratios, body = {}) => {
+  const upload = async (file, ratios, body = {}, base = profile) => {
     setBusy(true);
     try {
       // Without measurable photos, measurements are estimated from height and weight.
-      if (!ratios && body.height_cm) await api.post("/profile/quick-estimate", body);
+      const est = { height_cm: body.height_cm || base.height_cm, weight_kg: body.weight_kg || base.weight_kg, gender: body.gender || (base.gender === "male" ? "male" : "female") };
+      if (!ratios && est.height_cm && est.weight_kg) await api.post("/profile/quick-estimate", est);
       const params = new URLSearchParams(ratios ? { features: JSON.stringify(ratios) } : {});
       if (ratios) Object.entries(body).forEach(([k, v]) => params.set(k, String(v)));
       const fd = new FormData(); fd.append("photo", file);
@@ -169,7 +170,7 @@ export default function AvatarBox({ manage = false }) {
     const fresh = (await api.get("/profile/measurements").catch(() => ({ data: profile }))).data || {};
     setProfile(fresh);
     if (forceBody || !fresh.height_cm || !fresh.weight_kg) { setPending({ file, preview, ratios, ask: true }); return; }
-    await upload(file, ratios);
+    await upload(file, ratios, {}, fresh);
   };
 
   const remove = async () => {

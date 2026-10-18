@@ -47,7 +47,7 @@ function Silhouette() {
 }
 
 const VIDEO = { width: { ideal: 1080 }, height: { ideal: 1920 } };
-const NOT_NORMAL_LENS = /ultra|wide|dual|triple|tele|0[.,]5|macro/i;
+const NOT_NORMAL_LENS = /ultra|wide|dual|triple|tele|0[.,]5|macro|tripla|doppia|grandangol/i;
 
 // Main 1x lens only: avoid the 0.5x ultra-wide (barrel distortion widens the body) and force zoom 1x.
 async function openNormalLens(facing) {

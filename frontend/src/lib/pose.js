@@ -196,9 +196,9 @@ function bodyRatios(u, l, reg) {
   return valid ? r : null;
 }
 
-// Hip-to-floor is ~45-53% of real height: if the stitch says otherwise, rescale the legs (hips stay anchored)
+// Hip-to-floor (heels) is ~47-60% of real height: if the stitch says otherwise, rescale the legs (hips stay anchored)
 // so busto and gambe keep 1:1 real proportions and the figure is never stretched or widened.
-const LEG_FRAC = [0.45, 0.53];
+const LEG_FRAC = [0.47, 0.6];
 function keepRealProportions(u, l, reg) {
   const upperH = u.hipY - u.top;
   const lowerPx = l.bottom - l.hipY;
@@ -231,6 +231,12 @@ export async function extractTwoPartRatios(upperFile, lowerFile) {
   }
   if (!ratios) warnings.push("no_measure");
   // No reliable anchor: simply stack photo 2 under photo 1 at the same width.
+  // No reliable anchor: put the legs under the hips with a realistic 0.53 leg fraction (never stretched, no duplicated torso).
+  if (!reg && u.p) {
+    const upperH = u.hipY - Math.max(0, u.top);
+    const s = (0.53 * upperH / 0.47) / l.H;
+    reg = { s, t: u.hipY, dx: u.hipX - (l.W * s) / 2, seam: u.hipY };
+  }
   if (!reg) reg = { s: u.W / l.W, t: u.H, dx: 0, seam: u.H };
   const { s, t, dx, seam } = reg;
   const W = u.W;
