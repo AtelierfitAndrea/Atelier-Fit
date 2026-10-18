@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { api, fileUrl } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { useI18n } from "@/lib/i18n";
-import { ArrowRight, TShirt, Ruler, Sparkle, Scales, Warning } from "@phosphor-icons/react";
+import { ArrowRight, TShirt, Ruler, Sparkle } from "@phosphor-icons/react";
 import AccuracyBadge from "@/components/AccuracyBadge";
 import WeightModal from "@/components/WeightModal";
 import HoneymoonBanner from "@/components/HoneymoonBanner";
@@ -11,6 +11,7 @@ import TryonCounter from "@/components/TryonCounter";
 import PricingCards from "@/components/PricingCards";
 import CalcolaTagliaBox from "@/components/CalcolaTagliaBox";
 import AvatarBox from "@/components/AvatarBox";
+import UpdateReminderBanner from "@/components/UpdateReminderBanner";
 import { useSubscription } from "@/lib/subscription";
 import { useAvatar } from "@/lib/avatar";
 
@@ -19,32 +20,26 @@ export default function Dashboard() {
   const { t } = useI18n();
   const { status: subStatus, openPaywall } = useSubscription();
   const { profileName } = useAvatar();
+  const firstName = profileName || user?.display_name || user?.name?.split(" ")[0] || "";
   const [tryons, setTryons] = useState([]);
   const [measurements, setMeasurements] = useState(null);
-  const [weightStatus, setWeightStatus] = useState(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [nonce, setNonce] = useState(0);
 
   const refresh = async () => {
     try {
-      const [t2, m, w] = await Promise.all([
+      const [t2, m] = await Promise.all([
         api.get("/tryons"),
         api.get("/profile/measurements"),
-        api.get("/profile/weight-history"),
       ]);
       setTryons(t2.data || []);
       setMeasurements(m.data || {});
-      setWeightStatus(w.data?.status || null);
     } catch (_e) { /* ignore */ }
   };
 
   useEffect(() => { refresh(); }, []);
 
   const hasMeasurements = measurements && Object.keys(measurements || {}).some((k) => k !== "updated_at" && measurements[k]);
-  const stale = weightStatus?.last_check_at && weightStatus?.due;
-  const bannerStyle = stale
-    ? "bg-[#B91C1C] hover:bg-[#991818] border-[#B91C1C]"
-    : "bg-[#0A0A0A] hover:bg-[#8C7355] border-[#0A0A0A]";
 
   const onWeightSaved = () => {
     // Server has recomputed the score — just ask the badge to re-fetch.
@@ -55,26 +50,7 @@ export default function Dashboard() {
   return (
     <div className="space-y-14" data-testid="dashboard-root">
       <HoneymoonBanner />
-      {weightStatus?.due && (
-        <button
-          onClick={() => setModalOpen(true)}
-          className={`w-full flex items-center justify-between gap-4 border hairline text-white px-5 py-4 transition-colors ${bannerStyle}`}
-          data-testid="weight-reminder-banner"
-        >
-          <div className="flex items-center gap-3">
-            <Warning size={18} weight="fill" />
-            <div className="text-left">
-              <div className="label-caps !text-white/80">{t("weight.banner")}</div>
-              <div className="font-serif text-lg leading-tight">
-                {stale ? t("weight.stale") : (weightStatus.last_check_at ? t("weight.due") : t("weight.start"))}
-              </div>
-            </div>
-          </div>
-          <div className="flex items-center gap-2 label-caps !text-white/90">
-            <Scales size={16} weight="fill" /> {t("accuracy.updateNow")} →
-          </div>
-        </button>
-      )}
+      <UpdateReminderBanner name={firstName} />
 
       <div className="flex items-center gap-4 flex-wrap" data-testid="accuracy-row">
         <AccuracyBadge nonce={nonce} />
@@ -95,7 +71,7 @@ export default function Dashboard() {
           <div className="label-caps mb-4">{t("dashboard.welcome")}</div>
           <h1 className="font-serif text-4xl md:text-6xl tracking-tighter leading-[1]">
             {t("dashboard.hiAgain")}<br />
-            <em className="italic text-[#8C7355]">{profileName || user?.name?.split(" ")[0] || t("dashboard.fallbackName")}</em>.
+            <em className="italic text-[#8C7355]">{firstName || t("dashboard.fallbackName")}</em>.
           </h1>
           <p className="mt-6 text-neutral-600 max-w-xl leading-relaxed">{t("dashboard.heroCopy")}</p>
         </div>

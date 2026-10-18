@@ -118,7 +118,7 @@ const DICTIONARIES = {
     },
     dashboard: {
       welcome: "Bentornato",
-      hiAgain: "Ciao di nuovo,",
+      hiAgain: "Benvenuto,",
       fallbackName: "amica",
       heroCopy: "Il tuo camerino è pronto. Avvia una nuova prova o rivedi un look salvato nel tuo atelier.",
       newTryOn: "Nuova prova",
@@ -257,7 +257,7 @@ const DICTIONARIES = {
     },
     dashboard: {
       welcome: "Welcome back",
-      hiAgain: "Hello again,",
+      hiAgain: "Welcome,",
       fallbackName: "friend",
       heroCopy: "Your fitting room is ready. Start a new try-on or revisit a saved look from your atelier.",
       newTryOn: "New try-on",
@@ -396,7 +396,7 @@ const DICTIONARIES = {
     },
     dashboard: {
       welcome: "Bon retour",
-      hiAgain: "Rebonjour,",
+      hiAgain: "Bienvenue,",
       fallbackName: "ami·e",
       heroCopy: "Votre cabine d'essayage est prête. Lancez un nouvel essayage ou revisitez un look sauvegardé.",
       newTryOn: "Nouvel essayage",
@@ -535,7 +535,7 @@ const DICTIONARIES = {
     },
     dashboard: {
       welcome: "Willkommen zurück",
-      hiAgain: "Hallo wieder,",
+      hiAgain: "Willkommen,",
       fallbackName: "Freund·in",
       heroCopy: "Deine Umkleide ist bereit. Starte ein neues Try-on oder öffne einen gespeicherten Look.",
       newTryOn: "Neues Try-on",

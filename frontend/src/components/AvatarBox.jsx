@@ -16,7 +16,6 @@ const POSE_ERRORS = {
   too_far: ["Sei troppo lontano", "Avvicinati: il corpo deve riempire quasi tutta l'altezza della foto."],
   no_pose: ["Non vediamo bene la tua figura", "Mettiti in piedi, frontale, a corpo intero e con più luce."],
 };
-const AVATAR_REFRESH_DAYS = 60;
 
 function PhotoIssue({ code, onRetake }) {
   const [title, hint] = POSE_ERRORS[code] || POSE_ERRORS.no_pose;
@@ -29,16 +28,6 @@ function PhotoIssue({ code, onRetake }) {
   );
 }
 
-function RefreshReminder({ since, onRetake }) {
-  return (
-    <div className="mt-4 border hairline bg-[#FFFBEB] p-4" data-testid="avatar-refresh-reminder">
-      <div className="font-serif text-lg">Sono passati più di 2 mesi</div>
-      <p className="text-sm text-neutral-700 mt-1">La tua foto Avatar è del {new Date(since).toLocaleDateString("it-IT")}. Rifalla per misure sempre precise.</p>
-      <button onClick={onRetake} className="btn-primary mt-3" data-testid="avatar-refresh-btn">Rifai la foto</button>
-    </div>
-  );
-}
-
 function BodyForm({ initial, onSubmit, onCancel }) {
   const [h, setH] = useState(initial.height_cm || "");
   const [w, setW] = useState(initial.weight_kg || "");
@@ -46,7 +35,7 @@ function BodyForm({ initial, onSubmit, onCancel }) {
   const ok = Number(h) >= 120 && Number(h) <= 230 && Number(w) >= 40 && Number(w) <= 150;
   return (
     <div className="mt-4 border hairline p-4 bg-white fade-up" data-testid="avatar-body-form">
-      <div className="label-caps mb-3">Solo questa volta: altezza e peso</div>
+      <div className="label-caps mb-3">Controlla altezza e peso</div>
       <div className="flex flex-wrap gap-3 items-center">
         {[["cm", h, setH, "182", "avatar-height-input"], ["kg", w, setW, "70", "avatar-weight-input"]].map(([u, v, set, ph, id]) => (
           <div key={u} className="flex items-center border hairline w-32">
@@ -78,13 +67,20 @@ function Notes() {
 }
 
 export default function AvatarBox({ manage = false }) {
-  const { avatar, setAvatar, profileName } = useAvatar();
+  const { avatar, setAvatar, profileName, updateRequest, setReminderDue } = useAvatar();
+  const [forceBody, setForceBody] = useState(false);
   const [camOpen, setCamOpen] = useState(false);
   const [pending, setPending] = useState(null);
   const [busy, setBusy] = useState(false);
   const [profile, setProfile] = useState({});
   const [issue, setIssue] = useState(null);
 
+  useEffect(() => {
+    if (!updateRequest || manage) return;
+    document.getElementById("il-mio-avatar")?.scrollIntoView({ behavior: "smooth" });
+    setForceBody(true);
+    setCamOpen(true);
+  }, [updateRequest, manage]);
   useEffect(() => {
     if (!manage && window.location.hash === "#il-mio-avatar") setTimeout(() => document.getElementById("il-mio-avatar")?.scrollIntoView({ behavior: "smooth" }), 300);
   }, [manage]);
@@ -100,6 +96,8 @@ export default function AvatarBox({ manage = false }) {
       setAvatar(data.avatar);
       setProfile(data.measurements || profile);
       setPending(null);
+      setForceBody(false);
+      setReminderDue(false);
       toast.success("Avatar pronto: misure calcolate e outfit collegati");
     } catch (e) {
       toast.error(e?.response?.data?.detail === "need_height" ? "Inserisci altezza e peso" : (e?.response?.data?.detail || "Salvataggio non riuscito"));
@@ -116,7 +114,7 @@ export default function AvatarBox({ manage = false }) {
     try { ratios = await extractBodyRatios(file); }
     catch (e) { setIssue(e.message); setPending({ file, preview, ratios: null, ask: false, bad: true }); setBusy(false); return; }
     setBusy(false);
-    if (!profile.height_cm || !profile.weight_kg) { setPending({ file, preview, ratios, ask: true }); return; }
+    if (forceBody || !profile.height_cm || !profile.weight_kg) { setPending({ file, preview, ratios, ask: true }); return; }
     await upload(file, ratios);
   };
 
@@ -158,9 +156,6 @@ export default function AvatarBox({ manage = false }) {
             </p>
           )}
           {issue && <PhotoIssue code={issue} onRetake={() => { setIssue(null); setPending(null); setCamOpen(true); }} />}
-          {!manage && !pending && avatar?.created_at && (Date.now() - new Date(avatar.created_at).getTime()) / 864e5 > AVATAR_REFRESH_DAYS && (
-            <RefreshReminder since={avatar.created_at} onRetake={() => setCamOpen(true)} />
-          )}
           {pending?.ask && (
             <BodyForm initial={profile} onCancel={() => setPending(null)} onSubmit={(b) => upload(pending.file, pending.ratios, b)} />
           )}

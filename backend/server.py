@@ -84,6 +84,7 @@ class User(BaseModel):
     picture: Optional[str] = None
     owner_id: Optional[str] = None
     is_family_profile: bool = False
+    display_name: Optional[str] = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     @property
@@ -626,9 +627,38 @@ async def _measure_and_save(user: User, raw: bytes, ratios: dict, height_cm, wei
 # ----- Il Mio Avatar: one full-body photo for measurements + try-ons -----
 @api_router.get("/profile/avatar")
 async def get_avatar(user: User = Depends(get_current_user)):
-    doc = await db.users.find_one({"user_id": user.user_id}, {"_id": 0, "avatar_path": 1, "avatar_at": 1, "is_family_profile": 1, "name": 1}) or {}
+    doc = await db.users.find_one({"user_id": user.user_id}, {"_id": 0, "avatar_path": 1, "avatar_at": 1, "is_family_profile": 1, "name": 1, "reminder_snoozed_until": 1}) or {}
+    last_w = await db.weight_history.find_one({"user_id": user.user_id}, {"_id": 0, "recorded_at": 1}, sort=[("recorded_at", -1)])
+    stamps = [d for d in (_parse_dt(doc.get("avatar_at")), _parse_dt((last_w or {}).get("recorded_at"))) if d]
+    now = datetime.now(timezone.utc)
+    snoozed = _parse_dt(doc.get("reminder_snoozed_until"))
+    due = bool(doc.get("avatar_path") and stamps and now - max(stamps) > timedelta(days=AVATAR_REMINDER_DAYS) and not (snoozed and snoozed > now))
     return {"path": doc.get("avatar_path"), "created_at": doc.get("avatar_at"),
-            "profile_name": doc.get("name") if doc.get("is_family_profile") else None}
+            "profile_name": doc.get("name") if doc.get("is_family_profile") else None, "reminder_due": due}
+
+
+AVATAR_REMINDER_DAYS = 60
+REMINDER_SNOOZE_DAYS = 7
+
+
+@api_router.post("/profile/reminder/snooze")
+async def snooze_reminder(user: User = Depends(get_current_user)):
+    until = (datetime.now(timezone.utc) + timedelta(days=REMINDER_SNOOZE_DAYS)).isoformat()
+    await db.users.update_one({"user_id": user.user_id}, {"$set": {"reminder_snoozed_until": until}})
+    return {"snoozed_until": until}
+
+
+class DisplayNameIn(BaseModel):
+    name: str = Field(min_length=1, max_length=40)
+
+
+@api_router.put("/profile/display-name")
+async def set_display_name(body: DisplayNameIn, user: User = Depends(get_account_user)):
+    name = " ".join(body.name.split())[:40]
+    if not name:
+        raise HTTPException(status_code=400, detail="Inserisci il tuo nome")
+    await db.users.update_one({"user_id": user.user_id}, {"$set": {"display_name": name}})
+    return {"display_name": name}
 
 
 @api_router.post("/profile/avatar")
