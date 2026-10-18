@@ -100,3 +100,49 @@ class TestAssets:
         html = requests.get(f"{BASE_URL}/").text
         assert "favicon.ico" in html or "favicon.png" in html
         assert "apple-touch-icon" in html
+
+
+# Weight history: quick-estimate logs a weight_history entry only when weight changes (iteration 23).
+# Uses the owner test account user_avatar_test (prelaunch gate blocks non-owner emails); added entries are removed afterwards.
+class TestQuickEstimateWeightHistory:
+    @pytest.fixture(scope="class")
+    def wclient(self):
+        s = requests.Session()
+        s.headers.update({"Authorization": "Bearer avatar_tok_test"})
+        r = s.get(f"{BASE_URL}/api/profile/measurements")
+        if r.status_code != 200 or not r.json().get("weight_kg"):
+            pytest.skip("avatar test user not onboarded")
+        before = {e["id"] for e in s.get(f"{BASE_URL}/api/profile/weight-history").json()["entries"]}
+        s.base_profile = r.json()
+        yield s
+        b = s.base_profile
+        s.post(f"{BASE_URL}/api/profile/quick-estimate", json={"height_cm": b["height_cm"], "weight_kg": b["weight_kg"], "gender": b["gender"]})
+        ids = [e["id"] for e in s.get(f"{BASE_URL}/api/profile/weight-history").json()["entries"] if e["id"] not in before]
+        js = "use('test_database'); db.weight_history.deleteMany({id:{$in:%s}})" % str(ids)
+        subprocess.run(["mongosh", "--quiet", "--eval", js], capture_output=True)
+
+    def _hist(self, c):
+        r = c.get(f"{BASE_URL}/api/profile/weight-history")
+        assert r.status_code == 200
+        return r.json()["entries"]
+
+    def test_same_weight_no_new_entry(self, wclient):
+        b = wclient.base_profile
+        n = len(self._hist(wclient))
+        r = wclient.post(f"{BASE_URL}/api/profile/quick-estimate", json={"height_cm": b["height_cm"], "weight_kg": b["weight_kg"], "gender": b["gender"]})
+        assert r.status_code == 200
+        assert len(self._hist(wclient)) == n
+
+    def test_changed_weight_new_entry_and_photo_kept(self, wclient):
+        b = wclient.base_profile
+        n = len(self._hist(wclient))
+        r = wclient.post(f"{BASE_URL}/api/profile/quick-estimate", json={"height_cm": b["height_cm"], "weight_kg": b["weight_kg"] + 2, "gender": b["gender"]})
+        assert r.status_code == 200
+        h = self._hist(wclient)
+        assert len(h) == n + 1 and (b["weight_kg"] + 2) in [e["weight_kg"] for e in h]
+        if b.get("method") == "auto_photo":
+            assert r.json()["kept_precise"] is True
+
+    def test_weight_encrypted_in_db(self, wclient):
+        out = subprocess.run(["mongosh", "--quiet", "--eval", "use('test_database'); print(db.weight_history.countDocuments({user_id:'user_avatar_test', weight_kg:{$exists:true}}))"], capture_output=True, text=True).stdout.strip()
+        assert out.endswith("0")

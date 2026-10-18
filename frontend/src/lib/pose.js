@@ -103,6 +103,57 @@ export async function extractBodyRatios(file) {
   };
 }
 
+function rowRun(mask, W, y, cx) {
+  const row = y * W;
+  let x = Math.max(0, Math.min(W - 1, Math.round(cx)));
+  for (let d = 0; d < W * 0.08 && mask[row + x] < 0.5; d += 1) x = Math.max(0, Math.min(W - 1, Math.round(cx) + (d % 2 ? d : -d)));
+  if (mask[row + x] < 0.5) return null;
+  let l = x; let r = x;
+  while (l > 0 && mask[row + l - 1] >= 0.5) l -= 1;
+  while (r < W - 1 && mask[row + r + 1] >= 0.5) r += 1;
+  return [l, r];
+}
+
+// Silhouette width profile (one entry per row) from y0 to y1, following the body centre.
+function profile(d, y0, y1) {
+  const out = [];
+  let cx = d.hipX;
+  for (let y = Math.max(0, Math.round(y0)); y <= Math.min(d.H - 1, Math.round(y1)); y += 1) {
+    const run = rowRun(d.mask, d.W, y, cx);
+    if (run) { out.push({ y, w: run[1] - run[0] + 1, c: (run[0] + run[1]) / 2 }); cx = (run[0] + run[1]) / 2; } else out.push({ y, w: 0, c: cx });
+  }
+  return out;
+}
+
+/** Finds scale s and offsets (t, dx) so that photo-2 rows y2 map to photo-1 rows y1 = t + s*y2, by matching the overlapping silhouette. */
+function registerParts(u, l) {
+  const torso = u.hipY - ((u.p[11].y + u.p[12].y) / 2) * u.H;
+  const a = profile(u, u.hipY - 0.35 * torso, u.H - 3).filter((r) => r.w > 0);
+  const b = profile(l, 0, Math.min(l.bottom, l.hipY + (l.bottom - l.hipY) * 0.6));
+  if (a.length < 20 || b.length < 20) return null;
+  const bw = new Map(b.map((r) => [r.y, r]));
+  let best = null;
+  for (let k = 0; k <= 70; k += 1) {
+    const s = 0.5 * Math.pow(4, k / 70);
+    const tMin = a[0].y - s * b[b.length - 1].y; const tMax = a[a.length - 1].y - s * 10;
+    for (let t = tMin; t <= tMax; t += 2) {
+      let err = 0; let n = 0;
+      for (let i = 0; i < a.length; i += 2) {
+        const r2 = bw.get(Math.round((a[i].y - t) / s));
+        if (!r2 || !r2.w) continue;
+        err += Math.abs(a[i].w - s * r2.w) / a[i].w; n += 1;
+      }
+      if (n >= 12) {
+        const cost = err / n + 0.15 / Math.sqrt(n);
+        if (!best || cost < best.cost) best = { s, t, cost, n };
+      }
+    }
+  }
+  if (!best || best.cost > 0.2) return null;
+  const dxs = a.map((r) => { const r2 = bw.get(Math.round((r.y - best.t) / best.s)); return r2?.w ? r.c - best.s * r2.c : null; }).filter((v) => v !== null);
+  return { s: best.s, t: best.t, dx: median(dxs) };
+}
+
 async function detectPart(file) {
   const landmarker = await getLandmarker();
   const bitmap = await createImageBitmap(file);
@@ -137,12 +188,11 @@ export async function extractTwoPartRatios(upperFile, lowerFile) {
   if (l.bottom >= l.H - 2) { closeAll(); throw new Error("cut_bottom"); }
 
   const { p, mask, W, H } = u;
-  // Scale photo 2 to photo 1 using the silhouette width at the hip line (joint spacing is unreliable at the frame edge).
-  const hipW = (d) => median(bandWidths(d.mask, d.W, d.H, Math.max(0, d.hipY / d.H - 0.015), Math.min(0.999, d.hipY / d.H + 0.015), d.hipX / d.W));
-  const wu = hipW(u); const wl = hipW(l);
-  const s = wu && wl ? wu / wl : u.hipJ / l.hipJ;
-  const legLen = (l.bottom - l.hipY) * s;
-  const bodyH = (u.hipY - u.top) + legLen;
+  const reg = registerParts(u, l) || { s: u.hipJ / l.hipJ, t: u.hipY - l.hipY * (u.hipJ / l.hipJ), dx: u.hipX - l.hipX * (u.hipJ / l.hipJ) };
+  const { s, t, dx } = reg;
+  const feetY = t + l.bottom * s;
+  const legLen = feetY - u.hipY;
+  const bodyH = feetY - u.top;
   const sY = (p[11].y + p[12].y) / 2; const hY = (p[23].y + p[24].y) / 2; const torso = hY - sY;
   const cx = (p[11].x + p[12].x + p[23].x + p[24].x) / 4;
   const shoulder = Math.hypot((p[11].x - p[12].x) * W, (p[11].y - p[12].y) * H);
@@ -154,12 +204,12 @@ export async function extractTwoPartRatios(upperFile, lowerFile) {
 
   // Stitch: upper photo down to the hips + lower photo from the hips, scaled and centred on the hips.
   const lowEnd = Math.min(l.H, l.bottom + l.H * 0.03);
-  const outH = Math.round(u.hipY + (lowEnd - l.hipY) * s);
+  const outH = Math.round(t + lowEnd * s);
   const c = document.createElement("canvas");
   c.width = W; c.height = outH;
   const ctx = c.getContext("2d");
   ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, W, outH);
-  ctx.drawImage(l.bitmap, u.hipX - l.hipX * s, u.hipY - l.hipY * s, l.W * s, l.H * s);
+  ctx.drawImage(l.bitmap, dx, t, l.W * s, l.H * s);
   ctx.drawImage(u.bitmap, 0, 0, W, u.hipY, 0, 0, W, u.hipY);
   closeAll();
   const blob = await new Promise((r) => c.toBlob(r, "image/jpeg", 0.92));
