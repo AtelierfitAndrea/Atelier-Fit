@@ -12,11 +12,13 @@ import PricingCards from "@/components/PricingCards";
 import CalcolaTagliaBox from "@/components/CalcolaTagliaBox";
 import AvatarBox from "@/components/AvatarBox";
 import { useSubscription } from "@/lib/subscription";
+import { useAvatar } from "@/lib/avatar";
 
 export default function Dashboard() {
   const { user } = useAuth();
   const { t } = useI18n();
   const { status: subStatus, openPaywall } = useSubscription();
+  const { profileName } = useAvatar();
   const [tryons, setTryons] = useState([]);
   const [measurements, setMeasurements] = useState(null);
   const [weightStatus, setWeightStatus] = useState(null);
@@ -93,7 +95,7 @@ export default function Dashboard() {
           <div className="label-caps mb-4">{t("dashboard.welcome")}</div>
           <h1 className="font-serif text-4xl md:text-6xl tracking-tighter leading-[1]">
             {t("dashboard.hiAgain")}<br />
-            <em className="italic text-[#8C7355]">{user?.name?.split(" ")[0] || t("dashboard.fallbackName")}</em>.
+            <em className="italic text-[#8C7355]">{profileName || user?.name?.split(" ")[0] || t("dashboard.fallbackName")}</em>.
           </h1>
           <p className="mt-6 text-neutral-600 max-w-xl leading-relaxed">{t("dashboard.heroCopy")}</p>
         </div>

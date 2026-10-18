@@ -1,0 +1,35 @@
+{
+  "summary": "Tested the 3 improvements to the 'Il Mio Avatar' box using user_avatar_test (FAMILY) and sub-profile fam_avatar_kid 'Giulia'. 1) Photo check (Home /dashboard, getUserMedia mocked to reject so the fallback native input is used): dark.jpg -> 'Foto troppo buia'; nofeet.jpg -> 'Non vediamo i piedi'; nohead.jpg -> 'Foto tagliata in alto' (cut_top: a different but valid code, accepted per the note). In every case the red panel showed with 'La foto non è stata salvata', no body form appeared, and GET /api/profile/avatar kept path null. avatar-retake-btn closes the panel and reopens the camera. fullbody.jpg gave no issue, then the body form, then a save (avatar-ready, path vfit/avatar/user_avatar_test/...). 2) Family: switched to Giulia with the FamilySwitcher (sets localStorage and reloads). Title shows 'Il Mio Avatar · Giulia', empty state, the dark photo was rejected, fullbody plus 150/45 saved to vfit/avatar/fam_avatar_kid/... with profile_name 'Giulia'. The main avatar path did not change. Measurements are separate (Giulia 150cm/chest 67, main 175cm/chest 81). The avatar persists after reload (img naturalWidth 800). Switching back to the owner clears localStorage and shows the plain title. 3) Reminder: with avatar_at set to 70 days ago, avatar-refresh-reminder shows 'Sono passati più di 2 mesi ... del 09/08/2026', and avatar-refresh-btn opens the camera. With a date 10 days ago it is hidden. It is not shown on /settings (manage mode), as designed. Backend: new tests/test_avatar_family.py (11 tests) plus the existing test_avatar.py: 25 passed, 1 skipped (run serially with -n 0, because both files use the same user). Test data cleaned at the end: avatars, measurements and weight_history removed for both profiles.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "get_current_user (X-Profile-Id)", "issue": "An unknown or foreign X-Profile-Id silently falls back to the owner account instead of returning 403/404. There is no data leak, but a stale localStorage atelier_active_profile (e.g. a deleted sub-profile) would make the UI save avatar/measurements on the OWNER while the user thinks they are on the child profile. The FamilySwitcher shows the owner name in that case, so the risk is low."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Header (desktop 1920)", "issues": ["The language selector 'IT' pill overlaps the 'HOME' nav link: the text renders garbled ('HO✕ME') in some screenshots. Pre-existing, not part of this task."]},
+      {"screen": "Home in a family profile", "issues": ["The greeting still says 'Ciao di nuovo, Test.' (owner name) while the Giulia profile is active. Consider showing the profile name, as the avatar title does."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_avatar_family.py", "/app/backend/tests/test_avatar.py", "/app/test_reports/pytest/pytest_iter20.xml"],
+  "action_items": [
+    "Optional: reject an invalid X-Profile-Id (403), or clear the stale active profile on the frontend, to avoid writing to the owner by mistake",
+    "Optional: fix the header language pill overlapping the HOME link",
+    "Optional: show the active family profile name in the Home greeting"
+  ],
+  "critical_code_review_comments": [
+    "pose.js: the cut_top/cut_bottom checks run before too_far and use tight thresholds (top <= 0.5% of H, bottom >= H-2). A head cut at the frame edge is classified cut_top rather than no_head when the nose landmark is still visible. This is acceptable.",
+    "pose.js: the brightness threshold (mean luma < 55) is global. A well-lit person against a very dark background could be wrongly rejected as too_dark. Consider measuring luma on the segmentation mask area.",
+    "AvatarBox: if the MediaPipe model or WASM fails to load (network), the error message is not a known code and falls back to 'Non vediamo bene la tua figura'. A dedicated network-error message would be clearer.",
+    "AvatarProvider refetches only on user change. Profile switches rely on window.location.reload() in FamilySwitcher, which works, but the provider is not reactive to profile changes."
+  ],
+  "updated_files": ["/app/backend/tests/test_avatar_family.py"],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "seed_data_creation": "None created. Avatars and measurements created during the tests were removed for user_avatar_test and fam_avatar_kid (users.avatar_path/avatar_at unset, measurements and weight_history deleted).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Token avatar_tok_test, user_avatar_test (FAMILY), sub-profile fam_avatar_kid 'Giulia'. Run avatar pytest files serially with '-n 0' (pytest.ini uses xdist, and the parallel runs interfere on the same user). test_avatar_family test_05 needs Giulia without saved height. For UI: add_init_script that sets atelier_owner=1 and makes getUserMedia reject, then set_input_files on avatar-camera-native-input. FamilySwitcher: family-switcher-btn -> family-switcher-panel -> click 'Giulia' (reloads). Reminder: set users.avatar_at to an ISO date more than 60 days ago in test_database."
+}

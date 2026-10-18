@@ -174,3 +174,8 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 - Removed photo upload from CalcolaTagliaBox, Studio ("La tua foto" → AvatarPanel), Profile (AutoMeasure → MeasureResult). Settings: Cambia foto / Elimina foto. AvatarProvider context (lib/avatar.jsx).
 - Privacy text truthful (encrypted, account-only) per user choice. Tested iteration_19 (100%).
 - NOTE: owner's measurements were overwritten once by a dev test (fake ratios) — owner must take the avatar photo to recompute.
+
+## 2026-10-18 — Avatar: photo check, Family, 2-month reminder
+- pose.js rejects before saving: too_dark (mean luma<55), no_head, no_feet, cut_top, cut_bottom, too_far, no_pose → red PhotoIssue panel + "Riscatta la foto" (nothing saved).
+- Family profiles: own avatar & measurements (X-Profile-Id); title "Il Mio Avatar · {name}", greeting uses profile name (GET /profile/avatar returns profile_name).
+- RefreshReminder on Home when avatar_at > 60 days. Header: brand/lang selector no longer overlaps nav. Tested iteration_20 (100%).

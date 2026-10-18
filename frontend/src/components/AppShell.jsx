@@ -21,12 +21,12 @@ export default function AppShell({ children }) {
       <header className="theme-dark sticky top-0 z-30 border-b hairline">
         <div className="max-w-[1400px] mx-auto px-6 md:px-10 flex items-center justify-between py-4">
           <div
-            className="flex items-center gap-2 cursor-pointer"
+            className="flex items-center gap-2 cursor-pointer shrink-0 mr-6"
             onClick={() => navigate("/dashboard")}
             data-testid="shell-brand"
           >
             <img src="/logo-white.png" alt="MY ATELIER" className="h-8 w-auto" translate="no" />
-            <div className="ml-3">
+            <div className="ml-3 relative z-10" onClick={(e) => e.stopPropagation()}>
               <LanguageSwitcher />
             </div>
           </div>
