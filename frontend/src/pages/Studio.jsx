@@ -83,7 +83,7 @@ export default function Studio() {
           <div className="label-caps mb-3">Atelier Fit</div>
           <h1 className="font-serif text-4xl md:text-5xl tracking-tighter">Prova taglia</h1>
           <p className="mt-3 text-neutral-600 max-w-xl leading-relaxed">
-            Carica una foto e il capo che vuoi provare. Ti vestiamo in un attimo.
+            Carica il capo: usiamo il tuo Avatar e ti vestiamo in un attimo.
           </p>
         </div>
         <TryonCounter />

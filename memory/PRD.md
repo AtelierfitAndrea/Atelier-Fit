@@ -167,3 +167,10 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 ## 2026-10-18 — Owner room cleanup
 - Deleted all 11 fake/test users + their data from preview DB (only owner remains).
 - Stats exclude owner accounts (OWNER_EMAILS + their family profiles) everywhere; revenue/payments count only livemode=True Stripe payments (stored at checkout). Shows 0 when empty.
+
+## 2026-10-18 — Comandamento 1: Foto unica "Il Mio Avatar"
+- Home: single AvatarBox (tap → AvatarCamera: getUserMedia rear cam default, 5s timer, Frontale/Specchio (mirror flips), silhouette overlay, native capture fallback). MediaPipe in browser → asks height/weight/gender once if missing → POST /api/profile/avatar (encrypted, EXIF stripped JPEG, users.avatar_path) + measurements via _measure_and_save.
+- GET/DELETE /api/profile/avatar; delete-all photos clears avatar; get_object decrypts /avatar/ paths; outfits fallback to avatar.
+- Removed photo upload from CalcolaTagliaBox, Studio ("La tua foto" → AvatarPanel), Profile (AutoMeasure → MeasureResult). Settings: Cambia foto / Elimina foto. AvatarProvider context (lib/avatar.jsx).
+- Privacy text truthful (encrypted, account-only) per user choice. Tested iteration_19 (100%).
+- NOTE: owner's measurements were overwritten once by a dev test (fake ratios) — owner must take the avatar photo to recompute.

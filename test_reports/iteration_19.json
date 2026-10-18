@@ -1,0 +1,36 @@
+{
+  "summary": "Tested the COMANDAMENTO 1 'Il Mio Avatar' single-photo feature end to end with test user user_avatar_test (Bearer/cookie avatar_tok_test). Backend: 15/15 pytest passed (GET null, 401 unauth, 400 need_height, bad features/invalid photo 400, height range 422, create with height returns vfit/avatar/<uid>/*.bin plus measurements and brand_sizes at precision 98, persistence, weight history, decrypted image/jpeg file, private to the owner, replacing the photo marks the old file 404, saved height reused, DELETE leaves the file 404, delete-all clears the avatar). Frontend: Home has a single avatar-box with the exact empty text and notes. calcola-taglia-box has no file input. calcola-cta with a link and no avatar shows the toast 'Crea prima il tuo Avatar...'. The camera opens with a Chromium fake device: video, silhouette, rear camera by default (facingMode environment), Frontale switches to facingMode user and mirrors the preview, the 5→1 countdown runs and then snaps. MediaPipe loads in headless and returned no_pose (proper toast) on the fake green video. With getUserMedia mocked to reject, the fallback 'Apri fotocamera' appears (input capture=environment). Uploading /tmp/fullbody.jpg made MediaPipe detect the pose, the body form appeared (submit disabled until valid), 168/58 then gave the toast 'Avatar pronto...', avatar-photo loaded (naturalWidth 800) and avatar-ready showed. It stays after reload. Studio shows studio-avatar-photo (studio-avatar-create when there is no avatar). Profile has no file input and shows auto-measure-result with measurements and brand sizes. Settings: avatar-change-btn replaced the photo without asking height/weight again, and avatar-delete-btn (confirm) removed it with the toast 'Foto eliminata'. Home went back to the empty state. AI try-on generation was NOT run (as requested).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/files/{avatar path}", "issue": "Content-Type is hardcoded to image/jpeg for all avatar files, even PNG/WebP uploads. Browsers sniff the real type so display works, but the header is inaccurate."},
+      {"endpoint": "POST /api/profile/avatar", "issue": "The raw upload is stored as-is (encrypted). EXIF metadata (GPS location, device) is not removed and EXIF orientation is not normalised. Consider re-encoding with PIL (ImageOps.exif_transpose plus saving without EXIF) for privacy, since the feature is advertised as private."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Studio (/studio)", "issues": ["Subtitle still says 'Carica una foto e il capo che vuoi provare' even though the person photo now comes from the Avatar. Suggest new copy, e.g. 'Carica il capo: usiamo il tuo Avatar'."]},
+      {"screen": "Profile (/profile)", "issues": ["'Per cambiarla vai in Impostazioni.' is plain text. Make it a Link to /settings like on Home."]},
+      {"screen": "Avatar camera", "issues": ["Specchio mode uses the rear camera (facingMode environment) with a mirrored preview. That makes sense for shooting into a mirror, but confirm it is intended. The saved photo is flipped via canvas as specified."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_avatar.py", "/app/test_reports/pytest/pytest_avatar.xml"],
+  "action_items": [
+    "Optional: strip EXIF and apply exif_transpose to avatar uploads before encrypting",
+    "Optional: store/serve the real content type for avatar files",
+    "Optional copy fixes on the Studio subtitle and the Profile Impostazioni link"
+  ],
+  "critical_code_review_comments": [
+    "set_avatar without the features param skips the need_height check and the measurement step and only stores the photo. Fine for the UI (which always sends features), but it means the API can store an avatar without measurements.",
+    "CalcolaTagliaBox checks for an empty URL before the avatar check, so with an empty link the user sees 'Incolla prima il link del prodotto' first. Acceptable, but the avatar prompt only appears after a link is typed.",
+    "AvatarBox loads the profile once on mount. After deleting the avatar, measurements remain, so re-creating it won't ask height/weight again (consistent with 'ask ONCE')."
+  ],
+  "updated_files": ["/app/backend/tests/test_avatar.py"],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "seed_data_creation": "Reset the measurements and weight_history of user_avatar_test before the UI run so the body form would appear. Final state: no avatar (deleted via Settings), measurements 168cm/58kg saved, 1 weight_history entry.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Test user user_avatar_test / token avatar_tok_test; set localStorage atelier_owner=1. Chromium headless provides a fake camera, so getUserMedia succeeds. To test the fallback, use add_init_script to make getUserMedia reject, then set_input_files on avatar-camera-native-input with /tmp/fullbody.jpg. MediaPipe loads in headless and detects the pose in about 1s. Use add_init_script 'window.confirm=()=>true' for delete."
+}

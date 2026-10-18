@@ -30,7 +30,7 @@ export default function Profile() {
         <div className="label-caps mb-3">La tua silhouette</div>
         <h1 className="font-serif text-4xl md:text-5xl tracking-tighter">Misure corporee</h1>
         <p className="mt-4 text-neutral-600 max-w-lg leading-relaxed">
-          Calcolate in automatico dalla foto del tuo Avatar. Per cambiarla vai in Impostazioni.
+          Calcolate in automatico dalla foto del tuo Avatar. Per cambiarla vai in <Link to="/settings" className="underline" data-testid="profile-settings-link">Impostazioni</Link>.
         </p>
 
         <div className="mt-8">

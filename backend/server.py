@@ -573,6 +573,16 @@ async def _read_photo(photo: UploadFile) -> bytes:
     return raw
 
 
+def _clean_jpeg(raw: bytes) -> bytes:
+    # Upright orientation, no EXIF (GPS/device), always JPEG.
+    from PIL import Image, ImageOps
+    import io
+    img = ImageOps.exif_transpose(Image.open(io.BytesIO(raw))).convert("RGB")
+    out = io.BytesIO()
+    img.save(out, "JPEG", quality=92)
+    return out.getvalue()
+
+
 async def _resolve_body_inputs(user: User, height_cm, weight_kg, gender, forget_weight):
     saved_m = await _get_measurements(user.user_id)
     # Missing values fall back to the ones already saved in the profile.
@@ -636,7 +646,7 @@ async def set_avatar(
         except Exception:
             raise HTTPException(status_code=400, detail="Non riusciamo a leggere la tua figura: riprova con una foto intera, frontale, ben illuminata")
         await _resolve_body_inputs(user, height_cm, weight_kg, gender, False)
-    raw = await _read_photo(photo)
+    raw = _clean_jpeg(await _read_photo(photo))
     path = f"{APP_NAME}/avatar/{user.user_id}/{uuid.uuid4().hex}.bin"
     put_object(path, FERNET.encrypt(raw), "application/octet-stream")
     now = datetime.now(timezone.utc).isoformat()
