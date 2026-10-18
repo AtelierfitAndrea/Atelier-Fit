@@ -30,6 +30,35 @@ function PhotoIssue({ code, onRetake }) {
   );
 }
 
+const SOFT_WARNINGS = {
+  too_dark: "Poca luce: se puoi accendi la torcia o una luce, le misure saranno più precise.",
+  cut_top: "La testa è vicina al bordo: va bene lo stesso.",
+  cut_bottom: "I piedi sono vicini al bordo: va bene lo stesso.",
+  no_measure: "Da queste foto non riusciamo a calcolare le misure: salviamo comunque l'Avatar e stimiamo le misure da altezza e peso.",
+};
+
+function StitchPreview({ pending, onConfirm, onRetake }) {
+  return (
+    <div className="border hairline p-4 bg-white fade-up" data-testid="avatar-stitch-preview">
+      <div className="font-serif text-lg">Ecco le tue 2 foto unite</div>
+      {pending.warnings?.length > 0 && (
+        <ul className="mt-3 space-y-1 border border-[#EAB308] bg-[#FEFCE8] p-3 text-sm text-[#713F12]" data-testid="avatar-soft-warnings">
+          {pending.warnings.map((w) => <li key={w} data-testid={`avatar-soft-warning-${w}`}>{SOFT_WARNINGS[w]}</li>)}
+        </ul>
+      )}
+      <div className="mt-4 flex gap-4">
+        {[["upper", "Busto"], ["lower", "Gambe"]].map(([k, l]) => (
+          <div key={k} className="text-center">
+            <img src={pending.thumbs[k]} alt={l} className="w-20 h-28 object-cover border hairline" data-testid={`avatar-shot-${k}`} />
+            <button onClick={() => onRetake(k)} className="mt-2 text-xs underline" data-testid={`avatar-retake-${k}`}>Rifai {l.toLowerCase()}</button>
+          </div>
+        ))}
+      </div>
+      <button onClick={onConfirm} className="btn-primary mt-4" data-testid="avatar-stitch-confirm">Conferma e salva</button>
+    </div>
+  );
+}
+
 function BodyForm({ initial, onSubmit, onCancel }) {
   const [h, setH] = useState(initial.height_cm || "");
   const [w, setW] = useState(initial.weight_kg || "");
@@ -78,6 +107,7 @@ export default function AvatarBox({ manage = false }) {
   const [profile, setProfile] = useState({});
   const [issue, setIssue] = useState(null);
   const [camMode, setCamMode] = useState("single");
+  const [retake, setRetake] = useState(null);
 
   useEffect(() => {
     if (!updateRequest || manage) return;
@@ -93,7 +123,7 @@ export default function AvatarBox({ manage = false }) {
   const upload = async (file, ratios, body = {}) => {
     setBusy(true);
     try {
-      const params = new URLSearchParams({ features: JSON.stringify(ratios) });
+      const params = new URLSearchParams(ratios ? { features: JSON.stringify(ratios) } : {});
       Object.entries(body).forEach(([k, v]) => params.set(k, String(v)));
       const fd = new FormData(); fd.append("photo", file);
       const { data } = await api.post(`/profile/avatar?${params}`, fd, { headers: { "Content-Type": "multipart/form-data" } });
@@ -103,7 +133,7 @@ export default function AvatarBox({ manage = false }) {
       setForceBody(false);
       setReminderDue(false);
       window.dispatchEvent(new Event("atelier-measures-updated"));
-      toast.success("Avatar pronto: misure calcolate e outfit collegati");
+      toast.success(ratios ? "Avatar pronto: misure calcolate e outfit collegati" : "Avatar salvato: misure stimate da altezza e peso");
     } catch (e) {
       toast.error(e?.response?.data?.detail === "need_height" ? "Inserisci altezza e peso" : (e?.response?.data?.detail || "Salvataggio non riuscito"));
     } finally { setBusy(false); }
@@ -112,29 +142,31 @@ export default function AvatarBox({ manage = false }) {
   const onCapture = async (shot) => {
     setCamOpen(false);
     setIssue(null);
+    setRetake(null);
     let file = shot.upper || shot;
     let preview = URL.createObjectURL(file);
     setPending({ file, preview, ratios: null, ask: false });
     setBusy(true);
     let ratios;
-    try {
-      if (shot.upper) {
-        ({ ratios, file } = await extractTwoPartRatios(shot.upper, shot.lower));
-        preview = URL.createObjectURL(file);
-      } else {
-        ratios = await extractBodyRatios(file);
-      }
-    } catch (e) { setIssue(e.message); setPending({ file, preview, ratios: null, ask: false, bad: true, double: !!shot.upper }); setBusy(false); return; }
+    if (shot.upper) {
+      // Close-up 2-shot never blocks: soft warnings only, the photo is always saved.
+      const res = await extractTwoPartRatios(shot.upper, shot.lower)
+        .catch(() => ({ file: shot.upper, ratios: null, warnings: ["no_measure"] }));
+      setBusy(false);
+      setPending({ file: res.file, preview: URL.createObjectURL(res.file), ratios: res.ratios, confirm: true, warnings: res.warnings,
+        shots: { upper: shot.upper, lower: shot.lower }, thumbs: { upper: URL.createObjectURL(shot.upper), lower: URL.createObjectURL(shot.lower) } });
+      return;
+    }
+    try { ratios = await extractBodyRatios(file); }
+    catch (e) { setIssue(e.message); setPending({ file, preview, ratios: null, ask: false, bad: true }); setBusy(false); return; }
     setBusy(false);
-    // 2-shot: show the stitched photo first, the user confirms or retakes.
-    if (shot.upper) { setPending({ file, preview, ratios, confirm: true }); return; }
     await proceed(file, preview, ratios);
   };
 
   const proceed = async (file, preview, ratios) => {
     const fresh = (await api.get("/profile/measurements").catch(() => ({ data: profile }))).data || {};
     setProfile(fresh);
-    if (forceBody || !fresh.height_cm || !fresh.weight_kg) { setPending({ file, preview, ratios, ask: true }); return; }
+    if (ratios && (forceBody || !fresh.height_cm || !fresh.weight_kg)) { setPending({ file, preview, ratios, ask: true }); return; }
     await upload(file, ratios);
   };
 
@@ -175,16 +207,11 @@ export default function AvatarBox({ manage = false }) {
               {!manage && <> Per cambiarla vai in <Link to="/settings" className="underline" data-testid="avatar-settings-link">Impostazioni</Link>.</>}
             </p>
           )}
-          {issue && <PhotoIssue code={issue} onRetake={() => { setCamMode(pending?.double ? "double" : "single"); setIssue(null); setPending(null); setCamOpen(true); }} />}
+          {issue && <PhotoIssue code={issue} onRetake={() => { setCamMode("single"); setIssue(null); setPending(null); setCamOpen(true); }} />}
           {pending?.confirm && (
-            <div className="border hairline p-4 bg-white fade-up" data-testid="avatar-stitch-preview">
-              <div className="font-serif text-lg">Ecco le tue 2 foto unite</div>
-              <p className="text-sm text-neutral-600 mt-1">Controlla che busto e gambe siano allineati. Se va bene, conferma.</p>
-              <div className="mt-4 flex gap-3">
-                <button onClick={() => { const p = pending; setPending({ ...p, confirm: false }); proceed(p.file, p.preview, p.ratios); }} className="btn-primary" data-testid="avatar-stitch-confirm">Conferma</button>
-                <button onClick={() => { setPending(null); setCamMode("double"); setCamOpen(true); }} className="btn-ghost" data-testid="avatar-stitch-retake">Rifai</button>
-              </div>
-            </div>
+            <StitchPreview pending={pending}
+              onConfirm={() => { const p = pending; setPending({ ...p, confirm: false }); proceed(p.file, p.preview, p.ratios); }}
+              onRetake={(part) => { setRetake({ part, keep: pending.shots }); setCamMode("double"); setCamOpen(true); }} />
           )}
           {pending?.ask && (
             <BodyForm initial={profile} onCancel={() => setPending(null)} onSubmit={(b) => upload(pending.file, pending.ratios, b)} />
@@ -198,7 +225,7 @@ export default function AvatarBox({ manage = false }) {
           <Notes />
         </div>
       </div>
-      <AvatarCamera open={camOpen} initialMode={camMode} onClose={() => setCamOpen(false)} onCapture={onCapture} />
+      <AvatarCamera open={camOpen} initialMode={camMode} retakePart={retake?.part} keep={retake?.keep} onClose={() => setCamOpen(false)} onCapture={onCapture} />
     </section>
   );
 }

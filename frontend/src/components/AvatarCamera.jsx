@@ -1,16 +1,18 @@
 import { useEffect, useRef, useState } from "react";
-import { X, Timer, Camera, ArrowsClockwise } from "@phosphor-icons/react";
+import { X, Timer, Camera, ArrowsClockwise, Flashlight } from "@phosphor-icons/react";
+import { toast } from "sonner";
 
 const MODES = [
   { k: "single", label: "1 foto intera" },
   { k: "double", label: "2 scatti · poco spazio" },
 ];
 const TIMER_S = 5;
+const TIMER_DOUBLE_S = 10;
 
 function UpperSilhouette() {
   return (
     <svg viewBox="0 0 100 120" className="absolute inset-0 m-auto h-[88%] pointer-events-none" aria-hidden="true" data-testid="avatar-camera-silhouette-upper">
-      <g fill="none" stroke="#fff" strokeOpacity="0.85" strokeWidth="1" strokeDasharray="3 2">
+      <g fill="none" stroke="#fff" strokeOpacity="0.95" strokeWidth="1.6">
         <ellipse cx="50" cy="16" rx="11" ry="13" />
         <path d="M38 32 Q50 37 62 32 L82 42 Q86 45 86 52 L90 110 M38 32 L18 42 Q14 45 14 52 L10 110" />
         <path d="M30 44 L30 112 Q50 118 70 112 L70 44" />
@@ -24,7 +26,7 @@ function LowerSilhouette() {
   return (
     <svg viewBox="0 0 100 120" className="absolute inset-0 m-auto h-[88%] pointer-events-none" aria-hidden="true" data-testid="avatar-camera-silhouette-lower">
       <line x1="0" x2="100" y1="14" y2="14" stroke="#D4AF37" strokeWidth="0.8" />
-      <g fill="none" stroke="#fff" strokeOpacity="0.85" strokeWidth="1" strokeDasharray="3 2">
+      <g fill="none" stroke="#fff" strokeOpacity="0.95" strokeWidth="1.6">
         <path d="M28 6 Q50 14 72 6 L66 112 M28 6 L34 112 M50 16 L48 108 M50 16 L52 108" />
       </g>
     </svg>
@@ -55,7 +57,7 @@ const say = (text) => {
   } catch (_e) { /* voice not available */ }
 };
 
-export default function AvatarCamera({ open, onClose, onCapture, initialMode = "single" }) {
+export default function AvatarCamera({ open, onClose, onCapture, initialMode = "single", retakePart = null, keep = null }) {
   const videoRef = useRef();
   const streamRef = useRef();
   const fileRef = useRef();
@@ -64,9 +66,12 @@ export default function AvatarCamera({ open, onClose, onCapture, initialMode = "
   const [count, setCount] = useState(0);
   const [failed, setFailed] = useState(false);
   const [upper, setUpper] = useState(null);
+  const [torch, setTorch] = useState(false);
   const twoStep = shotMode === "double";
+  const timerS = twoStep ? TIMER_DOUBLE_S : TIMER_S;
+  const part = retakePart || (upper ? "lower" : "upper");
   useEffect(() => { if (open) setShotMode(initialMode); }, [open, initialMode]);
-  useEffect(() => { setUpper(null); setCount(0); }, [shotMode, open]);
+  useEffect(() => { setUpper(null); setCount(0); setTorch(false); }, [shotMode, open]);
   useEffect(() => { if (!open) window.speechSynthesis?.cancel(); }, [open]);
 
   useEffect(() => {
@@ -91,9 +96,16 @@ export default function AvatarCamera({ open, onClose, onCapture, initialMode = "
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [count]);
 
-  const startTimer = (part = twoStep ? (upper ? "lower" : "upper") : "single") => {
-    say(part === "upper" ? "Busto" : part === "lower" ? "Gambe" : "Foto intera");
-    setCount(TIMER_S);
+  const startTimer = () => {
+    say(!twoStep ? "Foto intera" : part === "upper" ? "Busto" : "Gambe");
+    setCount(timerS);
+  };
+
+  const toggleTorch = async () => {
+    const track = streamRef.current?.getVideoTracks?.()[0];
+    if (!track?.getCapabilities?.()?.torch) { toast("Torcia non disponibile su questo dispositivo"); return; }
+    try { await track.applyConstraints({ advanced: [{ torch: !torch }] }); setTorch(!torch); }
+    catch { toast("Torcia non disponibile su questo dispositivo"); }
   };
 
   const snap = () => {
@@ -109,7 +121,8 @@ export default function AvatarCamera({ open, onClose, onCapture, initialMode = "
       if (!b) return;
       const f = new File([b], "avatar.jpg", { type: "image/jpeg" });
       if (!twoStep) { onCapture(f); return; }
-      if (!upper) { setUpper(f); startTimer("lower"); return; }
+      if (retakePart) { onCapture({ ...keep, [retakePart]: f }); return; }
+      if (part === "upper") { setUpper(f); say("Ora le gambe"); return; }
       onCapture({ upper, lower: f });
     }, "image/jpeg", 0.92);
   };
@@ -133,11 +146,11 @@ export default function AvatarCamera({ open, onClose, onCapture, initialMode = "
           <video ref={videoRef} autoPlay playsInline muted className="absolute inset-0 w-full h-full object-cover"
             style={{ transform: facing === "user" || twoStep ? "scaleX(-1)" : "none" }} data-testid="avatar-camera-video" />
         )}
-        {!failed && (twoStep ? (upper ? <LowerSilhouette /> : <UpperSilhouette />) : <Silhouette />)}
+        {!failed && (twoStep ? (part === "lower" ? <LowerSilhouette /> : <UpperSilhouette />) : <Silhouette />)}
         {!failed && (
           <p className="absolute top-3 left-1/2 -translate-x-1/2 w-[92%] max-w-md text-center text-xs text-white bg-black/70 backdrop-blur-sm px-4 py-2 rounded-full" data-testid="avatar-camera-hint">
             {twoStep
-              ? (upper ? "2/2 Gambe: dalla vita ai piedi (la vita sulla linea dorata)" : "1/2 Busto: dalla testa a metà coscia (i fianchi sulla linea dorata)")
+              ? (part === "lower" ? "2/2 Gambe: dalla vita ai piedi (la vita sulla linea dorata)" : "1/2 Busto: dalla testa a metà coscia (i fianchi sulla linea dorata)")
               : "Allinea il corpo intero, dalla testa ai piedi"}
           </p>
         )}
@@ -145,7 +158,7 @@ export default function AvatarCamera({ open, onClose, onCapture, initialMode = "
       </div>
       {!failed && (
         <div className="px-4 py-5 flex flex-col items-center gap-3 text-white">
-          <div className="flex gap-2">
+          <div className={`flex gap-2 ${retakePart ? "hidden" : ""}`}>
             {MODES.map((m) => (
               <button key={m.k} onClick={() => setShotMode(m.k)}
                 className={`px-3 py-1.5 text-[11px] tracking-[0.15em] uppercase border ${shotMode === m.k ? "bg-white text-black border-white" : "border-white/40 text-white/80"}`}
@@ -155,17 +168,37 @@ export default function AvatarCamera({ open, onClose, onCapture, initialMode = "
           <p className="text-[11px] text-white/70 text-center max-w-xs" data-testid="avatar-camera-mode-desc">
             {twoStep ? "Per chi ha poco spazio davanti allo specchio, circa 1 metro: busto e gambe in 2 scatti, li uniamo noi." : "Il corpo intero in un solo scatto: appoggia il telefono a 2-3 metri."}
           </p>
-          <div className="flex items-center gap-6">
-            <button onClick={() => setFacing(facing === "user" ? "environment" : "user")} aria-label="Cambia fotocamera" className="text-white/80" data-testid="avatar-camera-flip"><ArrowsClockwise size={26} /></button>
-            <button onClick={() => startTimer()} disabled={count > 0}
-              className="w-20 h-20 rounded-full border-4 border-white flex items-center justify-center hover:scale-105 transition-transform" data-testid="avatar-camera-timer-btn">
-              <Timer size={30} />
-            </button>
-            <button onClick={snap} aria-label="Scatta subito" className="text-white/80" data-testid="avatar-camera-snap-btn"><Camera size={26} /></button>
-          </div>
-          <span className="text-[11px] text-white/60" data-testid="avatar-camera-step">
-            {twoStep ? `Scatto ${upper ? "2" : "1"} di 2 · timer ${TIMER_S}s con guida vocale` : `Tocca il cerchio: scatto tra ${TIMER_S} secondi`}
-          </span>
+          {twoStep ? (
+            <>
+              <button onClick={snap} disabled={count > 0}
+                className="w-full max-w-xs bg-white text-black py-4 text-base font-semibold tracking-[0.3em] uppercase rounded-full active:scale-95 transition-transform disabled:opacity-50"
+                data-testid="avatar-camera-big-snap">Scatta</button>
+              <div className="flex items-center gap-5">
+                <button onClick={() => setFacing(facing === "user" ? "environment" : "user")} aria-label="Cambia fotocamera" className="text-white/80" data-testid="avatar-camera-flip"><ArrowsClockwise size={24} /></button>
+                <button onClick={startTimer} disabled={count > 0} className="flex items-center gap-2 border border-white/60 px-4 py-2 rounded-full text-xs tracking-[0.2em] uppercase" data-testid="avatar-camera-timer-btn">
+                  <Timer size={18} /> Timer {TIMER_DOUBLE_S}s
+                </button>
+                <button onClick={toggleTorch} aria-label="Torcia" className={`flex items-center gap-2 border px-4 py-2 rounded-full text-xs tracking-[0.2em] uppercase ${torch ? "bg-[#D4AF37] border-[#D4AF37] text-black" : "border-white/60"}`} data-testid="avatar-camera-torch-btn">
+                  <Flashlight size={18} /> Torcia
+                </button>
+              </div>
+              <span className="text-[11px] text-white/60" data-testid="avatar-camera-step">
+                {retakePart ? `Rifai solo ${retakePart === "upper" ? "il busto" : "le gambe"}` : `Scatto ${part === "lower" ? "2" : "1"} di 2`}
+              </span>
+            </>
+          ) : (
+            <>
+              <div className="flex items-center gap-6">
+                <button onClick={() => setFacing(facing === "user" ? "environment" : "user")} aria-label="Cambia fotocamera" className="text-white/80" data-testid="avatar-camera-flip"><ArrowsClockwise size={26} /></button>
+                <button onClick={startTimer} disabled={count > 0}
+                  className="w-20 h-20 rounded-full border-4 border-white flex items-center justify-center hover:scale-105 transition-transform" data-testid="avatar-camera-timer-btn">
+                  <Timer size={30} />
+                </button>
+                <button onClick={snap} aria-label="Scatta subito" className="text-white/80" data-testid="avatar-camera-snap-btn"><Camera size={26} /></button>
+              </div>
+              <span className="text-[11px] text-white/60" data-testid="avatar-camera-step">Tocca il cerchio: scatto tra {TIMER_S} secondi</span>
+            </>
+          )}
         </div>
       )}
     </div>

@@ -158,11 +158,11 @@ function registerParts(u, l) {
 async function detectPart(file) {
   const landmarker = await getLandmarker();
   const bitmap = await createImageBitmap(file);
-  if (meanLuma(bitmap) < 55) { bitmap.close?.(); throw new Error("too_dark"); }
+  const luma = meanLuma(bitmap);
   const res = landmarker.detect(bitmap);
   const p = res.landmarks?.[0];
   const maskObj = res.segmentationMasks?.[0];
-  if (!p || !maskObj) { bitmap.close?.(); throw new Error("no_pose"); }
+  if (!p || !maskObj) { maskObj?.close(); return { bitmap, luma, p: null, W: bitmap.width, H: bitmap.height }; }
   const W = maskObj.width; const H = maskObj.height;
   const mask = maskObj.getAsFloat32Array().slice();
   maskObj.close();
@@ -173,24 +173,14 @@ async function detectPart(file) {
   const hipY = ((p[23].y + p[24].y) / 2) * H;
   const hipX = ((p[23].x + p[24].x) / 2) * W;
   const hipJ = Math.hypot((p[23].x - p[24].x) * W, (p[23].y - p[24].y) * H);
-  return { bitmap, p, mask, W, H, vis, top, bottom, hipY, hipX, hipJ };
+  return { bitmap, luma, p, mask, W, H, vis, top, bottom, hipY, hipX, hipJ };
 }
 
-/** Mirror mode, little space: photo 1 = head→hips, photo 2 = hips→feet. Hips are the shared anchor. */
-export async function extractTwoPartRatios(upperFile, lowerFile) {
-  const u = await detectPart(upperFile);
-  if (![11, 12, 23, 24].every(u.vis)) { u.bitmap.close?.(); throw new Error("upper_no_hips"); }
-  if (!u.vis(0)) { u.bitmap.close?.(); throw new Error("no_head"); }
-  if (u.top <= u.H * 0.005) { u.bitmap.close?.(); throw new Error("cut_top"); }
-  const l = await detectPart(lowerFile);
-  const closeAll = () => { u.bitmap.close?.(); l.bitmap.close?.(); };
-  if (![23, 24].every(l.vis)) { closeAll(); throw new Error("lower_no_hips"); }
-  if (![27, 28].every(l.vis)) { closeAll(); throw new Error("no_feet"); }
-  if (l.bottom >= l.H - 2) { closeAll(); throw new Error("cut_bottom"); }
+const RATIO_RANGES = { shoulder_r: [0.05, 0.5], chest_r: [0.05, 0.5], waist_r: [0.05, 0.5], hips_r: [0.05, 0.5], inseam_r: [0.3, 0.6] };
 
+function bodyRatios(u, l, reg) {
   const { p, mask, W, H } = u;
-  const reg = registerParts(u, l) || { s: u.hipJ / l.hipJ, t: u.hipY - l.hipY * (u.hipJ / l.hipJ), dx: u.hipX - l.hipX * (u.hipJ / l.hipJ) };
-  const { s, t, dx } = reg;
+  const { s, t } = reg;
   const feetY = t + l.bottom * s;
   const legLen = feetY - u.hipY;
   const bodyH = feetY - u.top;
@@ -201,28 +191,42 @@ export async function extractTwoPartRatios(upperFile, lowerFile) {
   const waist = Math.min(...bandWidths(mask, W, H, sY + 0.55 * torso, sY + 0.85 * torso, cx), chest * 0.88);
   const hipBand = bandWidths(mask, W, H, hY - 0.05 * torso, Math.min(hY + 0.2 * torso, 0.995), cx);
   const hips = Math.max(Math.min(Math.max(...hipBand), u.hipJ * 1.85), waist);
-  if (!chest || !Number.isFinite(waist) || !Number.isFinite(hips) || bodyH <= 0) { closeAll(); throw new Error("no_pose"); }
+  const r = { shoulder_r: shoulder / bodyH, chest_r: chest / bodyH, waist_r: waist / bodyH, hips_r: hips / bodyH, inseam_r: (legLen * 0.86) / bodyH };
+  const valid = bodyH > 0 && Object.entries(RATIO_RANGES).every(([k, [lo, hi]]) => Number.isFinite(r[k]) && r[k] > lo && r[k] < hi);
+  return valid ? r : null;
+}
 
-  // Stitch: upper photo down to the hips + lower photo from the hips, scaled and centred on the hips.
-  const lowEnd = Math.min(l.H, l.bottom + l.H * 0.03);
-  const outH = Math.round(t + lowEnd * s);
+/**
+ * Close-up 2-shot (photo 1 = head→mid-thigh, photo 2 = waist→feet). Never blocks:
+ * returns the stitched photo always, ratios when measurable, and soft warnings.
+ */
+export async function extractTwoPartRatios(upperFile, lowerFile) {
+  const u = await detectPart(upperFile);
+  const l = await detectPart(lowerFile);
+  const warnings = [];
+  if (u.luma < 55 || l.luma < 55) warnings.push("too_dark");
+  let reg = null; let ratios = null;
+  if (u.p && l.p && [11, 12, 23, 24].every(u.vis) && [23, 24].every(l.vis)) {
+    if (!u.vis(0) || u.top <= u.H * 0.005) warnings.push("cut_top");
+    if (![27, 28].every(l.vis) || l.bottom >= l.H - 2) warnings.push("cut_bottom");
+    reg = registerParts(u, l) || { s: u.hipJ / l.hipJ, t: u.hipY - l.hipY * (u.hipJ / l.hipJ), dx: u.hipX - l.hipX * (u.hipJ / l.hipJ), seam: u.hipY };
+    reg.seam = reg.seam || u.hipY;
+    ratios = bodyRatios(u, l, reg);
+  }
+  if (!ratios) warnings.push("no_measure");
+  // No reliable anchor: simply stack photo 2 under photo 1 at the same width.
+  if (!reg) reg = { s: u.W / l.W, t: u.H, dx: 0, seam: u.H };
+  const { s, t, dx, seam } = reg;
+  const W = u.W;
+  const lowEnd = l.p ? Math.min(l.H, l.bottom + l.H * 0.03) : l.H;
+  const outH = Math.max(Math.round(seam) + 10, Math.round(t + lowEnd * s));
   const c = document.createElement("canvas");
   c.width = W; c.height = outH;
   const ctx = c.getContext("2d");
   ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, W, outH);
   ctx.drawImage(l.bitmap, dx, t, l.W * s, l.H * s);
-  ctx.drawImage(u.bitmap, 0, 0, W, u.hipY, 0, 0, W, u.hipY);
-  closeAll();
+  ctx.drawImage(u.bitmap, 0, 0, u.bitmap.width, seam * (u.bitmap.height / u.H), 0, 0, W, seam);
+  u.bitmap.close?.(); l.bitmap.close?.();
   const blob = await new Promise((r) => c.toBlob(r, "image/jpeg", 0.92));
-
-  return {
-    ratios: {
-      shoulder_r: shoulder / bodyH,
-      chest_r: chest / bodyH,
-      waist_r: waist / bodyH,
-      hips_r: hips / bodyH,
-      inseam_r: (legLen * 0.86) / bodyH,
-    },
-    file: new File([blob], "avatar.jpg", { type: "image/jpeg" }),
-  };
+  return { ratios, warnings, file: new File([blob], "avatar.jpg", { type: "image/jpeg" }) };
 }
