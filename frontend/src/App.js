@@ -41,7 +41,13 @@ function AppRouter() {
   if (location.hash?.includes("session_id=")) {
     return <AuthCallback />;
   }
-  if (loading) return <div style={{ backgroundColor: "#000", minHeight: "100vh" }} data-testid="gate-loading" />;
+  if (loading) {
+    return (
+      <div style={{ backgroundColor: "#000", minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", letterSpacing: "0.5em", fontSize: "14px", fontWeight: 300 }} data-testid="gate-loading">
+        MY ATELIER
+      </div>
+    );
+  }
   if (!user && location.pathname !== "/termini" && Date.now() < LAUNCH_AT) return <ComingSoon />;
   return (
     <Routes>

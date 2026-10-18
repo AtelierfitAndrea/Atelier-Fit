@@ -22,11 +22,12 @@ export default function AuthCallback() {
     }
     (async () => {
       try {
-        await api.post("/auth/session", { session_id: sid });
-        window.history.replaceState(null, "", "/dashboard");
-        await refresh();
         // Owner login from the Coming Soon page lands on the homepage preview.
-        navigate(window.location.pathname === "/" ? "/" : "/dashboard", { replace: true });
+        const target = window.location.pathname === "/" ? "/" : "/dashboard";
+        await api.post("/auth/session", { session_id: sid }, { timeout: 20000 });
+        window.history.replaceState(null, "", target);
+        await refresh();
+        navigate(target, { replace: true });
       } catch (e) {
         if (e?.response?.status === 403) sessionStorage.setItem("atelier_owner_denied", "1");
         navigate("/", { replace: true });

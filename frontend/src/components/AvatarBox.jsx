@@ -120,7 +120,7 @@ export default function AvatarBox({ manage = false }) {
   }, [manage]);
   useEffect(() => { api.get("/profile/measurements").then(({ data }) => setProfile(data || {})).catch(() => {}); }, []);
 
-  const upload = async (file, ratios, body = {}, base = profile) => {
+  const upload = async (file, ratios, body = {}, base = profile, twoShot = !!pending?.shots) => {
     setBusy(true);
     try {
       // Without measurable photos, measurements are estimated from height and weight.
@@ -128,6 +128,7 @@ export default function AvatarBox({ manage = false }) {
       if (!ratios && est.height_cm && est.weight_kg) await api.post("/profile/quick-estimate", { ...est, force: true });
       const params = new URLSearchParams(ratios ? { features: JSON.stringify(ratios) } : {});
       if (ratios) Object.entries(body).forEach(([k, v]) => params.set(k, String(v)));
+      if (ratios && twoShot) params.set("two_shot", "true");
       const fd = new FormData(); fd.append("photo", file);
       const { data } = await api.post(`/profile/avatar?${params}`, fd, { headers: { "Content-Type": "multipart/form-data" } });
       setAvatar(data.avatar);
@@ -169,7 +170,7 @@ export default function AvatarBox({ manage = false }) {
   const proceed = async (file, preview, ratios) => {
     const fresh = (await api.get("/profile/measurements").catch(() => ({ data: profile }))).data || {};
     setProfile(fresh);
-    if (forceBody || !fresh.height_cm || !fresh.weight_kg) { setPending({ file, preview, ratios, ask: true }); return; }
+    if (forceBody || !fresh.height_cm || !fresh.weight_kg) { setPending((p) => ({ ...p, file, preview, ratios, ask: true, confirm: false })); return; }
     await upload(file, ratios, {}, fresh);
   };
 

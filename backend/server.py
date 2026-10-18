@@ -607,9 +607,14 @@ async def _resolve_body_inputs(user: User, height_cm, weight_kg, gender, forget_
     return saved_m, height_cm, weight_kg, gender
 
 
-async def _measure_and_save(user: User, raw: bytes, ratios: dict, height_cm, weight_kg, gender, forget_weight, store_photo: bool):
+TWO_SHOT_CALIB_CM = -2  # close-up mirror 2-shot overestimates circumferences by ~2 cm
+
+
+async def _measure_and_save(user: User, raw: bytes, ratios: dict, height_cm, weight_kg, gender, forget_weight, store_photo: bool, calib_cm: int = 0):
     saved_m, height_cm, weight_kg, gender = await _resolve_body_inputs(user, height_cm, weight_kg, gender, forget_weight)
     est = estimate_body(ratios, height_cm, weight_kg, gender)
+    if calib_cm:
+        est.update({k: est[k] + calib_cm for k in ("chest_cm", "waist_cm", "hips_cm") if est.get(k)})
     sizes = brand_sizes(est, gender)
     now = datetime.now(timezone.utc).isoformat()
     if store_photo:
@@ -679,6 +684,7 @@ async def set_avatar(
     height_cm: Optional[float] = Query(None, ge=120, le=230),
     gender: Optional[str] = Query(None, regex="^(female|male)$"),
     weight_kg: Optional[float] = Query(None, ge=40, le=150),
+    two_shot: bool = Query(False),
     user: User = Depends(get_current_user),
 ):
     ratios = None
@@ -702,7 +708,8 @@ async def set_avatar(
         await _mark_files_deleted([old], user.user_id)
     out = {"avatar": {"path": path, "created_at": now}}
     if ratios:
-        out.update(await _measure_and_save(user, raw, ratios, height_cm, weight_kg, gender, False, store_photo=False))
+        out.update(await _measure_and_save(user, raw, ratios, height_cm, weight_kg, gender, False, store_photo=False,
+                                           calib_cm=TWO_SHOT_CALIB_CM if two_shot else 0))
     return out
 
 

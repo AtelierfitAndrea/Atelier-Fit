@@ -230,6 +230,11 @@ export async function extractTwoPartRatios(upperFile, lowerFile) {
     ratios = bodyRatios(u, l, reg);
   }
   if (!ratios) warnings.push("no_measure");
+  // Cut at the waistband (between waist and hip joints) so jacket/top from photo 1 meets trousers from photo 2.
+  if (reg && u.p && reg.seam === u.hipY) {
+    const sh = ((u.p[11].y + u.p[12].y) / 2) * u.H;
+    reg.seam = u.hipY - 0.15 * (u.hipY - sh);
+  }
   // No reliable anchor: simply stack photo 2 under photo 1 at the same width.
   // No reliable anchor: both shots come from the same spot, so keep the same scale (1:1, never stretched) and
   // place photo 2's waist (on the gold guide line, 14% from the top) on photo 1's waist; legs show from the hips down.
@@ -249,6 +254,20 @@ export async function extractTwoPartRatios(upperFile, lowerFile) {
   ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, W, outH);
   ctx.drawImage(l.bitmap, dx, t, l.W * s, l.H * s);
   ctx.drawImage(u.bitmap, 0, 0, u.bitmap.width, seam * (u.bitmap.height / u.H), 0, 0, W, seam);
+  // Soft 24px blend across the cut line: no hard step, no double edge.
+  const F = 24;
+  const fy = Math.round(seam);
+  if (fy + F < u.H && fy + F < outH) {
+    const band = document.createElement("canvas");
+    band.width = W; band.height = F;
+    const bctx = band.getContext("2d");
+    bctx.drawImage(u.bitmap, 0, fy * (u.bitmap.height / u.H), u.bitmap.width, F * (u.bitmap.height / u.H), 0, 0, W, F);
+    bctx.globalCompositeOperation = "destination-in";
+    const g = bctx.createLinearGradient(0, 0, 0, F);
+    g.addColorStop(0, "rgba(0,0,0,1)"); g.addColorStop(1, "rgba(0,0,0,0)");
+    bctx.fillStyle = g; bctx.fillRect(0, 0, W, F);
+    ctx.drawImage(band, 0, fy);
+  }
   u.bitmap.close?.(); l.bitmap.close?.();
   const blob = await new Promise((r) => c.toBlob(r, "image/jpeg", 0.92));
   return { ratios, warnings, file: new File([blob], "avatar.jpg", { type: "image/jpeg" }) };
