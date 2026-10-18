@@ -152,3 +152,8 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 - Frontend: PaywallModal redirects to Stripe; /payment/success & /payment/cancel (PaymentResult.jsx) → /dashboard with toast. Pricing texts "30 giorni", "Pagamento unico… IVA inclusa", expiry shown in Piano attuale strip.
 - Removed /subscription/confirm mock. Tested iteration_17 (100%).
 - Backlog: claim Stripe sandbox (onboarding link) to go live; real admin KPIs from payment_transactions.
+
+## 2026-10-18 — FREE quota enforcement + real Owner Room
+- FREE: 5 try-ons/month after 30-day honeymoon (DB monthly_tryon_count). When blocked: /api/upload and /api/tryon/generate → 402; frontend 402 interceptor opens paywall globally; Studio guards uploads. Counter: "Ti restano X prove gratuite".
+- /api/admin/stats now real: subscribers, distinct logins today, paying (active plan_expires_at), revenue total/month from paid payment_transactions (amount = Stripe amount_total), purchases per plan, last 10 payments, most analyzed products per category. Demo banner removed.
+- Tested iteration_18 (100%).

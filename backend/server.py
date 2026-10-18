@@ -448,7 +448,7 @@ async def admin_stats(_: bool = Depends(require_admin)):
     month = now.strftime("%Y-%m")
     paid_q = {"payment_status": "paid"}
     subscribers = await db.users.count_documents({"is_family_profile": {"$ne": True}})
-    logins_today = await db.user_sessions.count_documents({"created_at": {"$gte": day}})
+    logins_today = len(await db.user_sessions.distinct("user_id", {"created_at": {"$gte": day}}))
     paying = await db.users.count_documents({"plan": {"$in": ["SINGLE", "FAMILY"]}, "plan_expires_at": {"$gt": now.isoformat()}})
     agg = await db.payment_transactions.aggregate([
         {"$match": paid_q},
@@ -469,7 +469,7 @@ async def admin_stats(_: bool = Depends(require_admin)):
     hot = {c: [] for c in ("Maglie", "Pantaloni", "Scarpe", "Giacche")}
     for r in hot_rows:
         cat = _HOT_CATS.get((r["_id"].get("cat") or "").lower())
-        if cat and len(hot[cat]) < 5:
+        if cat and r["_id"].get("name") and len(hot[cat]) < 5:
             hot[cat].append({"brand": r["_id"].get("brand") or "—", "name": r["_id"].get("name") or "Prodotto", "views": r["views"]})
     return {
         "demo": False,

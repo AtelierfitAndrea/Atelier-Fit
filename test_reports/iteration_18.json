@@ -1,0 +1,36 @@
+{
+  "summary": "Tested FREE quota enforcement (honeymoon / used=2 / used=5 blocked / extra credit), 402 on /api/upload (person+garment) and /api/tryon/generate, Studio blocked UI (counter + paywall on upload & generate, no upload request sent), and real admin dashboard /admin-atelier-77 (API + UI) against Mongo payment_transactions. All requested features PASS. Owner user doc restored exactly as instructed (created_at 2026-10-03T05:40:30.312552+00:00, monthly_tryon_count {2026-10, used 0}, extra 0, plan FREE, plan_expires_at unset). No real AI generation run.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/admin/stats", "issue": "logins_today counts user_sessions docs created today (not unique users); test-inserted sessions inflate it. Consider distinct user_id."},
+      {"endpoint": "/api/admin/stats", "issue": "hot_products: rows with missing brand/name shown as '— · Prodotto'; 13/27 analyses have category null and are silently excluded; AI category mapping puts suits/chef jacket/tracksuit into Maglie/Giacche (data quality, not code bug)."},
+      {"endpoint": "/api/admin/stats", "issue": "revenue_month based on created_at (checkout creation) not paid_at/applied_at - edge case at month boundaries."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "PaywallModal", "issue": "Escape key does not close paywall-modal (X and CHIUDI work)", "selector": "[data-testid='paywall-modal']", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "OutfitBuilder / wardrobe", "issues": ["/upload?kind=garment is also used by OutfitBuilder, so blocked FREE users cannot add garments to wardrobe either (402 -> paywall). Confirm this is intended."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_free_quota_admin.py", "/app/test_reports/pytest/pytest_free_quota.xml"],
+  "action_items": [
+    "Optional: close paywall on Escape",
+    "Optional: admin logins_today -> distinct users; filter '— · Prodotto' placeholder rows in hot products"
+  ],
+  "critical_code_review_comments": [
+    "server.py is 2157 lines - should be split into routers (admin, subscription, tryon, outfit)",
+    "get_subscription_status performs a DB write (monthly reset / plan downgrade) inside a GET status call - acceptable but side-effectful",
+    "Studio blocked guard relies on cached subStatus; backend 402 + api.js interceptor correctly cover stale state (verified)"
+  ],
+  "updated_files": ["/app/backend/tests/test_free_quota_admin.py"],
+  "success_rate": {"backend": "100% (10/10)", "frontend": "100%"},
+  "seed_data_creation": "None. Temporarily modified owner user doc and restored it. 2 tiny test images uploaded to storage via /api/upload (used=2 checks).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "test_free_quota_admin.py mutates owner user (user_389c87aaadc6) and restores via class fixture; quota tests kept in ONE class because pytest.ini uses xdist --dist loadscope. Verified: blocked -> counter 'Prove free esaurite — sblocca per continuare', upload-person/garment open paywall with zero network upload; used=2 -> 'Ti restano 3 prove gratuite', uploads 200; generate with stale state -> 402 -> paywall + counter refresh to blocked; honeymoon -> counter hidden. Admin stats: demo false, revenue 3.98 (extra 0.99 + single 2.99 paid), subscribers 9."
+}

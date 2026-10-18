@@ -11,6 +11,12 @@ export default function PaywallModal() {
   const [processing, setProcessing] = useState(null); // "extra" | "single" | "family"
 
   useEffect(() => { if (!paywallOpen) setProcessing(null); }, [paywallOpen]);
+  useEffect(() => {
+    if (!paywallOpen) return undefined;
+    const onKey = (e) => { if (e.key === "Escape") closePaywall(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [paywallOpen, closePaywall]);
 
   if (!paywallOpen) return null;
 
