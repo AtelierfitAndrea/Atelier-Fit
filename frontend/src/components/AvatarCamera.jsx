@@ -2,9 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { X, Timer, Camera, ArrowsClockwise } from "@phosphor-icons/react";
 
 const MODES = [
-  { k: "environment", label: "Posteriore" },
-  { k: "user", label: "Frontale" },
-  { k: "mirror", label: "Specchio da vicino" },
+  { k: "single", label: "1 foto intera" },
+  { k: "double", label: "2 scatti · poco spazio" },
 ];
 const TIMER_S = 5;
 
@@ -45,32 +44,45 @@ function Silhouette() {
   );
 }
 
-export default function AvatarCamera({ open, onClose, onCapture }) {
+const say = (text) => {
+  try {
+    const synth = window.speechSynthesis;
+    if (!synth) return;
+    synth.cancel();
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = "it-IT";
+    synth.speak(u);
+  } catch (_e) { /* voice not available */ }
+};
+
+export default function AvatarCamera({ open, onClose, onCapture, initialMode = "single" }) {
   const videoRef = useRef();
   const streamRef = useRef();
   const fileRef = useRef();
-  const [mode, setMode] = useState("environment");
+  const [shotMode, setShotMode] = useState(initialMode);
+  const [facing, setFacing] = useState("environment");
   const [count, setCount] = useState(0);
   const [failed, setFailed] = useState(false);
   const [upper, setUpper] = useState(null);
-  const twoStep = mode === "mirror";
-  useEffect(() => { setUpper(null); }, [mode, open]);
+  const twoStep = shotMode === "double";
+  useEffect(() => { if (open) setShotMode(initialMode); }, [open, initialMode]);
+  useEffect(() => { setUpper(null); setCount(0); }, [shotMode, open]);
+  useEffect(() => { if (!open) window.speechSynthesis?.cancel(); }, [open]);
 
   useEffect(() => {
     if (!open) return undefined;
     let cancelled = false;
     setFailed(false);
-    const facing = mode === "user" ? "user" : "environment";
     navigator.mediaDevices?.getUserMedia({ video: { facingMode: facing, width: { ideal: 1080 }, height: { ideal: 1920 } }, audio: false })
-      .then((s) => {
-        if (cancelled) { s.getTracks().forEach((t) => t.stop()); return; }
-        streamRef.current = s;
-        if (videoRef.current) videoRef.current.srcObject = s;
+      .then((st) => {
+        if (cancelled) { st.getTracks().forEach((t) => t.stop()); return; }
+        streamRef.current = st;
+        if (videoRef.current) videoRef.current.srcObject = st;
       })
       .catch(() => setFailed(true));
     if (!navigator.mediaDevices?.getUserMedia) setFailed(true);
     return () => { cancelled = true; streamRef.current?.getTracks().forEach((t) => t.stop()); streamRef.current = null; };
-  }, [open, mode]);
+  }, [open, facing]);
 
   useEffect(() => {
     if (!count) return undefined;
@@ -79,20 +91,25 @@ export default function AvatarCamera({ open, onClose, onCapture }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [count]);
 
+  const startTimer = (part = twoStep ? (upper ? "lower" : "upper") : "single") => {
+    say(part === "upper" ? "Busto" : part === "lower" ? "Gambe" : "Foto intera");
+    setCount(TIMER_S);
+  };
+
   const snap = () => {
     const v = videoRef.current;
     if (!v?.videoWidth) return;
     const c = document.createElement("canvas");
     c.width = v.videoWidth; c.height = v.videoHeight;
     const ctx = c.getContext("2d");
-    // Mirror selfies are reversed: flip them back to the true orientation.
-    if (mode === "mirror") { ctx.translate(c.width, 0); ctx.scale(-1, 1); }
+    // 2-shot mode is a mirror selfie with the rear camera: flip it back to the true orientation.
+    if (twoStep && facing === "environment") { ctx.translate(c.width, 0); ctx.scale(-1, 1); }
     ctx.drawImage(v, 0, 0);
     c.toBlob((b) => {
       if (!b) return;
       const f = new File([b], "avatar.jpg", { type: "image/jpeg" });
       if (!twoStep) { onCapture(f); return; }
-      if (!upper) { setUpper(f); return; }
+      if (!upper) { setUpper(f); startTimer("lower"); return; }
       onCapture({ upper, lower: f });
     }, "image/jpeg", 0.92);
   };
@@ -114,7 +131,7 @@ export default function AvatarCamera({ open, onClose, onCapture }) {
           </div>
         ) : (
           <video ref={videoRef} autoPlay playsInline muted className="absolute inset-0 w-full h-full object-cover"
-            style={{ transform: mode === "environment" ? "none" : "scaleX(-1)" }} data-testid="avatar-camera-video" />
+            style={{ transform: facing === "user" || twoStep ? "scaleX(-1)" : "none" }} data-testid="avatar-camera-video" />
         )}
         {!failed && (twoStep ? (upper ? <LowerSilhouette /> : <UpperSilhouette />) : <Silhouette />)}
         {!failed && (
@@ -127,24 +144,27 @@ export default function AvatarCamera({ open, onClose, onCapture }) {
         {count > 0 && <div className="absolute inset-0 flex items-center justify-center font-serif text-8xl text-white" data-testid="avatar-camera-countdown">{count}</div>}
       </div>
       {!failed && (
-        <div className="px-4 py-5 flex flex-col items-center gap-4 text-white">
+        <div className="px-4 py-5 flex flex-col items-center gap-3 text-white">
           <div className="flex gap-2">
             {MODES.map((m) => (
-              <button key={m.k} onClick={() => setMode(m.k)}
-                className={`px-3 py-1.5 text-[11px] tracking-[0.2em] uppercase border ${mode === m.k ? "bg-white text-black border-white" : "border-white/40 text-white/80"}`}
+              <button key={m.k} onClick={() => setShotMode(m.k)}
+                className={`px-3 py-1.5 text-[11px] tracking-[0.15em] uppercase border ${shotMode === m.k ? "bg-white text-black border-white" : "border-white/40 text-white/80"}`}
                 data-testid={`avatar-camera-mode-${m.k}`}>{m.label}</button>
             ))}
           </div>
+          <p className="text-[11px] text-white/70 text-center max-w-xs" data-testid="avatar-camera-mode-desc">
+            {twoStep ? "Per chi ha poco spazio davanti allo specchio, circa 1 metro: busto e gambe in 2 scatti, li uniamo noi." : "Il corpo intero in un solo scatto: appoggia il telefono a 2-3 metri."}
+          </p>
           <div className="flex items-center gap-6">
-            <button onClick={() => setMode(mode === "user" ? "environment" : "user")} aria-label="Cambia fotocamera" className="text-white/80" data-testid="avatar-camera-flip"><ArrowsClockwise size={26} /></button>
-            <button onClick={() => setCount(TIMER_S)} disabled={count > 0}
+            <button onClick={() => setFacing(facing === "user" ? "environment" : "user")} aria-label="Cambia fotocamera" className="text-white/80" data-testid="avatar-camera-flip"><ArrowsClockwise size={26} /></button>
+            <button onClick={() => startTimer()} disabled={count > 0}
               className="w-20 h-20 rounded-full border-4 border-white flex items-center justify-center hover:scale-105 transition-transform" data-testid="avatar-camera-timer-btn">
               <Timer size={30} />
             </button>
             <button onClick={snap} aria-label="Scatta subito" className="text-white/80" data-testid="avatar-camera-snap-btn"><Camera size={26} /></button>
           </div>
           <span className="text-[11px] text-white/60" data-testid="avatar-camera-step">
-            {twoStep ? `Specchio da vicino · scatto ${upper ? "2" : "1"} di 2 · timer ${TIMER_S}s` : `Tocca il cerchio: scatto tra ${TIMER_S} secondi`}
+            {twoStep ? `Scatto ${upper ? "2" : "1"} di 2 · timer ${TIMER_S}s con guida vocale` : `Tocca il cerchio: scatto tra ${TIMER_S} secondi`}
           </span>
         </div>
       )}

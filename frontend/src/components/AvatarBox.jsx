@@ -76,6 +76,7 @@ export default function AvatarBox({ manage = false }) {
   const [busy, setBusy] = useState(false);
   const [profile, setProfile] = useState({});
   const [issue, setIssue] = useState(null);
+  const [camMode, setCamMode] = useState("single");
 
   useEffect(() => {
     if (!updateRequest || manage) return;
@@ -122,8 +123,14 @@ export default function AvatarBox({ manage = false }) {
       } else {
         ratios = await extractBodyRatios(file);
       }
-    } catch (e) { setIssue(e.message); setPending({ file, preview, ratios: null, ask: false, bad: true }); setBusy(false); return; }
+    } catch (e) { setIssue(e.message); setPending({ file, preview, ratios: null, ask: false, bad: true, double: !!shot.upper }); setBusy(false); return; }
     setBusy(false);
+    // 2-shot: show the stitched photo first, the user confirms or retakes.
+    if (shot.upper) { setPending({ file, preview, ratios, confirm: true }); return; }
+    await proceed(file, preview, ratios);
+  };
+
+  const proceed = async (file, preview, ratios) => {
     const fresh = (await api.get("/profile/measurements").catch(() => ({ data: profile }))).data || {};
     setProfile(fresh);
     if (forceBody || !fresh.height_cm || !fresh.weight_kg) { setPending({ file, preview, ratios, ask: true }); return; }
@@ -167,7 +174,17 @@ export default function AvatarBox({ manage = false }) {
               {!manage && <> Per cambiarla vai in <Link to="/settings" className="underline" data-testid="avatar-settings-link">Impostazioni</Link>.</>}
             </p>
           )}
-          {issue && <PhotoIssue code={issue} onRetake={() => { setIssue(null); setPending(null); setCamOpen(true); }} />}
+          {issue && <PhotoIssue code={issue} onRetake={() => { setCamMode(pending?.double ? "double" : "single"); setIssue(null); setPending(null); setCamOpen(true); }} />}
+          {pending?.confirm && (
+            <div className="border hairline p-4 bg-white fade-up" data-testid="avatar-stitch-preview">
+              <div className="font-serif text-lg">Ecco le tue 2 foto unite</div>
+              <p className="text-sm text-neutral-600 mt-1">Controlla che busto e gambe siano allineati. Se va bene, conferma.</p>
+              <div className="mt-4 flex gap-3">
+                <button onClick={() => { const p = pending; setPending({ ...p, confirm: false }); proceed(p.file, p.preview, p.ratios); }} className="btn-primary" data-testid="avatar-stitch-confirm">Conferma</button>
+                <button onClick={() => { setPending(null); setCamMode("double"); setCamOpen(true); }} className="btn-ghost" data-testid="avatar-stitch-retake">Rifai</button>
+              </div>
+            </div>
+          )}
           {pending?.ask && (
             <BodyForm initial={profile} onCancel={() => setPending(null)} onSubmit={(b) => upload(pending.file, pending.ratios, b)} />
           )}
@@ -180,7 +197,7 @@ export default function AvatarBox({ manage = false }) {
           <Notes />
         </div>
       </div>
-      <AvatarCamera open={camOpen} onClose={() => setCamOpen(false)} onCapture={onCapture} />
+      <AvatarCamera open={camOpen} initialMode={camMode} onClose={() => setCamOpen(false)} onCapture={onCapture} />
     </section>
   );
 }
