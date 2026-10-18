@@ -1,0 +1,37 @@
+{
+  "summary": "Frontend test at mobile size 390x844 as user_avatar_test, using a camera mock (canvas.captureStream 960x1000 with a pre-flipped image controlled by window.__setImg). speechSynthesis and toBlob were stubbed. All 5 requested features PASS. One bug found in the retake flow. (1) Double mode: avatar-camera-big-snap shows 'SCATTA' and takes the photo at once (snap counter +1). The timer reads 'TIMER 10S' and counts 10 to 1, and the voice says 'Busto' (it-IT). After shot 1 there is no automatic countdown for the legs (checked for 4 s, camera stays open). Only 'Ora le gambe' is spoken. The upper silhouette is shown first, then the lower one, and the step changes from 'Scatto 1 di 2' to 'Scatto 2 di 2'. avatar-camera-torch-btn is present; on the mock without torch it shows the toast 'Torcia non disponibile su questo dispositivo'. (2) Never blocking: upper_dark+lower shows only avatar-soft-warning-too_dark (yellow border rgb(234,179,8) on #FEFCE8) and 0 avatar-photo-issue. No POST happens before confirm. Confirm opens the body form (no height saved), 168/60 gives POST 200 and the path is set. blank+blank shows avatar-soft-warning-no_measure. Confirm does a POST with no features and no body form, shows the toast 'Avatar salvato: misure stimate da altezza e peso', the path is set and avatar-ready appears. (3) Redo one shot: avatar-retake-lower opens the camera with step 'Rifai solo le gambe', the lower silhouette and the mode switch hidden. One snap returns to the preview with the upper thumbnail byte-identical (SHA-1 match) and a new lower one. avatar-retake-upper works the same way ('Rifai solo il busto', upper silhouette, timer voice 'Busto'): upper changed, lower identical, warnings recomputed. No POST happens during retakes. (4) Good photos upper+lower: no warnings, body form 168/60, POST 200, toast 'Avatar pronto...'. Measurements 76/66/90/33/83, method auto_photo. (5) Single mode via fallback native input with dark.jpg: red avatar-photo-issue 'Foto troppo buia', no preview, no POST, path unchanged.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "AvatarBox retake state",
+        "issue": "The retake state is never cleared when the camera is closed without shooting. Reproduce: preview, then avatar-retake-lower, then avatar-camera-close, then Conferma, then save. Later, tapping avatar-tap-zone (or Cambia foto) opens the camera stuck in 'Rifai solo le gambe' with the mode switch hidden. One snap then builds a preview with the OLD upper photo from the earlier session (verified byte-identical). The user can't start a fresh 2-shot or switch to single mode until the page is reloaded.",
+        "selector": "[data-testid='avatar-camera-close'], [data-testid='avatar-tap-zone']",
+        "priority": "HIGH"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "AvatarCamera double mode", "issues": ["The guide silhouettes are solid white (#fff) and have almost no contrast against a bright or white wall. A dark outline or drop-shadow (for example stroke black at 40% under the white) would keep them visible."]},
+      {"screen": "StitchPreview no_measure", "issues": ["The toast and warning say 'stimiamo le misure da altezza e peso', but no estimate is computed when the POST has no features: the backend only saves the photo. When the user has no height saved there are no measurements at all, so the text is misleading in that case."]}
+    ]
+  },
+  "test_report_links": ["/app/tests/cam_mock_avatar.js"],
+  "action_items": [
+    "AvatarBox.jsx: clear the retake state when the camera closes. For example onClose={() => { setCamOpen(false); setRetake(null); }}. Also call setRetake(null) in onConfirm/upload, and pass retake only while pending?.confirm is true.",
+    "Optional: when no ratios and no saved height, show a different toast, or prompt for height and weight so the 'stimate da altezza e peso' promise is kept."
+  ],
+  "critical_code_review_comments": [
+    "AvatarCamera: the big 'Scatta' and timer buttons are disabled while count>0. Good.",
+    "AvatarBox: blob URLs for thumbs, preview and the stitched file are never revoked, so memory grows with each retake. Minor.",
+    "AvatarBox: camMode stays 'double' after a save, so the next tap-zone or Cambia foto opens in double mode. Fine if this is meant to remember the mode.",
+    "pose.extractTwoPartRatios: the onCapture catch fallback returns file: shot.upper only (no stitch) when mediapipe fails to load (CDN offline). Then the saved avatar is only the torso. Acceptable as a never-block fallback, but worth noting."
+  ],
+  "updated_files": ["/app/tests/cam_mock_avatar.js", "/app/test_reports/iteration_27.json"],
+  "success_rate": {"backend": "n/a", "frontend": "95% (all 5 requested features pass; 1 stale-retake bug)"},
+  "seed_data_creation": "user_avatar_test and session avatar_tok_test already existed (email avatar.test@example.com, is_owner true). After the tests the avatar was deleted and the measurements and weight_history were removed, so the user has no measurements or avatar again. user_389c87aaadc6 was not touched.",
+  "test_credentials": "Cookie session_token=avatar_tok_test plus localStorage atelier_owner=1.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Camera mock is in /app/tests/cam_mock_avatar.js. Replace __IMGS__ with a JSON map {key: dataURL}, then use window.__setImg(key), window.__camFail=true (to force the fallback), window.__speech and window.__snaps. Flow: /dashboard, avatar-tap-zone, avatar-camera-mode-double, big-snap, __setImg(lower), big-snap, then avatar-stitch-preview (about 2-3 s). Retest: retake, then close, then confirm, then tap-zone should open a fresh 'Scatto 1 di 2' with the mode switch visible."
+}

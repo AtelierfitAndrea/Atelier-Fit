@@ -11,7 +11,7 @@ const TIMER_DOUBLE_S = 10;
 
 function UpperSilhouette() {
   return (
-    <svg viewBox="0 0 100 120" className="absolute inset-0 m-auto h-[88%] pointer-events-none" aria-hidden="true" data-testid="avatar-camera-silhouette-upper">
+    <svg viewBox="0 0 100 120" className="absolute inset-0 m-auto h-[88%] pointer-events-none" style={{ filter: "drop-shadow(0 0 2px rgba(0,0,0,0.8))" }} aria-hidden="true" data-testid="avatar-camera-silhouette-upper">
       <g fill="none" stroke="#fff" strokeOpacity="0.95" strokeWidth="1.6">
         <ellipse cx="50" cy="16" rx="11" ry="13" />
         <path d="M38 32 Q50 37 62 32 L82 42 Q86 45 86 52 L90 110 M38 32 L18 42 Q14 45 14 52 L10 110" />
@@ -24,7 +24,7 @@ function UpperSilhouette() {
 
 function LowerSilhouette() {
   return (
-    <svg viewBox="0 0 100 120" className="absolute inset-0 m-auto h-[88%] pointer-events-none" aria-hidden="true" data-testid="avatar-camera-silhouette-lower">
+    <svg viewBox="0 0 100 120" className="absolute inset-0 m-auto h-[88%] pointer-events-none" style={{ filter: "drop-shadow(0 0 2px rgba(0,0,0,0.8))" }} aria-hidden="true" data-testid="avatar-camera-silhouette-lower">
       <line x1="0" x2="100" y1="14" y2="14" stroke="#D4AF37" strokeWidth="0.8" />
       <g fill="none" stroke="#fff" strokeOpacity="0.95" strokeWidth="1.6">
         <path d="M28 6 Q50 14 72 6 L66 112 M28 6 L34 112 M50 16 L48 108 M50 16 L52 108" />

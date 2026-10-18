@@ -195,3 +195,7 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 - AvatarCamera modes: "1 foto intera" (single) / "2 scatti · poco spazio" (double, mirror-flip with rear cam), description "Per chi ha poco spazio davanti allo specchio, circa 1 metro"; front/back via flip button. Home note avatar-modes-note.
 - Voice (speechSynthesis it-IT): "Busto" / "Gambe" / "Foto intera" at timer start; legs timer auto-starts after shot 1.
 - 2-shot: stitched preview (avatar-stitch-preview) with Conferma / Rifai before saving. Tested iteration_26.
+
+## 2026-10-18 — 2-shot mode simplified (never blocks)
+- extractTwoPartRatios never throws: soft yellow warnings (too_dark, cut_top, cut_bottom, no_measure) and always returns a stitched photo (simple stack if no anchor). Saved anyway; without ratios → avatar only + quick-estimate from height/weight.
+- Double mode: big manual "SCATTA", Timer 10s (voice Busto/Gambe), no auto legs timer, torch toggle (track torch capability), silhouettes solid with drop-shadow. StitchPreview: thumbnails + "Rifai busto"/"Rifai gambe" (retake one part only) + "Conferma e salva". Single mode keeps strict checks. Tested iteration_27 (retake-state bug fixed after).

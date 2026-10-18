@@ -123,8 +123,10 @@ export default function AvatarBox({ manage = false }) {
   const upload = async (file, ratios, body = {}) => {
     setBusy(true);
     try {
+      // Without measurable photos, measurements are estimated from height and weight.
+      if (!ratios && body.height_cm) await api.post("/profile/quick-estimate", body);
       const params = new URLSearchParams(ratios ? { features: JSON.stringify(ratios) } : {});
-      Object.entries(body).forEach(([k, v]) => params.set(k, String(v)));
+      if (ratios) Object.entries(body).forEach(([k, v]) => params.set(k, String(v)));
       const fd = new FormData(); fd.append("photo", file);
       const { data } = await api.post(`/profile/avatar?${params}`, fd, { headers: { "Content-Type": "multipart/form-data" } });
       setAvatar(data.avatar);
@@ -166,7 +168,7 @@ export default function AvatarBox({ manage = false }) {
   const proceed = async (file, preview, ratios) => {
     const fresh = (await api.get("/profile/measurements").catch(() => ({ data: profile }))).data || {};
     setProfile(fresh);
-    if (ratios && (forceBody || !fresh.height_cm || !fresh.weight_kg)) { setPending({ file, preview, ratios, ask: true }); return; }
+    if (forceBody || !fresh.height_cm || !fresh.weight_kg) { setPending({ file, preview, ratios, ask: true }); return; }
     await upload(file, ratios);
   };
 
@@ -225,7 +227,7 @@ export default function AvatarBox({ manage = false }) {
           <Notes />
         </div>
       </div>
-      <AvatarCamera open={camOpen} initialMode={camMode} retakePart={retake?.part} keep={retake?.keep} onClose={() => setCamOpen(false)} onCapture={onCapture} />
+      <AvatarCamera open={camOpen} initialMode={camMode} retakePart={retake?.part} keep={retake?.keep} onClose={() => { setCamOpen(false); setRetake(null); }} onCapture={onCapture} />
     </section>
   );
 }
