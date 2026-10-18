@@ -140,7 +140,15 @@ async def get_account_user(
     user_doc = await db.users.find_one({"user_id": sess["user_id"]}, {"_id": 0})
     if not user_doc:
         raise HTTPException(status_code=401, detail="User not found")
+    if not _is_owner_email(user_doc.get("email")):
+        raise HTTPException(status_code=403, detail="prelaunch_owner_only")
     return User(**user_doc)
+
+
+def _is_owner_email(email: Optional[str]) -> bool:
+    # Pre-launch gate: only emails listed in OWNER_EMAILS may use the app.
+    owners = {e.strip().lower() for e in os.environ["OWNER_EMAILS"].split(",") if e.strip()}
+    return (email or "").strip().lower() in owners
 
 
 async def get_current_user(
@@ -225,8 +233,8 @@ async def startup():
 # ----- Auth routes -----
 async def _enforce_session_limit(user_id: str) -> None:
     # Personal account: 1 device (FAMILY: up to 4). Newest login wins, older devices are signed out.
-    user_doc = await db.users.find_one({"user_id": user_id}, {"_id": 0, "plan": 1}) or {}
-    limit = 4 if user_doc.get("plan") == "FAMILY" else 1
+    user_doc = await db.users.find_one({"user_id": user_id}, {"_id": 0, "plan": 1, "email": 1}) or {}
+    limit = 4 if user_doc.get("plan") == "FAMILY" or _is_owner_email(user_doc.get("email")) else 1
     sessions = await db.user_sessions.find({"user_id": user_id}, {"_id": 0, "session_token": 1}).sort("created_at", -1).to_list(100)
     old = [x["session_token"] for x in sessions[limit:]]
     if not old:
@@ -253,6 +261,8 @@ async def auth_session(request: Request, response: Response):
         raise HTTPException(status_code=401, detail="Invalid session_id")
     data = r.json()
     email = data["email"]
+    if not _is_owner_email(email):
+        raise HTTPException(status_code=403, detail="prelaunch_owner_only")
     # Upsert user
     existing = await db.users.find_one({"email": email}, {"_id": 0})
     if existing:

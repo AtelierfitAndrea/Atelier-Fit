@@ -26,7 +26,8 @@ export default function AuthCallback() {
         window.history.replaceState(null, "", "/dashboard");
         await refresh();
         navigate("/dashboard", { replace: true });
-      } catch {
+      } catch (e) {
+        if (e?.response?.status === 403) sessionStorage.setItem("atelier_owner_denied", "1");
         navigate("/", { replace: true });
       }
     })();

@@ -132,3 +132,9 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 ## 2026-06 — Dashboard fondatore + countdown (DONE, iteration_16 100%)
 - /admin-atelier-77 (non collegata, fuori dal blocco coming soon): password lato server (bcrypt ADMIN_PASSWORD_HASH in .env), cookie httpOnly admin_token 8h (path /api/admin), blocco dopo 5 errori per IP per 15 min. Stile nero/oro. KPI + PRODOTTI HOT (>=1000 views, 4 categorie, conversione). DATI DIMOSTRATIVI (MOCK, _DEMO_PRODUCTS in server.py)
 - Countdown sulla pagina COMING SOON fino al 2026-10-25T00:00+02:00, poi "Ci siamo!". Il sito si apre solo su ordine manuale dell'utente
+
+## 2026-10-18 — Owner-only pre-launch gate
+- Removed ?atelier=2026 and /atelier bypasses. Public sees only Coming Soon + countdown + small "Accesso proprietario" Google login link.
+- Backend: OWNER_EMAILS env allowlist enforced in /auth/session and every authenticated request (403 prelaunch_owner_only). Owner exempt from 1-device limit (4 devices).
+- /admin-atelier-77 still password-protected.
+- Backlog: at launch, remove/disable OWNER_EMAILS gate; real Stripe; real admin KPIs.
