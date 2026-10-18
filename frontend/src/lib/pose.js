@@ -253,9 +253,24 @@ export async function extractTwoPartRatios(upperFile, lowerFile) {
   const ctx = c.getContext("2d");
   ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, W, outH);
   ctx.drawImage(l.bitmap, dx, t, l.W * s, l.H * s);
+  // Match the exposure of photo 2 to photo 1 around the cut line (mirror/room light often differs).
+  const stripLuma = (img, y0) => {
+    const k = document.createElement("canvas"); k.width = 64; k.height = 8;
+    k.getContext("2d").drawImage(img, 0, Math.max(0, y0), img.width, 20, 0, 0, 64, 8);
+    return meanLuma(k);
+  };
+  const lumL = stripLuma(c, Math.round(seam) + 2);
+  const lumU = stripLuma(u.bitmap, Math.round((seam - 22) * (u.bitmap.height / u.H)));
+  const gain = lumL > 5 ? Math.min(1.6, Math.max(0.6, lumU / lumL)) : 1;
+  if (Math.abs(gain - 1) > 0.03) {
+    ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, W, outH);
+    ctx.filter = `brightness(${gain})`;
+    ctx.drawImage(l.bitmap, dx, t, l.W * s, l.H * s);
+    ctx.filter = "none";
+  }
   ctx.drawImage(u.bitmap, 0, 0, u.bitmap.width, seam * (u.bitmap.height / u.H), 0, 0, W, seam);
-  // Soft 24px blend across the cut line: no hard step, no double edge.
-  const F = 24;
+  // Soft 48px blend across the cut line: no hard step, no double edge.
+  const F = 48;
   const fy = Math.round(seam);
   if (fy + F < u.H && fy + F < outH) {
     const band = document.createElement("canvas");

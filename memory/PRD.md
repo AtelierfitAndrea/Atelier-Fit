@@ -208,3 +208,7 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 ## 2026-10-18 — Minimal landing + automatic launch
 - Landing.jsx reduced to: header logo + "Entra" (top-right), hero logo, slogan, "- by Andrea M.", description, footer Termini. Entra → /dashboard if logged, else Google login.
 - Automatic launch: backend LAUNCH_AT env ("2026-10-25T00:00:00+02:00") — _prelaunch_blocked() only before it; frontend ComingSoon only when !user && Date.now() < LAUNCH_AT (exported from ComingSoon.jsx). After launch everyone sees Landing and can sign up.
+
+## 2026-10-18 — Stitch polish + loading fix
+- 2-shot seam moved to waistband (hipY − 15% torso), 48px feather blend, lower-photo exposure matched to upper (brightness gain 0.6–1.6). Backend set_avatar two_shot=true → TWO_SHOT_CALIB_CM = −2 on chest/waist/hips.
+- AuthCallback computes target ("/" when login from Coming Soon → homepage preview) before replaceState; /auth/me 10s timeout; gate-loading shows "MY ATELIER". Tested iteration_30 (100%); exposure match added after.
