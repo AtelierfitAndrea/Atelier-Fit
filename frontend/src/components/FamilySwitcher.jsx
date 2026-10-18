@@ -71,7 +71,7 @@ export default function FamilySwitcher() {
       <PopoverTrigger asChild>
         <button className="flex items-center gap-2 border hairline px-3 py-2 label-caps hover:border-[#0A0A0A] transition-colors" data-testid="family-switcher-btn" translate="no">
           <UsersThree size={14} weight="duotone" />
-          <span className="max-w-[110px] truncate" data-testid="family-active-name">{active.name}</span>
+          <span className="hidden sm:inline max-w-[110px] truncate" data-testid="family-active-name">{active.name}</span>
         </button>
       </PopoverTrigger>
       <PopoverContent align="end" className="w-80 rounded-none p-0" translate="no" data-testid="family-switcher-panel">

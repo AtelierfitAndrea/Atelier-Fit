@@ -51,7 +51,7 @@ export default function AppShell({ children }) {
               <GearSix size={14} weight="duotone" /> {t("nav.settings")}
             </NavLink>
           </nav>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2 sm:gap-4 min-w-0">
             {user?.is_owner && (
               <Link to="/stanza" title="Stanza del Proprietario" className="text-[#D4AF37] hover:scale-110 transition-transform" data-testid="owner-crown-btn">
                 <Crown size={24} weight="fill" />
@@ -59,7 +59,7 @@ export default function AppShell({ children }) {
             )}
             <FamilySwitcher />
             {user?.picture && (
-              <img src={user.picture} alt="" className="w-8 h-8 object-cover" style={{ borderRadius: 2 }} />
+              <img src={user.picture} alt="" className="hidden sm:block w-8 h-8 object-cover" style={{ borderRadius: 2 }} />
             )}
             <div className="hidden sm:block text-right">
               <div className="text-sm font-medium" data-testid="shell-user-name">{user?.name}</div>

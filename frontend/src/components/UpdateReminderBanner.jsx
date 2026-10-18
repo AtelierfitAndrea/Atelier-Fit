@@ -15,7 +15,7 @@ export default function UpdateReminderBanner({ name }) {
   return (
     <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-[#0A0A0A] text-white px-5 py-4 fade-up" translate="no" data-testid="update-reminder-banner">
       <div className="flex items-center gap-3">
-        <ArrowsClockwise size={20} />
+        <ArrowsClockwise size={20} className="shrink-0" />
         <p className="font-serif text-lg leading-snug" data-testid="update-reminder-text">
           Ciao{name ? ` ${name}` : ""}, vuoi aggiornare foto/peso per mantenere la precisione al 98%?
         </p>

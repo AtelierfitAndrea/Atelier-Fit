@@ -179,3 +179,8 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 - pose.js rejects before saving: too_dark (mean luma<55), no_head, no_feet, cut_top, cut_bottom, too_far, no_pose → red PhotoIssue panel + "Riscatta la foto" (nothing saved).
 - Family profiles: own avatar & measurements (X-Profile-Id); title "Il Mio Avatar · {name}", greeting uses profile name (GET /profile/avatar returns profile_name).
 - RefreshReminder on Home when avatar_at > 60 days. Header: brand/lang selector no longer overlaps nav. Tested iteration_20 (100%).
+
+## 2026-10-18 — In-app onboarding + 60-day reminder (email reminders CANCELLED by user)
+- OnboardingGate (after terms): step 1 name → PUT /api/profile/display-name (users.display_name); step 2 Avatar photo (skippable "Lo faccio dopo"). Home h1 "Benvenuto, {Nome}".
+- GET /profile/avatar returns reminder_due (last of avatar_at / latest weight > 60 days, not snoozed). UpdateReminderBanner on Home: "Ciao {Nome}, vuoi aggiornare foto/peso per mantenere la precisione al 98%?" — Aggiorna ora (opens camera + always shows height/weight form), Ricorda più tardi (POST /profile/reminder/snooze, 7 days). Old weight banner + avatar refresh panel removed.
+- Mobile header no longer overflows. Tested iteration_21 (100%).

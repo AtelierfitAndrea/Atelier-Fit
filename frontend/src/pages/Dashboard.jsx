@@ -19,7 +19,7 @@ export default function Dashboard() {
   const { user } = useAuth();
   const { t } = useI18n();
   const { status: subStatus, openPaywall } = useSubscription();
-  const { profileName } = useAvatar();
+  const { profileName, refresh: refreshAvatar } = useAvatar();
   const firstName = profileName || user?.display_name || user?.name?.split(" ")[0] || "";
   const [tryons, setTryons] = useState([]);
   const [measurements, setMeasurements] = useState(null);
@@ -38,6 +38,11 @@ export default function Dashboard() {
   };
 
   useEffect(() => { refresh(); }, []);
+  useEffect(() => {
+    const onUpd = () => { setNonce((n) => n + 1); refresh(); };
+    window.addEventListener("atelier-measures-updated", onUpd);
+    return () => window.removeEventListener("atelier-measures-updated", onUpd);
+  }, []);
 
   const hasMeasurements = measurements && Object.keys(measurements || {}).some((k) => k !== "updated_at" && measurements[k]);
 
@@ -45,6 +50,7 @@ export default function Dashboard() {
     // Server has recomputed the score — just ask the badge to re-fetch.
     setNonce((n) => n + 1);
     refresh();
+    refreshAvatar();
   };
 
   return (
@@ -60,7 +66,7 @@ export default function Dashboard() {
           className="inline-flex items-center justify-center gap-3 bg-[#0A0A0A] text-white px-6 py-3 text-xs font-semibold tracking-[0.2em] uppercase border border-[#0A0A0A] hover:bg-[#8C7355] hover:border-[#8C7355] transition-colors duration-200"
           data-testid="hero-update-weight-btn"
         >
-          {t("accuracy.updateNow")} <ArrowRight size={14} weight="bold" />
+          Aggiorna peso <ArrowRight size={14} weight="bold" />
         </button>
       </div>
 

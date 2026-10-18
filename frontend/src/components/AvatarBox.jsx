@@ -98,6 +98,7 @@ export default function AvatarBox({ manage = false }) {
       setPending(null);
       setForceBody(false);
       setReminderDue(false);
+      window.dispatchEvent(new Event("atelier-measures-updated"));
       toast.success("Avatar pronto: misure calcolate e outfit collegati");
     } catch (e) {
       toast.error(e?.response?.data?.detail === "need_height" ? "Inserisci altezza e peso" : (e?.response?.data?.detail || "Salvataggio non riuscito"));

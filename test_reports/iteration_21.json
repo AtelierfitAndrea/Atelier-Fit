@@ -1,0 +1,32 @@
+{
+  "summary": "Tested onboarding (name + avatar photo) and the 60-day update reminder (photo/weight) with snooze, backend and UI. Backend: new tests/test_onboarding_reminder.py, 12/12 passed. UI on desktop 1920 and mobile 390: all requested flows passed. (1) The onboarding-gate shows 'Come ti chiami?'. Submit stays disabled when the field is empty or only spaces. 'Marta' leads to step 2 'Ora la tua foto Avatar' with the avatar-box inside. Skip closes the gate, it does not come back after reload, and the h1 shows 'Benvenuto, Marta.'. (2) Creating the avatar inside the gate (mocked getUserMedia, native input, fullbody.jpg, 168/60, submit) closes the gate automatically. (3) reminder_due is false right after creation and true once avatar_at and weight_history are aged 70 days. The banner text is exactly 'Ciao Marta, vuoi aggiornare foto/peso per mantenere la precisione al 98%?'. 'Ricorda più tardi' sends a snooze POST (200, +7 days, stored in Mongo) and hides the banner, which stays hidden after reload. After unsetting the snooze the banner is visible again. 'Aggiorna ora' scrolls to the avatar-box (top=0) and opens the camera. A new photo always shows the body form prefilled with 168/60; submitting with 62 kg returns 200 and the banner stays gone after reload. (4) Regression: weight-reminder-banner and avatar-refresh-reminder are no longer in the DOM or the source.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "AccuracyBadge after avatar creation in onboarding", "issue": "Right after creating the avatar with weight in the onboarding gate, the Home badge still shows '10% · Affidabile: NO'. It changes to 85% only after a reload or a later upload, because AvatarBox.upload does not tell AccuracyBadge to re-fetch (its nonce is not bumped).", "selector": "[data-testid=accuracy-row]", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Home mobile 390px", "issues": ["document scrollWidth is 490px > 390px: the header (family switcher 'AVATAR TES…') overflows horizontally. This is probably pre-existing in the header, not in the banner.", "The ArrowsClockwise icon in the reminder banner shrinks to a few px on mobile: add shrink-0."]},
+      {"screen": "Home", "issues": ["The banner button 'Aggiorna ora' has the same label as the hero-update-weight-btn 'AGGIORNA ORA' right below it, but the two do different things. This can confuse users."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_onboarding_reminder.py", "/app/test_reports/pytest/pytest_iter21.xml"],
+  "action_items": [
+    "Optional: refresh the AccuracyBadge after an avatar upload (expose a nonce in the avatar context or call the badge refresh).",
+    "Optional: add shrink-0 to the banner icon; fix the 100px horizontal overflow of the header on mobile.",
+    "Optional: give the hero 'Aggiorna ora' (weight) button and the banner button different labels."
+  ],
+  "critical_code_review_comments": [
+    "While the onboarding photo step is open, two AvatarBox instances are mounted (the gate's and the Dashboard's). This gives a duplicate id 'il-mio-avatar' and runs the measurements fetch twice. It is harmless today, but scrollIntoView and getElementById target the first one (the gate's).",
+    "reminder_snoozed_until is not cleared when a new avatar is uploaded. This is harmless because avatar_at resets the 60 days, but the stale field stays in the user doc.",
+    "OnboardingGate: a user who skips the photo is never asked again, except through the Home AvatarBox empty state. This is acceptable."
+  ],
+  "updated_files": ["/app/backend/tests/test_onboarding_reminder.py"],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "seed_data_creation": "The DB did not contain user_avatar_test or the avatar_tok_test session, so I recreated both (email avatar.test@example.com, plan FAMILY, terms_version 1.0-2026-06). The backend pre-launch gate returns 403 prelaunch_owner_only for any email not in OWNER_EMAILS, so I appended avatar.test@example.com to OWNER_EMAILS in backend/.env for the test only. After testing I restored the original .env from a backup, restarted the backend, and deleted the user, session, measurements, weight_history and files for user_avatar_test. user_389c87aaadc6 was not touched.",
+  "test_credentials": "/app/memory/test_credentials.md exists. Note: test users need their email in OWNER_EMAILS (pre-launch gate), otherwise every auth route returns 403.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "To test with user_avatar_test you must recreate it in Mongo and temporarily add its email to OWNER_EMAILS in backend/.env (restart the backend), then revert. Run the pytest files for this user with -n 0. For the UI, use add_init_script to set atelier_owner=1 and make getUserMedia reject, then set_input_files on avatar-camera-native-input. To make the reminder due, set users.avatar_at and every weight_history.recorded_at to more than 60 days ago and unset reminder_snoozed_until."
+}
