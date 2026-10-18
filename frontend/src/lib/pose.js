@@ -231,11 +231,12 @@ export async function extractTwoPartRatios(upperFile, lowerFile) {
   }
   if (!ratios) warnings.push("no_measure");
   // No reliable anchor: simply stack photo 2 under photo 1 at the same width.
-  // No reliable anchor: put the legs under the hips with a realistic 0.53 leg fraction (never stretched, no duplicated torso).
-  if (!reg && u.p) {
-    const upperH = u.hipY - Math.max(0, u.top);
-    const s = (0.53 * upperH / 0.47) / l.H;
-    reg = { s, t: u.hipY, dx: u.hipX - (l.W * s) / 2, seam: u.hipY };
+  // No reliable anchor: both shots come from the same spot, so keep the same scale (1:1, never stretched) and
+  // place photo 2's waist (on the gold guide line, 14% from the top) on photo 1's waist; legs show from the hips down.
+  if (!reg && u.p && [11, 12, 23, 24].every(u.vis)) {
+    const s = u.W / l.W;
+    const waistY = u.hipY - 0.3 * (u.hipY - ((u.p[11].y + u.p[12].y) / 2) * u.H);
+    reg = { s, t: waistY - 0.14 * l.H * s, dx: 0, seam: u.hipY };
   }
   if (!reg) reg = { s: u.W / l.W, t: u.H, dx: 0, seam: u.H };
   const { s, t, dx, seam } = reg;

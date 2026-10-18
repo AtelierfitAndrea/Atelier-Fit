@@ -516,6 +516,7 @@ class QuickEstimateIn(BaseModel):
     height_cm: float = Field(ge=120, le=230)
     weight_kg: float = Field(ge=40, le=150)
     gender: str = Field(pattern="^(female|male)$")
+    force: bool = False  # recompute even if photo measurements exist (new photo was not measurable)
 
 
 @api_router.post("/profile/quick-estimate")
@@ -523,7 +524,7 @@ async def quick_estimate(body: QuickEstimateIn, user: User = Depends(get_current
     current = await _get_measurements(user.user_id)
     patch = {"height_cm": body.height_cm, "weight_kg": body.weight_kg, "gender": body.gender}
     # Photo or tape measurements are more precise: keep them unless height/sex changed.
-    keep = (current.get("method") in ("auto_photo", "tape")
+    keep = (not body.force and current.get("method") in ("auto_photo", "tape")
             and abs((current.get("height_cm") or 0) - body.height_cm) < 1
             and abs((current.get("weight_kg") or body.weight_kg) - body.weight_kg) <= 5
             and current.get("gender") == body.gender)

@@ -199,3 +199,8 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 ## 2026-10-18 — 2-shot mode simplified (never blocks)
 - extractTwoPartRatios never throws: soft yellow warnings (too_dark, cut_top, cut_bottom, no_measure) and always returns a stitched photo (simple stack if no anchor). Saved anyway; without ratios → avatar only + quick-estimate from height/weight.
 - Double mode: big manual "SCATTA", Timer 10s (voice Busto/Gambe), no auto legs timer, torch toggle (track torch capability), silhouettes solid with drop-shadow. StitchPreview: thumbnails + "Rifai busto"/"Rifai gambe" (retake one part only) + "Conferma e salva". Single mode keeps strict checks. Tested iteration_27 (retake-state bug fixed after).
+
+## 2026-10-18 — Avatar lens 1x + real proportions
+- AvatarCamera openNormalLens(): after getUserMedia, if track label is ultra-wide/dual/triple/tele (EN + IT: tripla/doppia/grandangol) switch to the normal back/front lens by deviceId; force zoom 1x via applyConstraints when supported. Both modes.
+- pose.js keepRealProportions(): leg fraction (hips→heels / total) clamped to [0.47, 0.60] with hips anchored → no stretched legs. No-anchor fallback: same scale 1:1, photo-2 waist (gold line 14%) aligned to photo-1 waist, seam at hips.
+- quick-estimate accepts force=true (used when 2-shot photo is not measurable). Tested iterations 28-29.

@@ -125,7 +125,7 @@ export default function AvatarBox({ manage = false }) {
     try {
       // Without measurable photos, measurements are estimated from height and weight.
       const est = { height_cm: body.height_cm || base.height_cm, weight_kg: body.weight_kg || base.weight_kg, gender: body.gender || (base.gender === "male" ? "male" : "female") };
-      if (!ratios && est.height_cm && est.weight_kg) await api.post("/profile/quick-estimate", est);
+      if (!ratios && est.height_cm && est.weight_kg) await api.post("/profile/quick-estimate", { ...est, force: true });
       const params = new URLSearchParams(ratios ? { features: JSON.stringify(ratios) } : {});
       if (ratios) Object.entries(body).forEach(([k, v]) => params.set(k, String(v)));
       const fd = new FormData(); fd.append("photo", file);
