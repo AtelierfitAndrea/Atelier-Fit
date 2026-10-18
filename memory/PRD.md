@@ -212,3 +212,8 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 ## 2026-10-18 — Stitch polish + loading fix
 - 2-shot seam moved to waistband (hipY − 15% torso), 48px feather blend, lower-photo exposure matched to upper (brightness gain 0.6–1.6). Backend set_avatar two_shot=true → TWO_SHOT_CALIB_CM = −2 on chest/waist/hips.
 - AuthCallback computes target ("/" when login from Coming Soon → homepage preview) before replaceState; /auth/me 10s timeout; gate-loading shows "MY ATELIER". Tested iteration_30 (100%); exposure match added after.
+
+## 2026-10-18 — Truthful sizes + pricing at bottom
+- PHOTO_CALIB_CM = −2 now applied to ALL photo measurements (chest/waist/hips), single and 2-shot.
+- Product size recommendation is now deterministic (_apply_true_size): LLM only extracts the chart; size = first chart size whose upper bound ≥ user measurement (+1 cm tolerance) on category dims (top/outerwear chest; bottom waist+hips; dress all), ±1 for fit notes; explanation rewritten with real numbers. Fixes M→XL over-sizing.
+- Dashboard: PricingCards moved to the last section (before WeightModal/footer).

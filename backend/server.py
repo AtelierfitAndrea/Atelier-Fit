@@ -607,10 +607,10 @@ async def _resolve_body_inputs(user: User, height_cm, weight_kg, gender, forget_
     return saved_m, height_cm, weight_kg, gender
 
 
-TWO_SHOT_CALIB_CM = -2  # close-up mirror 2-shot overestimates circumferences by ~2 cm
+PHOTO_CALIB_CM = -2  # photo silhouettes (clothes, arms) overestimate chest/waist/hips by ~2 cm vs a real tape
 
 
-async def _measure_and_save(user: User, raw: bytes, ratios: dict, height_cm, weight_kg, gender, forget_weight, store_photo: bool, calib_cm: int = 0):
+async def _measure_and_save(user: User, raw: bytes, ratios: dict, height_cm, weight_kg, gender, forget_weight, store_photo: bool, calib_cm: int = PHOTO_CALIB_CM):
     saved_m, height_cm, weight_kg, gender = await _resolve_body_inputs(user, height_cm, weight_kg, gender, forget_weight)
     est = estimate_body(ratios, height_cm, weight_kg, gender)
     if calib_cm:
@@ -708,8 +708,7 @@ async def set_avatar(
         await _mark_files_deleted([old], user.user_id)
     out = {"avatar": {"path": path, "created_at": now}}
     if ratios:
-        out.update(await _measure_and_save(user, raw, ratios, height_cm, weight_kg, gender, False, store_photo=False,
-                                           calib_cm=TWO_SHOT_CALIB_CM if two_shot else 0))
+        out.update(await _measure_and_save(user, raw, ratios, height_cm, weight_kg, gender, False, store_photo=False))
     return out
 
 
@@ -1626,7 +1625,53 @@ async def _call_llm_for_analysis(page_text: Optional[str], image_b64: Optional[s
         return {"ok": False, "needs_screenshot": image_b64 is None, "raw": str(reply)[:200]}
     data["ok"] = True
     data["needs_screenshot"] = False
+    _apply_true_size(data, user_m)
     return data
+
+
+_SIZE_DIMS = {"top": ("chest_cm",), "outerwear": ("chest_cm",), "bottom": ("waist_cm", "hips_cm"), "dress": ("chest_cm", "waist_cm", "hips_cm")}
+_SIZE_LABEL = {"chest_cm": "torace", "waist_cm": "vita", "hips_cm": "fianchi"}
+
+
+def _range(v) -> Optional[tuple]:
+    if isinstance(v, (int, float)):
+        return (float(v), float(v))
+    if isinstance(v, dict):
+        lo, hi = v.get("min"), v.get("max")
+        return (float(lo), float(hi)) if lo is not None and hi is not None else None
+    nums = [float(n) for n in re.findall(r"\d+(?:[.,]\d+)?", str(v).replace(",", "."))]
+    return (min(nums), max(nums)) if nums else None
+
+
+def _apply_true_size(data: dict, user_m: dict) -> None:
+    # The LLM only reads the chart; the size is picked deterministically from the user's real measurements.
+    dims = [d for d in _SIZE_DIMS.get((data.get("category") or "").lower(), ()) if user_m.get(d)]
+    chart = data.get("size_chart") if isinstance(data.get("size_chart"), dict) else {}
+    rows = []
+    for size, vals in chart.items():
+        if not isinstance(vals, dict):
+            continue
+        r = {d: _range(vals.get(d)) for d in dims}
+        if all(r.values()):
+            rows.append((size, r))
+    if not dims or len(rows) < 2:
+        return
+    rows.sort(key=lambda x: sum(v[1] for v in x[1].values()))
+    idx = next((i for i, (_, r) in enumerate(rows) if all(user_m[d] <= r[d][1] + 1 for d in dims)), len(rows) - 1)
+    base = idx
+    note = (data.get("fit_notes") or "").lower()
+    if any(k in note for k in ("small", "piccol", "stretto", "slim")):
+        idx = min(idx + 1, len(rows) - 1)
+    elif any(k in note for k in ("large", "grand", "oversize", "abbondant")):
+        idx = max(idx - 1, 0)
+    size, r = rows[idx]
+    if size == data.get("recommended_size"):
+        return
+    who = ", ".join(f"{_SIZE_LABEL[d]} {round(user_m[d])} cm" for d in dims)
+    chart_txt = ", ".join(f"{_SIZE_LABEL[d]} fino a {round(rows[base][1][d][1])} cm" for d in dims)
+    extra = "" if idx == base else (" Il capo veste piccolo: ti consigliamo una taglia in più." if idx > base else " Il capo veste grande: ti consigliamo una taglia in meno.")
+    data["recommended_size"] = size
+    data["explanation"] = f"Le tue misure: {who}. In tabella la {rows[base][0]} arriva a {chart_txt}.{extra} La tua taglia è {size}."
 
 
 class AnalyzeUrlRequest(BaseModel):
