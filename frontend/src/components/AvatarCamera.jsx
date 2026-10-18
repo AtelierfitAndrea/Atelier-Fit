@@ -118,7 +118,7 @@ export default function AvatarCamera({ open, onClose, onCapture }) {
         )}
         {!failed && (twoStep ? (upper ? <LowerSilhouette /> : <UpperSilhouette />) : <Silhouette />)}
         {!failed && (
-          <p className="absolute top-3 inset-x-0 text-center text-xs text-white/90 px-4" data-testid="avatar-camera-hint">
+          <p className="absolute top-3 left-1/2 -translate-x-1/2 w-[92%] max-w-md text-center text-xs text-white bg-black/70 backdrop-blur-sm px-4 py-2 rounded-full" data-testid="avatar-camera-hint">
             {twoStep
               ? (upper ? "2/2 Gambe: dai fianchi ai piedi (i fianchi sulla linea dorata)" : "1/2 Busto: dalla testa ai fianchi (i fianchi sulla linea dorata)")
               : "Allinea il corpo intero, dalla testa ai piedi"}

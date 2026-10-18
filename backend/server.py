@@ -531,6 +531,11 @@ async def quick_estimate(body: QuickEstimateIn, user: User = Depends(get_current
         est = estimate_from_height_weight(body.height_cm, body.weight_kg, body.gender)
         patch.update({**est, "method": "height_weight", "brand_sizes": brand_sizes(est, body.gender)})
     saved = await _set_measurements(user.user_id, patch, remove=() if keep else ("precision",))
+    if current.get("weight_kg") != body.weight_kg:
+        await db.weight_history.insert_one({
+            "id": str(uuid.uuid4()), "user_id": user.user_id, "weight_enc": _enc(body.weight_kg),
+            "note": "Iscrizione", "recorded_at": datetime.now(timezone.utc).isoformat(),
+        })
     await _compute_accuracy(user.user_id)
     return {"measurements": saved, "kept_precise": keep}
 

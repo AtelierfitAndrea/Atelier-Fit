@@ -1,0 +1,36 @@
+{
+  "summary": "Frontend E2E on desktop 1920 with user_avatar_test (cookie avatar_tok_test). (1) Landing: logged out, '/' shows coming-soon. Logged in, '/' shows hero-slogan 'Zero stress, solo puro shopping', '- by Andrea M.' and hero-main-text. landing-login-btn and hero-cta-btn both read \"Entra nell'app\" and go to /dashboard with no Google redirect. No avatar-box on the landing. PASS. (2) Onboarding step 1: submit stays disabled with name only, with height 110, with weight 160, and with a blank name. It is enabled for Giulia/165/58/female. GET /api/profile/measurements returns height 165, weight 58, gender female. Step 2 and skip work, and the h1 shows 'Benvenuto, Giulia.'. PASS. (3) Mirror 2-shot with a mocked canvas.captureStream camera: the upper silhouette appears, with hint '1/2 Busto…' and step 'scatto 1 di 2'. The 5s timer counts down (5->3) and auto-snaps. Then the hint is '2/2 Gambe…', the lower silhouette appears and the step reads 'scatto 2 di 2'. The second snap closes the camera. MediaPipe gives no avatar-photo-issue. After a reload it saves directly with the toast 'Avatar pronto: misure calcolate e outfit collegati'. The stitched avatar is 960x1770 (each part was 960x1000) and GET /api/profile/avatar has the path set. Measurements: chest 69, waist 59, hips 80, shoulder 30, inseam 91, within the requested range. Two issues follow. Stitched measurements are biased compared with the single-shot result on the same model (fullbody.jpg: chest 75, waist 64, hips 87, shoulder 33, inseam 78). Inseam is +17% and widths are 8-9% low. Also, right after onboarding without a reload, the Dashboard AvatarBox shows an EMPTY avatar-body-form (submit disabled), because its profile was fetched before quick-estimate. (4) Regression: Posteriore single shot through the fallback native input with fullbody.jpg saves directly (800x1200). Mode buttons are hidden in fallback. The update-reminder-banner is not shown for a fresh avatar. PASS.",
+  "backend_issues": {"critical": [], "minor": [
+    {"endpoint": "POST /api/profile/quick-estimate", "issue": "It does not write a weight_history entry (the collection is empty for the user after onboarding). Check that the 60-day reminder logic still works for users whose only weight comes from onboarding. Also, users.fitting_accuracy stays 10/red/is_reliable=false even after a 98% photo measurement plus weight."}
+  ]},
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "AvatarBox (Dashboard) after OnboardingGate", "issue": "The Dashboard AvatarBox fetches /profile/measurements only once, on mount, which is before the gate saves height and weight. So after onboarding (skip the photo, then tap the avatar box, no reload) it thinks height and weight are missing and shows an EMPTY avatar-body-form whose submit is disabled. The user has to retype the height and weight they just entered. Fix: re-fetch the profile in onCapture, or listen to 'atelier-measures-updated', or have the gate dispatch that event after quick-estimate.", "selector": "[data-testid=avatar-body-form]", "priority": "MEDIUM"},
+      {"component": "lib/pose.js extractTwoPartRatios", "issue": "The stitched measurements are biased. The same model gives single-shot chest 75 / waist 64 / hips 87 / shoulder 33 / inseam 78, but mirror 2-shot gives 69 / 59 / 80 / 30 / 91. The leg scale s = u.hipJ / l.hipJ (spacing of the MediaPipe hip joints) is unreliable when the hips are at the top edge of photo 2. It came out about 1.2x too large, so legLen and bodyH are overestimated: inseam +17%, every width -8%. The stitched image also shows this: the legs and skirt are visibly wider and longer than the torso, with a clear step at the hip seam.", "selector": "[data-testid=avatar-photo]", "priority": "HIGH"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "AvatarCamera", "issues": ["avatar-camera-hint is white/90 text on the live feed with no background. On a bright or white wall (typical bathroom) it is unreadable: it was invisible in the shot 1 screenshot. Add a dark pill or backdrop behind it."]},
+      {"screen": "Stitched avatar", "issues": ["The hip seam is visible and there is a white band under the feet, because the full lower frame is drawn. Consider cropping to the bottom of the mask plus a margin."]}
+    ]
+  },
+  "test_report_links": [],
+  "action_items": [
+    "HIGH: make the 2-shot scale robust in pose.js. For example, use the mask width at hipY in both photos (silhouette hip width), alone or as the median with hipJ, or use the hip-to-knee length where both are visible. Then validate against fullbody.jpg: inseam should be about 78 and widths within about 3% of single-shot.",
+    "MEDIUM: refresh the AvatarBox profile after the onboarding quick-estimate, so the Dashboard avatar saves directly or prefills the body form.",
+    "LOW: add a contrast background to avatar-camera-hint; crop the white bottom band of the stitched image."
+  ],
+  "critical_code_review_comments": [
+    "pose.js detectPart reads p[23]/p[24] for hipY/hipX before any visibility check. That is fine because the callers check vis, but hipJ from an extrapolated joint is the root cause of the scale bias.",
+    "extractTwoPartRatios takes the widths only from the upper photo. The hip band can be cut by the bottom of photo 1 when the user puts their hips exactly on the gold line at 90% height, which makes the hips under-measured.",
+    "When getUserMedia fails, mirror mode cannot be selected because the mode buttons are hidden. In that case the native input gives one photo only. This is acceptable, but the user is never told that the 2-shot option exists.",
+    "AvatarCamera's two-step state resets on mode/open change but not on close. That is fine since open toggles."
+  ],
+  "updated_files": ["/app/test_reports/iteration_22.json"],
+  "success_rate": {"backend": "n/a (frontend only)", "frontend": "85% (all flows work; stitched measurement accuracy + stale profile after onboarding are issues)"},
+  "seed_data_creation": "The main agent had already created user_avatar_test with avatar.test@example.com in OWNER_EMAILS. My tests left that user with display_name 'Giulia', measurements (165/58 female, auto_photo from fullbody.jpg), avatar_path and 2 files. I did not clean these up. To reset: unset display_name/avatar_path/avatar_at and delete measurements/files for user_avatar_test. Remember to remove avatar.test@example.com from OWNER_EMAILS in backend/.env afterwards. user_389c87aaadc6 was not touched.",
+  "test_credentials": "Cookie session_token=avatar_tok_test (user_avatar_test).",
+  "retest_needed": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Mock the camera with add_init_script: override navigator.mediaDevices.getUserMedia to return the stream of a 960x1000 canvas (canvas.captureStream) that redraws window.__imgs[window.__cur] every 50ms, with images embedded as base64 data URLs read from /tmp. Switch window.__cur='lower' before the second snap. For the single-shot baseline, make getUserMedia reject and set_input_files on avatar-camera-native-input with /tmp/fullbody.jpg (expected chest 75 / waist 64 / hips 87 / inseam 78 at 165/58 female)."
+}

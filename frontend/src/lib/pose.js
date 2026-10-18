@@ -137,7 +137,10 @@ export async function extractTwoPartRatios(upperFile, lowerFile) {
   if (l.bottom >= l.H - 2) { closeAll(); throw new Error("cut_bottom"); }
 
   const { p, mask, W, H } = u;
-  const s = u.hipJ / l.hipJ;
+  // Scale photo 2 to photo 1 using the silhouette width at the hip line (joint spacing is unreliable at the frame edge).
+  const hipW = (d) => median(bandWidths(d.mask, d.W, d.H, Math.max(0, d.hipY / d.H - 0.015), Math.min(0.999, d.hipY / d.H + 0.015), d.hipX / d.W));
+  const wu = hipW(u); const wl = hipW(l);
+  const s = wu && wl ? wu / wl : u.hipJ / l.hipJ;
   const legLen = (l.bottom - l.hipY) * s;
   const bodyH = (u.hipY - u.top) + legLen;
   const sY = (p[11].y + p[12].y) / 2; const hY = (p[23].y + p[24].y) / 2; const torso = hY - sY;
@@ -150,7 +153,8 @@ export async function extractTwoPartRatios(upperFile, lowerFile) {
   if (!chest || !Number.isFinite(waist) || !Number.isFinite(hips) || bodyH <= 0) { closeAll(); throw new Error("no_pose"); }
 
   // Stitch: upper photo down to the hips + lower photo from the hips, scaled and centred on the hips.
-  const outH = Math.round(u.hipY + (l.H - l.hipY) * s);
+  const lowEnd = Math.min(l.H, l.bottom + l.H * 0.03);
+  const outH = Math.round(u.hipY + (lowEnd - l.hipY) * s);
   const c = document.createElement("canvas");
   c.width = W; c.height = outH;
   const ctx = c.getContext("2d");

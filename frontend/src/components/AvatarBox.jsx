@@ -124,7 +124,9 @@ export default function AvatarBox({ manage = false }) {
       }
     } catch (e) { setIssue(e.message); setPending({ file, preview, ratios: null, ask: false, bad: true }); setBusy(false); return; }
     setBusy(false);
-    if (forceBody || !profile.height_cm || !profile.weight_kg) { setPending({ file, preview, ratios, ask: true }); return; }
+    const fresh = (await api.get("/profile/measurements").catch(() => ({ data: profile }))).data || {};
+    setProfile(fresh);
+    if (forceBody || !fresh.height_cm || !fresh.weight_kg) { setPending({ file, preview, ratios, ask: true }); return; }
     await upload(file, ratios);
   };
 
