@@ -1,0 +1,45 @@
+{
+  "summary": "Iteration 33: tested the reworked 'Le tue misure' (real tape measurements only, no photo estimate). Backend: 22/22 pytest pass (validation 422 on each missing/out-of-range field, save returns method tape + measured_at + brand_sizes + complete true, optional weight/age/gender, complete=false for method auto_photo, size/recommend shows 'Completa le tue misure' then a letter, product/analyze + analyze-text return 400 'Completa le tue misure', avatar upload returns only {avatar} and leaves measurements alone, quick-estimate/auto-measure/tape-calibration give 404/405, reminder_due >60 days, 7-day snooze, saving clears the snooze). Frontend: Profile title and avatar note match exactly. All 8 inputs work. Each of the 6 guides opens with the right title and figure, the tape loops (mgDraw 5s infinite) and the close button works. Invalid save shows red fields and the toast 'Controlla i campi evidenziati' without calling the API. Valid save shows the toast 'Misure salvate sul tuo account', brand-sizes-result with 6 brands, and top S / bottom M. Values persist after reload. Top/bottom show 'Completa le tue misure' when incomplete. Dashboard avatar note, shoot-now (camera opens) and gallery warnings 1 and 2 work (tested with Annulla, nothing uploaded). Reminder popup (mocked with page.route) works on /wardrobe: Modifica ora goes to /profile and closes it; Ricordamelo dopo calls snooze, closes it and shows a toast. Calcola taglia with incomplete measures shows a toast and goes to /profile. OnboardingGate runs its 3 steps (name -> MeasuresForm with guides -> AvatarBox) and both skips work. No 'gioc' text found on any page. Main remaining problem: leftover texts still say measurements/sizes come from the photo (Termini, GalleryWarning).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/profile/accuracy vs /api/fitting-accuracy", "issue": "Two accuracy numbers disagree. With incomplete (auto_photo) measures, Profile FittingAccuracy shows 70% 'Affidabile: Sì' + 'Dati completi.' while the size says 'Completa le tue misure'. After a valid save Profile shows 100% but the Dashboard badge shows 85%. _compute_accuracy only takes off 30 for incomplete, so it stays at 'reliable', and missing_fields is empty because the values exist even though method != tape."},
+      {"endpoint": "PUT /api/profile/real-measurements", "issue": "The 422 detail is pydantic English; the frontend shows detail[0].msg (English). It is only reachable if client validation is bypassed, so low priority."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "Profile WeightTracker", "issue": "After saving MeasuresForm with a new weight, WeightTracker 'Peso attuale' stays stale (showed 70 after saving 66) until the page is reloaded. Profile onSaved does not refresh WeightTracker.", "selector": "WeightTracker", "priority": "LOW"},
+      {"component": "CalcolaTagliaBox -> /profile redirect (mobile)", "issue": "When it navigates to /profile on 'Completa le tue misure', the scroll position is kept, so the user lands on the weight tracker instead of the form. Scroll to top or to measures-form.", "selector": "calcola-cta", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Texts contradicting 'photo only for try-on'", "issues": [
+        "Terms.jsx line ~92: 'il metodo di stima delle misure tramite analisi fotografica' (visible on /termini)",
+        "GalleryWarning.jsx step 1: 'misurazioni e vestibilità potrebbero non essere attendibili' and step 2: 'misure e taglie suggerite potrebbero essere sbagliate'. The photo no longer affects measures or sizes; reword to try-on realism. These texts may have been dictated by the user earlier, so confirm with them."
+      ]},
+      {"screen": "MeasuresForm desktop", "issues": ["The label 'Lunghezza gamba' plus 'Guarda come' wraps onto 2 lines, so that input sits lower than the Vita/Fianchi row. Use a shorter label or whitespace-nowrap and items-end."]},
+      {"screen": "Profile silhouette", "issues": ["The Avatar3D tick labels are in English ('chest', 'waist', 'hips') in an Italian UI."]},
+      {"screen": "CopyLook", "issues": ["When incomplete, it reads '· tua taglia Completa le tue misure', which is awkward."]},
+      {"screen": "Onboarding step 3", "issues": ["'La foto avatar serve solo per la prova vestiti' appears twice (step subtitle + AvatarBox notes)."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_real_measurements.py", "/app/backend/tests/_set_owner_meas_state.py", "/app/test_reports/pytest/pytest_iter33.xml"],
+  "action_items": [
+    "Remove or reword the photo-based measurement texts in Terms.jsx (analisi fotografica) and GalleryWarning.jsx (misurazioni/misure e taglie)",
+    "Make FittingAccuracy consistent with completeness (not 'Affidabile: Sì'/'Dati completi' when method != tape) and align the Profile (100/70) and Dashboard (85) values",
+    "Refresh WeightTracker after MeasuresForm save",
+    "Restore owner measurements from measurements_backup_owner (owner measurements are currently in a test state: method auto_photo, values 172/94/78/98/44/80)"
+  ],
+  "critical_code_review_comments": [
+    "The pytest avatar upload exposed a risk: set_avatar calls _mark_files_deleted -> _erase_object on the old avatar, so any test upload on the owner permanently erases the real avatar. The test detaches avatar_path before uploading and restores it afterwards; the owner avatar is intact. One orphan test avatar object may remain in storage (marked is_deleted in db.files).",
+    "PUT /api/profile/measurements (legacy) is still open and removes method/brand_sizes, which silently makes the user incomplete. Remove it if no longer used.",
+    "ReminderPopup 'Modifica ora' doesn't snooze, so the popup shows again on every app open until the user saves. This may be intended."
+  ],
+  "updated_files": ["/app/backend/tests/test_real_measurements.py", "/app/backend/tests/_set_owner_meas_state.py"],
+  "success_rate": {"backend": "100%", "frontend": "95%"},
+  "seed_data_creation": "Test session t1_test_* inserted and deleted afterwards. Test weight_history 'Misure reali' entries were deleted, reminder_snoozed_until was unset, and display_name 'Andrea' was restored through onboarding. Owner measurements were left in the test 'incomplete' state, so the main agent must restore them from the backup.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Run the backend tests with: T1_TOKEN=<owner session> pytest tests/test_real_measurements.py -n0. Use tests/_set_owner_meas_state.py incomplete|complete to switch the UI state. Auth is the cookie session_token on the preview domain plus localStorage atelier_owner=1. Mock reminder_due with page.route on **/api/profile/avatar. Never POST /profile/avatar for the owner without detaching avatar_path first (the old avatar gets erased)."
+}

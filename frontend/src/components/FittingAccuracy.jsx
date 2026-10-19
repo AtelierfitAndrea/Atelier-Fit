@@ -24,6 +24,8 @@ export default function FittingAccuracy({ nonce = 0 }) {
     chest_cm: "torace",
     waist_cm: "vita",
     hips_cm: "fianchi",
+    shoulder_cm: "spalle",
+    inseam_cm: "lunghezza gamba",
   };
 
   let message;

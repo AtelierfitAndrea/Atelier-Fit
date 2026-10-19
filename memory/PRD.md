@@ -234,3 +234,10 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 - AvatarBox: "Scatta ora" / "Carica da galleria"; GalleryWarning.jsx avviso obbligatorio + checkbox; secondo avviso se foto > 30 giorni (EXIF via exifr, fallback lastModified)
 ## Backlog
 - P1 Stripe live keys; P2 etichette TryOnDetail in italiano; P2 ritagli più precisi (segmentazione) e pulizia ritagli non salvati
+
+## 2026-06 — Misure reali (profilo serio) (DONE, iteration_33 + fix)
+- /profile: "Dacci le tue misure reali, le salviamo una volta sola!" — MeasuresForm (6 obbligatorie: altezza, torace, vita, fianchi, spalle, lunghezza gamba; facoltative peso, età, sesso) + MeasureGuide (silhouette SVG con metro animato 5s, bottone "Guarda come")
+- PUT /api/profile/real-measurements (method "tape", measured_at, brand_sizes). Taglie SOLO da misure reali: recommend_size/product analyze → "Completa le tue misure" se incomplete
+- RIMOSSO calcolo misure da foto (pose.js, quick-estimate, auto-measure, tape-calibration, MetroCalibration, TapeCalibration). Avatar = "La foto avatar serve solo per la prova vestiti"
+- ReminderPopup globale (AppShell) ogni 60 giorni dall'ultimo aggiornamento misure/peso: "Le tue misure sono cambiate?" Modifica ora / Ricordamelo dopo (7 giorni)
+- Onboarding: nome → misure → foto

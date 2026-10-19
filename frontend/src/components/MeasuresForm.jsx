@@ -11,19 +11,17 @@ const OPTIONAL = [["weight_kg", "Peso", "kg", 35, 200], ["age", "Età", "anni", 
 function NumField({ id, label, unit, value, onChange, bad, onGuide }) {
   return (
     <label className="block">
-      <span className="flex items-center justify-between mb-2">
-        <span className="label-caps">{label}</span>
-        {onGuide && (
-          <button type="button" onClick={onGuide} className="flex items-center gap-1 text-xs text-[#8C7355] hover:underline" data-testid={`guide-btn-${id}`}>
-            <PlayCircle size={14} /> Guarda come
-          </button>
-        )}
-      </span>
+      <span className="label-caps block mb-2 whitespace-nowrap">{label}</span>
       <div className={`flex items-center border focus-within:border-[#0A0A0A] ${bad ? "border-[#B91C1C]" : "hairline"}`}>
         <input type="number" inputMode="decimal" step="0.5" value={value ?? ""} placeholder="—" onChange={(e) => onChange(e.target.value)}
           className="w-full px-3 py-3 bg-transparent outline-none font-serif text-lg" data-testid={`measure-input-${id}`} />
         <span className="px-3 text-xs text-neutral-500">{unit}</span>
       </div>
+      {onGuide && (
+        <button type="button" onClick={onGuide} className="mt-1.5 flex items-center gap-1 text-xs text-[#8C7355] hover:underline" data-testid={`guide-btn-${id}`}>
+          <PlayCircle size={14} /> Guarda come
+        </button>
+      )}
     </label>
   );
 }
@@ -60,7 +58,7 @@ export default function MeasuresForm({ onSaved }) {
       window.dispatchEvent(new Event("atelier-measures-updated"));
       toast.success("Misure salvate sul tuo account");
       onSaved?.(data);
-    } catch (e) { toast.error(e?.response?.data?.detail?.[0]?.msg || "Salvataggio non riuscito"); }
+    } catch (e) { toast.error(e?.response?.status === 422 ? "Controlla i campi evidenziati" : "Salvataggio non riuscito"); }
     finally { setSaving(false); }
   };
 

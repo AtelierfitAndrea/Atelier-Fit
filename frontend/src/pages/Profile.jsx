@@ -13,7 +13,7 @@ export default function Profile() {
   const [nonce, setNonce] = useState(0);
 
   const load = () => api.get("/profile/measurements").then(({ data }) => setM({ gender: "female", ...(data || {}) })).catch(() => {});
-  useEffect(() => { load(); }, []);
+  useEffect(() => { window.scrollTo(0, 0); load(); }, []);
 
   const std = m.complete ? m.brand_sizes?.find((b) => b.brand === "H&M") : null;
   return (
@@ -37,7 +37,7 @@ export default function Profile() {
               <p className="text-sm text-neutral-600 mt-1">Compila i 6 campi obbligatori: poi ti indichiamo la taglia per ogni brand.</p>
             </div>
           )}
-          <WeightTracker onChange={() => { load(); setNonce((n) => n + 1); }} />
+          <WeightTracker key={nonce} onChange={() => { load(); setNonce((n) => n + 1); }} />
         </div>
       </div>
 

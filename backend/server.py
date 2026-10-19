@@ -1035,22 +1035,19 @@ async def _compute_accuracy(user_id: str) -> dict:
     )
     last_weight_update = last_weight_doc["recorded_at"] if last_weight_doc else (m.get("updated_at") if m.get("weight_kg") else None)
 
-    missing_core = [f for f in ACCURACY_CORE if not m.get(f)]
-    height_missing = not m.get("height_cm")
-
-    accuracy = 100
-    accuracy -= 25 * len(missing_core)
-    if height_missing:
-        accuracy -= 15
+    complete = _measures_complete(m)
+    # Only real tape measures count: photo-era values are treated as missing.
+    missing_fields = [f for f in REQUIRED_MEASURES if not (complete or (m.get("method") == "tape" and m.get(f)))]
+    accuracy = 100 - 15 * len(missing_fields)
 
     # Weight is optional: freshness follows the latest real measurement or weight update.
     stamps = [d for d in (_parse_dt(m.get("measured_at")), _parse_dt(last_weight_update)) if d]
     weight_stale = bool(stamps) and (datetime.now(timezone.utc) - max(stamps)).days > WEIGHT_CHECK_DAYS
-    if weight_stale or not _measures_complete(m):
+    if weight_stale:
         accuracy -= 30
-
+    if not complete:
+        accuracy = min(accuracy, 40)
     accuracy = max(0, min(100, accuracy))
-    missing_fields = list(missing_core) + (["height_cm"] if height_missing else [])
     result = {
         "accuracy": accuracy,
         "last_weight_update": last_weight_update,
@@ -1079,22 +1076,11 @@ async def consumer_fitting_accuracy(user: User = Depends(get_current_user)):
     Server-side only — the scoring logic is NEVER exposed to the client.
     Returns a presentation-safe payload: value, status band and reliable flag.
     """
-    # Resolve freshness entirely server-side.
-    last_weight_doc = await db.weight_history.find_one(
-        {"user_id": user.user_id}, {"_id": 0}, sort=[("recorded_at", -1)]
-    )
-    last_weight_update = last_weight_doc["recorded_at"] if last_weight_doc else None
-    m = await _get_measurements(user.user_id)
-    stamps = [d for d in (_parse_dt(m.get("measured_at")), _parse_dt(last_weight_update)) if d]
-    fresh = _measures_complete(m) and bool(stamps) and (datetime.now(timezone.utc) - max(stamps)).days <= WEIGHT_CHECK_DAYS
+    res = await _compute_accuracy(user.user_id)
+    value, last_weight_update = res["accuracy"], res["last_weight_update"]
+    status = "green" if value >= 70 else ("yellow" if value >= 40 else "red")
 
-    # Proprietary scoring resolution — kept server-side.
-    if fresh:
-        value, status = 85, "green"
-    else:
-        value, status = 10, "red"
-
-    reliable = status in ("green", "yellow")
+    reliable = status == "green"
     # Snapshot so the B2B API & brand dashboards remain consistent.
     await db.users.update_one(
         {"user_id": user.user_id},

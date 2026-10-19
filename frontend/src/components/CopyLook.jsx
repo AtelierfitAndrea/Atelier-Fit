@@ -17,7 +17,7 @@ function ItemCard({ item, selected, onToggle, onSave, saved }) {
         <div className="mt-2 flex items-start justify-between gap-2">
           <div>
             <div className="text-sm font-medium leading-tight" data-testid={`copylook-item-name-${item.idx}`}>{item.name}</div>
-            <div className="label-caps text-[#8C7355] mt-1">{CAT_IT[item.category] || item.category} · tua taglia {item.recommended_size}</div>
+            <div className="label-caps text-[#8C7355] mt-1">{CAT_IT[item.category] || item.category} · {item.recommended_size === "Completa le tue misure" ? item.recommended_size : `tua taglia ${item.recommended_size}`}</div>
           </div>
           <span className={`w-5 h-5 shrink-0 border flex items-center justify-center ${selected ? "bg-[#0A0A0A] text-white" : ""}`}>{selected && <Check size={12} weight="bold" />}</span>
         </div>

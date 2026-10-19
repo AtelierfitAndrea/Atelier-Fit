@@ -56,7 +56,7 @@ export default function OnboardingGate() {
         {current === "photo" && (
           <>
             <h2 className="mt-3 font-serif text-3xl tracking-tight">Ora la tua foto Avatar</h2>
-            <p className="mt-2 text-sm text-neutral-600">La foto avatar serve solo per la prova vestiti</p>
+            <p className="mt-2 text-sm text-neutral-600">Una sola foto a corpo intero, dalla testa ai piedi.</p>
             <div className="mt-6"><AvatarBox /></div>
             <button onClick={() => setStep("done")} className="mt-4 text-xs text-neutral-500 underline" data-testid="onboarding-skip-photo">Lo faccio dopo</button>
           </>

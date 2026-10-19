@@ -46,7 +46,7 @@ export default function GalleryWarning({ info, onAccept, onCancel }) {
           onOk={() => (old ? setStep(2) : onAccept())} />
       ) : (
         <Step key="s2" testid="gallery-warning-2" title={`Foto di ${info.days} giorni fa`}
-          text={`Questa foto ha più di ${OLD_PHOTO_DAYS} giorni${info.fromExif ? "" : " (data stimata dal file)"}. Il tuo corpo potrebbe essere cambiato: misure e taglie suggerite potrebbero essere sbagliate. Ti consigliamo di scattare una foto nuova.`}
+          text={`Questa foto ha più di ${OLD_PHOTO_DAYS} giorni${info.fromExif ? "" : " (data stimata dal file)"}. Il tuo aspetto potrebbe essere cambiato: la prova vestiti potrebbe non rispecchiarti. Ti consigliamo di scattare una foto nuova.`}
           label="Ho capito, uso comunque questa foto a mio rischio" onCancel={onCancel} onOk={onAccept} />
       )}
     </div>

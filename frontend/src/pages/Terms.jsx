@@ -89,7 +89,7 @@ export default function Terms() {
           <div>
             <h2 className="font-bold text-lg">Tecnologia e Metodo Proprietario My Atelier Fit®</h2>
             <p className="mt-3 text-sm md:text-base leading-relaxed text-neutral-700">
-              L&apos;algoritmo di calcolo antropometrico, il sistema di adattamento virtuale, il metodo di stima delle misure tramite analisi fotografica, altezza e peso, e l&apos;interfaccia di vestizione virtuale costituiscono metodo proprietario, know-how esclusivo e segreto commerciale di My Atelier Fit di Andrea M., tutelato ai sensi degli artt. 98 e 99 del Codice della Proprietà Industriale. Ogni riproduzione, copia, reverse engineering o utilizzo non autorizzato, anche parziale, è espressamente vietato e sarà perseguito a norma di legge.
+              L&apos;algoritmo di calcolo antropometrico, il sistema di adattamento virtuale, il metodo di calcolo delle taglie dalle misure reali, e l&apos;interfaccia di vestizione virtuale costituiscono metodo proprietario, know-how esclusivo e segreto commerciale di My Atelier Fit di Andrea M., tutelato ai sensi degli artt. 98 e 99 del Codice della Proprietà Industriale. Ogni riproduzione, copia, reverse engineering o utilizzo non autorizzato, anche parziale, è espressamente vietato e sarà perseguito a norma di legge.
             </p>
           </div>
         </section>

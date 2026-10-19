@@ -65,11 +65,11 @@ export default function Avatar3D({ measurements = {} }) {
 
         {/* measurement callouts */}
         <g fontFamily="Manrope" fontSize="9" fill="#8C7355">
-          <text x="300" y="170">chest {Math.round(chest)}</text>
+          <text x="300" y="170">torace {Math.round(chest)}</text>
           <line x1="260" y1="167" x2="295" y2="167" stroke="#8C7355" />
-          <text x="300" y="230">waist {Math.round(waist)}</text>
+          <text x="300" y="230">vita {Math.round(waist)}</text>
           <line x1="260" y1="227" x2="295" y2="227" stroke="#8C7355" />
-          <text x="300" y="285">hips {Math.round(hips)}</text>
+          <text x="300" y="285">fianchi {Math.round(hips)}</text>
           <line x1="260" y1="282" x2="295" y2="282" stroke="#8C7355" />
         </g>
       </svg>
