@@ -18,7 +18,7 @@ import httpx
 from bs4 import BeautifulSoup
 import json as pyjson
 from cryptography.fernet import Fernet, InvalidToken
-from body_measure import estimate as estimate_body, estimate_from_height_weight, brand_sizes
+from body_measure import brand_sizes
 import re
 import stripe
 
@@ -104,6 +104,8 @@ class Measurements(BaseModel):
     shoulder_cm: Optional[float] = None
     inseam_cm: Optional[float] = None
     foot_cm: Optional[float] = None
+    age: Optional[int] = None
+    measured_at: Optional[str] = None
     updated_at: Optional[str] = None
 
 
@@ -180,10 +182,14 @@ async def get_current_user(
 
 # ===== Size recommendation logic =====
 def recommend_size(measurements: dict, category: str) -> str:
-    """Simple size recommendation based on body measurements."""
-    if not measurements:
-        return "M"
+    """Size recommendation from the user's real tape measurements only."""
     cat = (category or "").lower()
+    if cat != "shoes" and not _measures_complete(measurements):
+        return INCOMPLETE_SIZE
+    measurements = measurements or {}
+    std = next((b for b in measurements.get("brand_sizes") or [] if b.get("brand") == "H&M"), None)
+    if std and cat in ("top", "dress", "outerwear", "bottom"):
+        return std["bottom"] if cat == "bottom" else std["top"]
     if cat == "shoes":
         foot = measurements.get("foot_cm")
         if not foot:
@@ -517,59 +523,45 @@ async def _migrate_plaintext_personal_data() -> None:
         await db.weight_history.update_one({"_id": w["_id"]}, {"$set": {"weight_enc": _enc(w["weight_kg"])}, "$unset": {"weight_kg": ""}})
 
 
-class QuickEstimateIn(BaseModel):
+REQUIRED_MEASURES = ("height_cm", "chest_cm", "waist_cm", "hips_cm", "shoulder_cm", "inseam_cm")
+INCOMPLETE_SIZE = "Completa le tue misure"
+
+
+def _measures_complete(m: Optional[dict]) -> bool:
+    return bool(m) and m.get("method") == "tape" and all(m.get(k) for k in REQUIRED_MEASURES)
+
+
+class RealMeasuresIn(BaseModel):
     height_cm: float = Field(ge=120, le=230)
-    weight_kg: float = Field(ge=40, le=150)
-    gender: str = Field(pattern="^(female|male)$")
-    force: bool = False  # recompute even if photo measurements exist (new photo was not measurable)
+    chest_cm: float = Field(ge=60, le=170)
+    waist_cm: float = Field(ge=45, le=170)
+    hips_cm: float = Field(ge=60, le=180)
+    shoulder_cm: float = Field(ge=30, le=70)
+    inseam_cm: float = Field(ge=50, le=110)
+    weight_kg: Optional[float] = Field(None, ge=35, le=200)
+    age: Optional[int] = Field(None, ge=14, le=100)
+    gender: Optional[str] = Field(None, pattern="^(female|male)$")
 
 
-@api_router.post("/profile/quick-estimate")
-async def quick_estimate(body: QuickEstimateIn, user: User = Depends(get_current_user)):
+@api_router.put("/profile/real-measurements")
+async def save_real_measurements(body: RealMeasuresIn, user: User = Depends(get_current_user)):
     current = await _get_measurements(user.user_id)
-    patch = {"height_cm": body.height_cm, "weight_kg": body.weight_kg, "gender": body.gender}
-    # Photo or tape measurements are more precise: keep them unless height/sex changed.
-    keep = (not body.force and current.get("method") in ("auto_photo", "tape")
-            and abs((current.get("height_cm") or 0) - body.height_cm) < 1
-            and abs((current.get("weight_kg") or body.weight_kg) - body.weight_kg) <= 5
-            and current.get("gender") == body.gender)
-    if not keep:
-        est = estimate_from_height_weight(body.height_cm, body.weight_kg, body.gender)
-        patch.update({**est, "method": "height_weight", "brand_sizes": brand_sizes(est, body.gender)})
-    saved = await _set_measurements(user.user_id, patch, remove=() if keep else ("precision",))
-    if current.get("weight_kg") != body.weight_kg:
+    now = datetime.now(timezone.utc).isoformat()
+    patch = body.model_dump(exclude_none=True)
+    gender = patch.get("gender") or current.get("gender")
+    patch.update({"method": "tape", "measured_at": now, "brand_sizes": brand_sizes(patch, gender)})
+    stale = ("precision", "photo_raw_chest", "photo_raw_waist", "tape_offset_chest", "tape_offset_waist",
+             "tape_chest", "tape_waist", "tape_calibrated_at", "photo_measured_at")
+    remove = stale + tuple(k for k in ("weight_kg", "age") if k not in patch)
+    saved = await _set_measurements(user.user_id, patch, now, remove=remove)
+    if body.weight_kg is not None and current.get("weight_kg") != body.weight_kg:
         await db.weight_history.insert_one({
             "id": str(uuid.uuid4()), "user_id": user.user_id, "weight_enc": _enc(body.weight_kg),
-            "note": "Iscrizione", "recorded_at": datetime.now(timezone.utc).isoformat(),
+            "note": "Misure reali", "recorded_at": now,
         })
+    await db.users.update_one({"user_id": user.user_id}, {"$unset": {"reminder_snoozed_until": ""}})
     await _compute_accuracy(user.user_id)
-    return {"measurements": saved, "kept_precise": keep}
-
-
-class FeatureRatios(BaseModel):
-    shoulder_r: float = Field(gt=0.05, lt=0.5)
-    chest_r: float = Field(gt=0.05, lt=0.5)
-    waist_r: float = Field(gt=0.05, lt=0.5)
-    hips_r: float = Field(gt=0.05, lt=0.5)
-    inseam_r: float = Field(gt=0.3, lt=0.6)
-
-
-@api_router.post("/profile/auto-measure")
-async def auto_measure(
-    photo: UploadFile = File(...),
-    features: str = Query(...),
-    height_cm: Optional[float] = Query(None, ge=120, le=230),
-    gender: Optional[str] = Query(None, regex="^(female|male)$"),
-    weight_kg: Optional[float] = Query(None, ge=40, le=150),
-    forget_weight: bool = Query(False),
-    user: User = Depends(get_current_user),
-):
-    try:
-        ratios = FeatureRatios(**pyjson.loads(features)).model_dump()
-    except Exception:
-        raise HTTPException(status_code=400, detail="Non riusciamo a leggere la tua figura: riprova con una foto intera, frontale, ben illuminata")
-    raw = await _read_photo(photo)
-    return await _measure_and_save(user, raw, ratios, height_cm, weight_kg, gender, forget_weight, store_photo=True)
+    return {**saved, "complete": True}
 
 
 async def _read_photo(photo: UploadFile) -> bytes:
@@ -595,97 +587,23 @@ def _clean_jpeg(raw: bytes) -> bytes:
     return out.getvalue()
 
 
-async def _resolve_body_inputs(user: User, height_cm, weight_kg, gender, forget_weight):
-    saved_m = await _get_measurements(user.user_id)
-    # Missing values fall back to the ones already saved in the profile.
-    height_cm = height_cm or saved_m.get("height_cm")
-    if not height_cm:
-        raise HTTPException(status_code=400, detail="need_height")
-    if weight_kg is None and not forget_weight:
-        weight_kg = saved_m.get("weight_kg")
-    gender = gender or (saved_m.get("gender") if saved_m.get("gender") in ("female", "male") else None)
-    return saved_m, height_cm, weight_kg, gender
-
-
-PHOTO_CALIB_CM = -2  # photo silhouettes (clothes, arms) overestimate chest/waist/hips by ~2 cm vs a real tape
-
-
-async def _measure_and_save(user: User, raw: bytes, ratios: dict, height_cm, weight_kg, gender, forget_weight, store_photo: bool, calib_cm: int = PHOTO_CALIB_CM):
-    saved_m, height_cm, weight_kg, gender = await _resolve_body_inputs(user, height_cm, weight_kg, gender, forget_weight)
-    est = estimate_body(ratios, height_cm, weight_kg, gender)
-    raw_est = {"photo_raw_chest": est.get("chest_cm"), "photo_raw_waist": est.get("waist_cm")}
-    # Personal tape calibration (chest/waist) replaces the generic photo correction.
-    tape = {"chest_cm": saved_m.get("tape_offset_chest"), "waist_cm": saved_m.get("tape_offset_waist")}
-    for k in ("chest_cm", "waist_cm", "hips_cm"):
-        off = tape.get(k) if tape.get(k) is not None else calib_cm
-        if est.get(k) and off:
-            est[k] = round(est[k] + off)
-    sizes = brand_sizes(est, gender)
-    now = datetime.now(timezone.utc).isoformat()
-    if store_photo:
-        # The calculation photo is stored encrypted and never served back.
-        path = f"{APP_NAME}/measure/{user.user_id}/{uuid.uuid4().hex}.bin"
-        put_object(path, FERNET.encrypt(raw), "application/octet-stream")
-        await db.files.insert_one({
-            "id": str(uuid.uuid4()), "user_id": user.user_id, "kind": "measure", "storage_path": path,
-            "encrypted": True, "is_deleted": False, "created_at": now,
-        })
-    precision = (98 if weight_kg else 85) - (0 if gender else 10)
-    new_weight = weight_kg is not None and weight_kg != saved_m.get("weight_kg")
-    saved = await _set_measurements(user.user_id, {
-        **est, "height_cm": height_cm, "weight_kg": weight_kg, "gender": gender,
-        "brand_sizes": sizes, "precision": precision, "method": "auto_photo", "photo_measured_at": now, **raw_est,
-    }, now, remove=("weight_kg",) if forget_weight else ())
-    if new_weight:
-        await db.weight_history.insert_one({
-            "id": str(uuid.uuid4()), "user_id": user.user_id, "weight_enc": _enc(weight_kg),
-            "note": "Calcolo automatico", "recorded_at": now,
-        })
-    await _compute_accuracy(user.user_id)
-    return {"measurements": saved, "brand_sizes": sizes, "precision": precision}
-
-
-class TapeCalibIn(BaseModel):
-    chest_cm: float = Field(ge=60, le=170)
-    waist_cm: float = Field(ge=45, le=170)
-
-
-@api_router.get("/profile/tape-calibration")
-async def get_tape_calibration(user: User = Depends(get_current_user)):
-    m = await _get_measurements(user.user_id)
-    return {"done": m.get("tape_calibrated_at") is not None, "chest_cm": m.get("tape_chest"), "waist_cm": m.get("tape_waist"),
-            "calibrated_at": m.get("tape_calibrated_at"), "has_photo": m.get("method") == "auto_photo"}
-
-
-@api_router.post("/profile/tape-calibration")
-async def set_tape_calibration(body: TapeCalibIn, user: User = Depends(get_current_user)):
-    m = await _get_measurements(user.user_id)
-    if m.get("method") != "auto_photo":
-        raise HTTPException(status_code=400, detail="Crea prima il tuo Avatar: la taratura allinea le stime della foto")
-    # Raw photo estimate (before any correction); older records only have the corrected value.
-    raw_c = m.get("photo_raw_chest") or (m.get("chest_cm", 0) - PHOTO_CALIB_CM)
-    raw_w = m.get("photo_raw_waist") or (m.get("waist_cm", 0) - PHOTO_CALIB_CM)
-    now = datetime.now(timezone.utc).isoformat()
-    patch = {**m, "chest_cm": round(body.chest_cm), "waist_cm": round(body.waist_cm)}
-    patch["brand_sizes"] = brand_sizes(patch, m.get("gender"))
-    patch.update({"tape_offset_chest": round(body.chest_cm - raw_c, 1), "tape_offset_waist": round(body.waist_cm - raw_w, 1),
-                  "tape_chest": round(body.chest_cm), "tape_waist": round(body.waist_cm), "tape_calibrated_at": now})
-    saved = await _set_measurements(user.user_id, patch, now)
-    await _compute_accuracy(user.user_id)
-    return {"measurements": saved, "brand_sizes": patch["brand_sizes"]}
-
-
 # ----- Il Mio Avatar: one full-body photo for measurements + try-ons -----
 @api_router.get("/profile/avatar")
 async def get_avatar(user: User = Depends(get_current_user)):
     doc = await db.users.find_one({"user_id": user.user_id}, {"_id": 0, "avatar_path": 1, "avatar_at": 1, "is_family_profile": 1, "name": 1, "reminder_snoozed_until": 1}) or {}
-    last_w = await db.weight_history.find_one({"user_id": user.user_id}, {"_id": 0, "recorded_at": 1}, sort=[("recorded_at", -1)])
-    stamps = [d for d in (_parse_dt(doc.get("avatar_at")), _parse_dt((last_w or {}).get("recorded_at"))) if d]
+    return {"path": doc.get("avatar_path"), "created_at": doc.get("avatar_at"),
+            "profile_name": doc.get("name") if doc.get("is_family_profile") else None,
+            "reminder_due": await _reminder_due(user.user_id, doc)}
+
+
+async def _reminder_due(user_id: str, doc: dict) -> bool:
+    # Every 2 months: "have your measurements changed?" (snooze = 7 days).
+    m = await _get_measurements(user_id)
+    last_w = await db.weight_history.find_one({"user_id": user_id}, {"_id": 0, "recorded_at": 1}, sort=[("recorded_at", -1)])
+    stamps = [d for d in (_parse_dt(m.get("measured_at")), _parse_dt(m.get("photo_measured_at")), _parse_dt((last_w or {}).get("recorded_at"))) if d]
     now = datetime.now(timezone.utc)
     snoozed = _parse_dt(doc.get("reminder_snoozed_until"))
-    due = bool(doc.get("avatar_path") and stamps and now - max(stamps) > timedelta(days=AVATAR_REMINDER_DAYS) and not (snoozed and snoozed > now))
-    return {"path": doc.get("avatar_path"), "created_at": doc.get("avatar_at"),
-            "profile_name": doc.get("name") if doc.get("is_family_profile") else None, "reminder_due": due}
+    return bool(stamps and now - max(stamps) > timedelta(days=AVATAR_REMINDER_DAYS) and not (snoozed and snoozed > now))
 
 
 AVATAR_REMINDER_DAYS = 60
@@ -715,20 +633,9 @@ async def set_display_name(body: DisplayNameIn, user: User = Depends(get_account
 @api_router.post("/profile/avatar")
 async def set_avatar(
     photo: UploadFile = File(...),
-    features: Optional[str] = Query(None),
-    height_cm: Optional[float] = Query(None, ge=120, le=230),
-    gender: Optional[str] = Query(None, regex="^(female|male)$"),
-    weight_kg: Optional[float] = Query(None, ge=40, le=150),
-    two_shot: bool = Query(False),
     user: User = Depends(get_current_user),
 ):
-    ratios = None
-    if features:
-        try:
-            ratios = FeatureRatios(**pyjson.loads(features)).model_dump()
-        except Exception:
-            raise HTTPException(status_code=400, detail="Non riusciamo a leggere la tua figura: riprova con una foto intera, frontale, ben illuminata")
-        await _resolve_body_inputs(user, height_cm, weight_kg, gender, False)
+    # The avatar photo is used ONLY for try-ons: no measurement is ever estimated from it.
     raw = _clean_jpeg(await _read_photo(photo))
     path = f"{APP_NAME}/avatar/{user.user_id}/{uuid.uuid4().hex}.bin"
     put_object(path, FERNET.encrypt(raw), "application/octet-stream")
@@ -741,10 +648,7 @@ async def set_avatar(
     await db.users.update_one({"user_id": user.user_id}, {"$set": {"avatar_path": path, "avatar_at": now}})
     if old:
         await _mark_files_deleted([old], user.user_id)
-    out = {"avatar": {"path": path, "created_at": now}}
-    if ratios:
-        out.update(await _measure_and_save(user, raw, ratios, height_cm, weight_kg, gender, False, store_photo=False))
-    return out
+    return {"avatar": {"path": path, "created_at": now}}
 
 
 @api_router.delete("/profile/avatar")
@@ -759,7 +663,8 @@ async def delete_avatar(user: User = Depends(get_current_user)):
 # ----- Profile / Measurements -----
 @api_router.get("/profile/measurements")
 async def get_measurements(user: User = Depends(get_current_user)):
-    return await _get_measurements(user.user_id)
+    m = await _get_measurements(user.user_id)
+    return {**m, "complete": _measures_complete(m)}
 
 
 @api_router.put("/profile/measurements")
@@ -1138,17 +1043,11 @@ async def _compute_accuracy(user_id: str) -> dict:
     if height_missing:
         accuracy -= 15
 
-    weight_stale = False
-    if not m.get("weight_kg"):
-        weight_stale = True
+    # Weight is optional: freshness follows the latest real measurement or weight update.
+    stamps = [d for d in (_parse_dt(m.get("measured_at")), _parse_dt(last_weight_update)) if d]
+    weight_stale = bool(stamps) and (datetime.now(timezone.utc) - max(stamps)).days > WEIGHT_CHECK_DAYS
+    if weight_stale or not _measures_complete(m):
         accuracy -= 30
-    elif last_weight_update:
-        last_dt = datetime.fromisoformat(last_weight_update)
-        if last_dt.tzinfo is None:
-            last_dt = last_dt.replace(tzinfo=timezone.utc)
-        if (datetime.now(timezone.utc) - last_dt).days > WEIGHT_CHECK_DAYS:
-            weight_stale = True
-            accuracy -= 30
 
     accuracy = max(0, min(100, accuracy))
     missing_fields = list(missing_core) + (["height_cm"] if height_missing else [])
@@ -1184,14 +1083,10 @@ async def consumer_fitting_accuracy(user: User = Depends(get_current_user)):
     last_weight_doc = await db.weight_history.find_one(
         {"user_id": user.user_id}, {"_id": 0}, sort=[("recorded_at", -1)]
     )
-    fresh = False
-    last_weight_update = None
-    if last_weight_doc:
-        last_weight_update = last_weight_doc["recorded_at"]
-        last_dt = datetime.fromisoformat(last_weight_update)
-        if last_dt.tzinfo is None:
-            last_dt = last_dt.replace(tzinfo=timezone.utc)
-        fresh = (datetime.now(timezone.utc) - last_dt).days <= WEIGHT_CHECK_DAYS
+    last_weight_update = last_weight_doc["recorded_at"] if last_weight_doc else None
+    m = await _get_measurements(user.user_id)
+    stamps = [d for d in (_parse_dt(m.get("measured_at")), _parse_dt(last_weight_update)) if d]
+    fresh = _measures_complete(m) and bool(stamps) and (datetime.now(timezone.utc) - max(stamps)).days <= WEIGHT_CHECK_DAYS
 
     # Proprietary scoring resolution — kept server-side.
     if fresh:
@@ -1940,8 +1835,8 @@ async def product_analyze(req: AnalyzeUrlRequest, user: User = Depends(get_curre
     if not re.match(r"^https?://", url):
         raise HTTPException(status_code=400, detail="URL non valido")
     m_doc = await _get_measurements(user.user_id)
-    if not any(m_doc.get(k) for k in ("chest_cm", "waist_cm", "hips_cm", "height_cm")):
-        raise HTTPException(status_code=400, detail="Aggiungi prima almeno torace, vita, fianchi o altezza nel profilo.")
+    if not _measures_complete(m_doc):
+        raise HTTPException(status_code=400, detail=INCOMPLETE_SIZE)
     html = await _fetch_page(url)
     condensed, product_image = _condense_html(html) if html else ("", None)
     result = None
@@ -1980,8 +1875,8 @@ class AnalyzeTextRequest(BaseModel):
 @api_router.post("/product/analyze-text")
 async def product_analyze_text(req: AnalyzeTextRequest, user: User = Depends(get_current_user)):
     m_doc = await _get_measurements(user.user_id)
-    if not any(m_doc.get(k) for k in ("chest_cm", "waist_cm", "hips_cm", "height_cm")):
-        raise HTTPException(status_code=400, detail="Aggiungi prima almeno torace, vita, fianchi o altezza nel profilo.")
+    if not _measures_complete(m_doc):
+        raise HTTPException(status_code=400, detail=INCOMPLETE_SIZE)
     pseudo_text = f"URL: {req.url or 'n/a'}\n\nTABELLA TAGLIE INCOLLATA DAL CLIENTE:\n{req.chart_text}"
     result = await _call_llm_for_analysis(pseudo_text, None, m_doc, hint_url=req.url or "")
     await _remember_chart(user, req.url, result)
@@ -2474,8 +2369,8 @@ async def product_analyze_screenshot(
     user: User = Depends(get_current_user),
 ):
     m_doc = await _get_measurements(user.user_id)
-    if not any(m_doc.get(k) for k in ("chest_cm", "waist_cm", "hips_cm", "height_cm")):
-        raise HTTPException(status_code=400, detail="Aggiungi prima almeno torace, vita, fianchi o altezza nel profilo.")
+    if not _measures_complete(m_doc):
+        raise HTTPException(status_code=400, detail=INCOMPLETE_SIZE)
     data = await file.read()
     img_b64 = base64.b64encode(data).decode("utf-8")
     result = await _call_llm_for_analysis(None, img_b64, m_doc, hint_url=url or "")

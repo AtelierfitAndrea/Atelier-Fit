@@ -1,93 +1,11 @@
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
 import { Camera, CheckCircle, Trash, Images } from "@phosphor-icons/react";
 import GalleryWarning, { photoAgeDays } from "@/components/GalleryWarning";
 import { api, fileUrl } from "@/lib/api";
 import { useAvatar } from "@/lib/avatar";
-import { extractBodyRatios, extractTwoPartRatios } from "@/lib/pose";
 import AvatarCamera from "@/components/AvatarCamera";
-
-const POSE_ERRORS = {
-  too_dark: ["Foto troppo buia", "Accendi una luce o mettiti davanti a una finestra, poi riscatta."],
-  no_head: ["Non vediamo la testa", "Inquadra tutto il corpo: la testa deve essere dentro la foto."],
-  no_feet: ["Non vediamo i piedi", "Allontana il telefono o abbassalo: i piedi devono essere visibili."],
-  cut_top: ["Foto tagliata in alto", "Lascia un po' di spazio sopra la testa."],
-  cut_bottom: ["Foto tagliata in basso", "Lascia un po' di spazio sotto i piedi."],
-  too_far: ["Sei troppo lontano", "Avvicinati: il corpo deve riempire quasi tutta l'altezza della foto."],
-  upper_no_hips: ["Foto 1/2: non vediamo i fianchi", "Nel busto inquadra dalla testa fino a metà coscia, con i fianchi sulla linea dorata."],
-  lower_no_hips: ["Foto 2/2: non vediamo i fianchi", "Nelle gambe parti dalla vita, sulla linea dorata, fino ai piedi."],
-  no_pose: ["Non vediamo bene la tua figura", "Mettiti in piedi, frontale, a corpo intero e con più luce."],
-};
-
-function PhotoIssue({ code, onRetake }) {
-  const [title, hint] = POSE_ERRORS[code] || POSE_ERRORS.no_pose;
-  return (
-    <div className="mt-4 border-2 border-[#B91C1C] bg-[#FEF2F2] p-4 fade-up" data-testid="avatar-photo-issue">
-      <div className="font-serif text-lg text-[#991B1B]" data-testid="avatar-photo-issue-title">{title}</div>
-      <p className="text-sm text-[#7F1D1D] mt-1">{hint} La foto non è stata salvata.</p>
-      <button onClick={onRetake} className="btn-primary mt-3" data-testid="avatar-retake-btn">Riscatta la foto</button>
-    </div>
-  );
-}
-
-const SOFT_WARNINGS = {
-  too_dark: "Poca luce: se puoi accendi la torcia o una luce, le misure saranno più precise.",
-  cut_top: "La testa è vicina al bordo: va bene lo stesso.",
-  cut_bottom: "I piedi sono vicini al bordo: va bene lo stesso.",
-  no_measure: "Da queste foto non riusciamo a calcolare le misure: salviamo comunque l'Avatar e stimiamo le misure da altezza e peso.",
-};
-
-function StitchPreview({ pending, onConfirm, onRetake }) {
-  return (
-    <div className="border hairline p-4 bg-white fade-up" data-testid="avatar-stitch-preview">
-      <div className="font-serif text-lg">Ecco le tue 2 foto unite</div>
-      {pending.warnings?.length > 0 && (
-        <ul className="mt-3 space-y-1 border border-[#EAB308] bg-[#FEFCE8] p-3 text-sm text-[#713F12]" data-testid="avatar-soft-warnings">
-          {pending.warnings.map((w) => <li key={w} data-testid={`avatar-soft-warning-${w}`}>{SOFT_WARNINGS[w]}</li>)}
-        </ul>
-      )}
-      <div className="mt-4 flex gap-4">
-        {[["upper", "Busto"], ["lower", "Gambe"]].map(([k, l]) => (
-          <div key={k} className="text-center">
-            <img src={pending.thumbs[k]} alt={l} className="w-20 h-28 object-cover border hairline" data-testid={`avatar-shot-${k}`} />
-            <button onClick={() => onRetake(k)} className="mt-2 text-xs underline" data-testid={`avatar-retake-${k}`}>Rifai {l.toLowerCase()}</button>
-          </div>
-        ))}
-      </div>
-      <button onClick={onConfirm} className="btn-primary mt-4" data-testid="avatar-stitch-confirm">Conferma e salva</button>
-    </div>
-  );
-}
-
-function BodyForm({ initial, onSubmit, onCancel }) {
-  const [h, setH] = useState(initial.height_cm || "");
-  const [w, setW] = useState(initial.weight_kg || "");
-  const [g, setG] = useState(initial.gender === "male" ? "male" : "female");
-  const ok = Number(h) >= 120 && Number(h) <= 230 && Number(w) >= 40 && Number(w) <= 150;
-  return (
-    <div className="mt-4 border hairline p-4 bg-white fade-up" data-testid="avatar-body-form">
-      <div className="label-caps mb-3">Controlla altezza e peso</div>
-      <div className="flex flex-wrap gap-3 items-center">
-        {[["cm", h, setH, "182", "avatar-height-input"], ["kg", w, setW, "70", "avatar-weight-input"]].map(([u, v, set, ph, id]) => (
-          <div key={u} className="flex items-center border hairline w-32">
-            <input type="number" inputMode="numeric" value={v} placeholder={ph} onChange={(e) => set(e.target.value)}
-              className="w-full px-3 py-2 bg-transparent outline-none font-serif text-lg" data-testid={id} />
-            <span className="px-2 text-xs text-neutral-500">{u}</span>
-          </div>
-        ))}
-        {[["female", "Donna"], ["male", "Uomo"]].map(([k, l]) => (
-          <button key={k} type="button" onClick={() => setG(k)}
-            className={`px-3 py-2 label-caps border hairline ${g === k ? "bg-[#0A0A0A] !text-white" : "bg-white"}`} data-testid={`avatar-gender-${k}`}>{l}</button>
-        ))}
-      </div>
-      <div className="mt-4 flex gap-3">
-        <button disabled={!ok} onClick={() => onSubmit({ height_cm: Number(h), weight_kg: Number(w), gender: g })} className="btn-primary disabled:opacity-40" data-testid="avatar-body-submit">Calcola le mie misure</button>
-        <button onClick={onCancel} className="btn-ghost" data-testid="avatar-body-cancel">Annulla</button>
-      </div>
-    </div>
-  );
-}
 
 // iOS asks permission for the motion sensors (needed by the phone level) inside a tap.
 const askLevelPermission = () => { try { window.DeviceOrientationEvent?.requestPermission?.().catch(() => {}); } catch (_e) { /* not needed */ } };
@@ -95,110 +13,56 @@ const askLevelPermission = () => { try { window.DeviceOrientationEvent?.requestP
 function Notes() {
   return (
     <div className="mt-4 space-y-1.5" data-testid="avatar-notes">
+      <p className="text-sm text-neutral-800" data-testid="avatar-purpose-note">La foto avatar serve solo per la prova vestiti</p>
       <p className="text-xs text-neutral-600" data-testid="avatar-modes-note"><b>1 foto intera</b>, dalla testa ai piedi con un po' di spazio sopra e sotto: telefono a 1,5-2 metri, zoom 1x (0.5x solo se serve).</p>
-      <p className="text-xs text-neutral-600" data-testid="avatar-tip-note">👙 Consiglio Atelier: con abbigliamento aderente o costume attendibilità 98%.</p>
+      <p className="text-xs text-neutral-600" data-testid="avatar-measures-note">Le taglie sono calcolate solo dalle tue <Link to="/profile" className="underline" data-testid="avatar-measures-link">misure reali</Link>.</p>
       <p className="text-[11px] text-neutral-400" data-testid="avatar-privacy-note">🔒 La foto è criptata e visibile solo dal tuo account Atelier. Non la mostriamo a nessuno. Puoi cancellarla quando vuoi.</p>
     </div>
   );
 }
 
 export default function AvatarBox({ manage = false }) {
-  const { avatar, setAvatar, profileName, updateRequest, setReminderDue } = useAvatar();
-  const [forceBody, setForceBody] = useState(false);
+  const { avatar, setAvatar, profileName } = useAvatar();
   const [camOpen, setCamOpen] = useState(false);
-  const [pending, setPending] = useState(null);
+  const [preview, setPreview] = useState(null);
   const [busy, setBusy] = useState(false);
-  const [profile, setProfile] = useState({});
-  const [issue, setIssue] = useState(null);
-  const [camMode, setCamMode] = useState("single");
-  const [retake, setRetake] = useState(null);
   const [gallery, setGallery] = useState(null);
   const galleryRef = useRef();
 
-  useEffect(() => {
-    if (!updateRequest || manage) return;
-    document.getElementById("il-mio-avatar")?.scrollIntoView({ behavior: "smooth" });
-    setForceBody(true);
-    setCamOpen(true);
-  }, [updateRequest, manage]);
-  useEffect(() => {
-    if (!manage && window.location.hash === "#il-mio-avatar") setTimeout(() => document.getElementById("il-mio-avatar")?.scrollIntoView({ behavior: "smooth" }), 300);
-  }, [manage]);
-  useEffect(() => { api.get("/profile/measurements").then(({ data }) => setProfile(data || {})).catch(() => {}); }, []);
-
-  const upload = async (file, ratios, body = {}, base = profile, twoShot = !!pending?.shots) => {
+  const onCapture = async (file) => {
+    setCamOpen(false);
+    setPreview(URL.createObjectURL(file));
     setBusy(true);
     try {
-      // Without measurable photos, measurements are estimated from height and weight.
-      const est = { height_cm: body.height_cm || base.height_cm, weight_kg: body.weight_kg || base.weight_kg, gender: body.gender || (base.gender === "male" ? "male" : "female") };
-      if (!ratios && est.height_cm && est.weight_kg) await api.post("/profile/quick-estimate", { ...est, force: true });
-      const params = new URLSearchParams(ratios ? { features: JSON.stringify(ratios) } : {});
-      if (ratios) Object.entries(body).forEach(([k, v]) => params.set(k, String(v)));
-      if (ratios && twoShot) params.set("two_shot", "true");
       const fd = new FormData(); fd.append("photo", file);
-      const { data } = await api.post(`/profile/avatar?${params}`, fd, { headers: { "Content-Type": "multipart/form-data" } });
+      const { data } = await api.post("/profile/avatar", fd, { headers: { "Content-Type": "multipart/form-data" } });
       setAvatar(data.avatar);
-      setProfile(data.measurements || profile);
-      setPending(null);
-      setForceBody(false);
-      setReminderDue(false);
-      window.dispatchEvent(new Event("atelier-measures-updated"));
-      toast.success(ratios ? "Avatar pronto: misure calcolate e outfit collegati" : "Avatar salvato: misure stimate da altezza e peso");
+      toast.success("Avatar pronto per la prova vestiti");
     } catch (e) {
-      toast.error(e?.response?.data?.detail === "need_height" ? "Inserisci altezza e peso" : (e?.response?.data?.detail || "Salvataggio non riuscito"));
-    } finally { setBusy(false); }
+      toast.error(e?.response?.data?.detail || "Salvataggio non riuscito");
+    } finally { setPreview(null); setBusy(false); }
   };
 
-  const onCapture = async (shot) => {
-    setCamOpen(false);
-    setIssue(null);
-    setRetake(null);
-    let file = shot.upper || shot;
-    let preview = URL.createObjectURL(file);
-    setPending({ file, preview, ratios: null, ask: false });
-    setBusy(true);
-    let ratios;
-    if (shot.upper) {
-      // Close-up 2-shot never blocks: soft warnings only, the photo is always saved.
-      const res = await extractTwoPartRatios(shot.upper, shot.lower)
-        .catch(() => ({ file: shot.upper, ratios: null, warnings: ["no_measure"] }));
-      setBusy(false);
-      setPending({ file: res.file, preview: URL.createObjectURL(res.file), ratios: res.ratios, confirm: true, warnings: res.warnings,
-        shots: { upper: shot.upper, lower: shot.lower }, thumbs: { upper: URL.createObjectURL(shot.upper), lower: URL.createObjectURL(shot.lower) } });
-      return;
-    }
-    try { ratios = await extractBodyRatios(file); }
-    catch (e) { setIssue(e.message); setPending({ file, preview, ratios: null, ask: false, bad: true }); setBusy(false); return; }
-    setBusy(false);
-    await proceed(file, preview, ratios);
-  };
-
-  const proceed = async (file, preview, ratios) => {
-    const fresh = (await api.get("/profile/measurements").catch(() => ({ data: profile }))).data || {};
-    setProfile(fresh);
-    if (forceBody || !fresh.height_cm || !fresh.weight_kg) { setPending((p) => ({ ...p, file, preview, ratios, ask: true, confirm: false })); return; }
-    await upload(file, ratios, {}, fresh);
-  };
-
+  const openCam = () => { if (busy) return; askLevelPermission(); setCamOpen(true); };
   const remove = async () => {
     if (!window.confirm("Eliminare la foto del tuo Avatar?")) return;
     try { await api.delete("/profile/avatar"); setAvatar(null); toast.success("Foto eliminata"); }
     catch { toast.error("Eliminazione non riuscita"); }
   };
 
-  const shown = pending?.preview || (avatar?.path ? fileUrl(avatar.path) : null);
+  const shown = preview || (avatar?.path ? fileUrl(avatar.path) : null);
   return (
     <section id="il-mio-avatar" className="border hairline bg-white p-6 md:p-8" translate="no" data-testid={manage ? "avatar-settings" : "avatar-box"}>
       <div className="flex items-end justify-between gap-4 flex-wrap">
         <h2 className="font-serif text-3xl md:text-4xl tracking-tighter leading-[1]">Il Mio Avatar{profileName ? <span className="text-[#8C7355]"> · {profileName}</span> : null}</h2>
-        {avatar?.path && !pending && (
+        {avatar?.path && !busy && (
           <span className="flex items-center gap-2 text-xs text-emerald-700" data-testid="avatar-ready">
-            <CheckCircle size={16} weight="fill" /> Misure e outfit attivi
+            <CheckCircle size={16} weight="fill" /> Pronto per la prova vestiti
           </span>
         )}
       </div>
       <div className="mt-6 flex flex-col sm:flex-row gap-6 items-start">
-        <button type="button" onClick={() => { if (busy) return; askLevelPermission(); setCamOpen(true); }}
+        <button type="button" onClick={openCam}
           className="upload-zone relative overflow-hidden w-full sm:w-60 shrink-0 cursor-pointer" style={{ aspectRatio: "3/4" }}
           data-testid="avatar-tap-zone">
           {shown ? (
@@ -209,40 +73,26 @@ export default function AvatarBox({ manage = false }) {
               <span className="mt-3 font-serif text-lg leading-tight" data-testid="avatar-empty-text">Tocca per creare il tuo Avatar</span>
             </div>
           )}
-          {busy && <div className="absolute inset-0 bg-white/70 flex items-center justify-center label-caps" data-testid="avatar-busy">Calcolo misure…</div>}
+          {busy && <div className="absolute inset-0 bg-white/70 flex items-center justify-center label-caps" data-testid="avatar-busy">Salvo la foto…</div>}
         </button>
         <div className="flex-1">
           <div className="flex gap-3 flex-wrap mb-4">
-            <button type="button" disabled={busy} onClick={() => { askLevelPermission(); setCamOpen(true); }} className="btn-primary disabled:opacity-50" data-testid="avatar-shoot-now-btn"><Camera size={14} /> Scatta ora</button>
+            <button type="button" disabled={busy} onClick={openCam} className="btn-primary disabled:opacity-50" data-testid="avatar-shoot-now-btn"><Camera size={14} /> Scatta ora</button>
             <button type="button" disabled={busy} onClick={() => galleryRef.current?.click()} className="btn-ghost disabled:opacity-50" data-testid="avatar-gallery-btn"><Images size={14} /> Carica da galleria</button>
             <input ref={galleryRef} type="file" accept="image/*" className="hidden" data-testid="avatar-gallery-input"
               onChange={async (e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) setGallery({ file: f, ...(await photoAgeDays(f)) }); }} />
           </div>
-          {avatar?.path && !pending && (
-            <p className="text-sm text-neutral-700">Una sola foto per tutto: le tue misure sono calcolate e la usiamo per ogni prova e outfit.
-              {!manage && <> Per cambiarla vai in <Link to="/settings" className="underline" data-testid="avatar-settings-link">Impostazioni</Link>.</>}
-            </p>
-          )}
-          {issue && <PhotoIssue code={issue} onRetake={() => { setCamMode("single"); setIssue(null); setPending(null); setCamOpen(true); }} />}
-          {pending?.confirm && (
-            <StitchPreview pending={pending}
-              onConfirm={() => { const p = pending; setPending({ ...p, confirm: false }); proceed(p.file, p.preview, p.ratios); }}
-              onRetake={(part) => { setRetake({ part, keep: pending.shots }); setCamMode("double"); setCamOpen(true); }} />
-          )}
-          {pending?.ask && (
-            <BodyForm initial={profile} onCancel={() => setPending(null)} onSubmit={(b) => upload(pending.file, pending.ratios, b)} />
+          {avatar?.path && !manage && (
+            <p className="text-sm text-neutral-700">Per cambiarla o eliminarla vai in <Link to="/settings" className="underline" data-testid="avatar-settings-link">Impostazioni</Link>.</p>
           )}
           {manage && avatar?.path && (
-            <div className="mt-4 flex gap-3">
-              <button onClick={() => { askLevelPermission(); setCamOpen(true); }} className="btn-primary" data-testid="avatar-change-btn"><Camera size={14} /> Cambia foto</button>
-              <button onClick={remove} className="btn-ghost" data-testid="avatar-delete-btn"><Trash size={14} /> Elimina foto</button>
-            </div>
+            <button onClick={remove} className="btn-ghost mt-2" data-testid="avatar-delete-btn"><Trash size={14} /> Elimina foto</button>
           )}
           <Notes />
         </div>
       </div>
       {gallery && <GalleryWarning info={gallery} onCancel={() => setGallery(null)} onAccept={() => { const f = gallery.file; setGallery(null); onCapture(f); }} />}
-      <AvatarCamera open={camOpen} initialMode={camMode} retakePart={retake?.part} keep={retake?.keep} onClose={() => { setCamOpen(false); setRetake(null); }} onCapture={onCapture} />
+      <AvatarCamera open={camOpen} initialMode="single" onClose={() => setCamOpen(false)} onCapture={(shot) => onCapture(shot.upper || shot)} />
     </section>
   );
 }

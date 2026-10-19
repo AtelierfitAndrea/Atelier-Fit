@@ -11,7 +11,6 @@ import TryonCounter from "@/components/TryonCounter";
 import PricingCards from "@/components/PricingCards";
 import CalcolaTagliaBox from "@/components/CalcolaTagliaBox";
 import AvatarBox from "@/components/AvatarBox";
-import UpdateReminderBanner from "@/components/UpdateReminderBanner";
 import { useSubscription } from "@/lib/subscription";
 import { useAvatar } from "@/lib/avatar";
 
@@ -56,7 +55,6 @@ export default function Dashboard() {
   return (
     <div className="space-y-14" data-testid="dashboard-root">
       <HoneymoonBanner />
-      <UpdateReminderBanner name={firstName} />
 
       <div className="flex items-center gap-4 flex-wrap" data-testid="accuracy-row">
         <AccuracyBadge nonce={nonce} />

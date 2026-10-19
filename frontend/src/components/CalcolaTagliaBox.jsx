@@ -3,7 +3,6 @@ import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { LinkSimple, Camera, Sparkle, CheckCircle, CloudArrowUp, ArrowRight } from "@phosphor-icons/react";
 import { api } from "@/lib/api";
-import { useAvatar } from "@/lib/avatar";
 
 export default function CalcolaTagliaBox() {
   const navigate = useNavigate();
@@ -14,20 +13,15 @@ export default function CalcolaTagliaBox() {
   const [chartText, setChartText] = useState("");
   const [textLoading, setTextLoading] = useState(false);
   const [importing, setImporting] = useState(false);
-  const { avatar } = useAvatar();
 
   const analyze = async () => {
     if (!url.trim()) { toast.error("Incolla prima il link del prodotto"); return; }
-    if (!avatar?.path) {
-      toast.error("Crea prima il tuo Avatar: una foto e calcoliamo le misure");
-      document.getElementById("il-mio-avatar")?.scrollIntoView({ behavior: "smooth" });
-      return;
-    }
     setWorking(true); setResult(null); setNeedsFallback(false);
     try {
       const { data } = await api.post("/product/analyze", { url });
       handleResult(data);
-    } catch (_e) {
+    } catch (e) {
+      if (e?.response?.data?.detail === "Completa le tue misure") { toast.error("Completa le tue misure"); navigate("/profile"); return; }
       // Site blocked / unreadable: go straight to the screenshot box, no error for the user.
       setNeedsFallback(true);
     } finally { setWorking(false); }

@@ -5,6 +5,7 @@ import LanguageSwitcher from "@/components/LanguageSwitcher";
 import FamilySwitcher from "@/components/FamilySwitcher";
 import TermsGate from "@/components/TermsGate";
 import OnboardingGate from "@/components/OnboardingGate";
+import ReminderPopup from "@/components/ReminderPopup";
 import { SignOut, House, User as UserIcon, TShirt, Sparkle, GearSix, MagnifyingGlass, Crown } from "@phosphor-icons/react";
 
 export default function AppShell({ children }) {
@@ -74,6 +75,7 @@ export default function AppShell({ children }) {
       <main className="max-w-[1400px] mx-auto px-6 md:px-10 py-10">{children}</main>
       <TermsGate />
       <OnboardingGate />
+      <ReminderPopup />
       <footer className="border-t hairline mt-16" data-testid="ip-footer">
         <div
           className="max-w-[1400px] mx-auto px-6 md:px-10 py-6 text-center"

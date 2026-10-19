@@ -10,7 +10,6 @@ export function AvatarProvider({ children }) {
   const [loading, setLoading] = useState(true);
   const [profileName, setProfileName] = useState(null);
   const [reminderDue, setReminderDue] = useState(false);
-  const [updateRequest, setUpdateRequest] = useState(0);
 
   const refresh = useCallback(async () => {
     try {
@@ -24,7 +23,7 @@ export function AvatarProvider({ children }) {
 
   useEffect(() => { if (user) refresh(); else { setAvatar(null); setLoading(false); } }, [user, refresh]);
 
-  return <Ctx.Provider value={{ avatar, loading, refresh, setAvatar, profileName, reminderDue, setReminderDue, updateRequest, requestUpdate: () => setUpdateRequest((n) => n + 1) }}>{children}</Ctx.Provider>;
+  return <Ctx.Provider value={{ avatar, loading, refresh, setAvatar, profileName, reminderDue, setReminderDue }}>{children}</Ctx.Provider>;
 }
 
 export const useAvatar = () => useContext(Ctx);

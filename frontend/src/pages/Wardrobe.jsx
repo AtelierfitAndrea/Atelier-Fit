@@ -3,7 +3,6 @@ import { Link } from "react-router-dom";
 import { api, fileUrl } from "@/lib/api";
 import { TShirt } from "@phosphor-icons/react";
 import OutfitBuilder from "@/components/OutfitBuilder";
-import TapeCalibration from "@/components/TapeCalibration";
 
 const FILTERS = ["all", "top", "bottom", "dress", "outerwear", "shoes"];
 
@@ -76,7 +75,6 @@ export default function Wardrobe() {
           ))}
         </div>
       )}
-      <TapeCalibration />
     </div>
   );
 }
