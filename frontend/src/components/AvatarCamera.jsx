@@ -2,10 +2,6 @@ import { useEffect, useRef, useState } from "react";
 import { X, Timer, Camera, ArrowsClockwise, Flashlight } from "@phosphor-icons/react";
 import { toast } from "sonner";
 
-const MODES = [
-  { k: "single", label: "1 foto intera" },
-  { k: "double", label: "2 scatti · poco spazio" },
-];
 const TIMER_S = 5;
 const TIMER_DOUBLE_S = 10;
 
@@ -47,9 +43,9 @@ function Silhouette() {
 }
 
 const VIDEO = { width: { ideal: 1080 }, height: { ideal: 1920 } };
-const NOT_NORMAL_LENS = /ultra|wide|dual|triple|tele|0[.,]5|macro|tripla|doppia|grandangol/i;
+const NOT_NORMAL_LENS = /tele|zoom|periscop|macro/i;
 
-// Main 1x lens only: avoid the 0.5x ultra-wide (barrel distortion widens the body) and force zoom 1x.
+// Normal or wide lens (0.5x-1x) only: never telephoto, no digital zoom.
 async function openNormalLens(facing) {
   let st = await navigator.mediaDevices.getUserMedia({ video: { facingMode: facing, ...VIDEO }, audio: false });
   try {
@@ -64,7 +60,7 @@ async function openNormalLens(facing) {
     }
     const track = st.getVideoTracks()[0];
     const zoom = track?.getCapabilities?.()?.zoom;
-    if (zoom && zoom.min <= 1 && zoom.max >= 1) await track.applyConstraints({ advanced: [{ zoom: 1 }] });
+    if (zoom) await track.applyConstraints({ advanced: [{ zoom: Math.max(zoom.min, Math.min(1, zoom.max)) }] });
   } catch (_e) { /* keep the default stream */ }
   return st;
 }
@@ -84,7 +80,7 @@ export default function AvatarCamera({ open, onClose, onCapture, initialMode = "
   const videoRef = useRef();
   const streamRef = useRef();
   const fileRef = useRef();
-  const [shotMode, setShotMode] = useState(initialMode);
+  const [shotMode, setShotMode] = useState("single");
   const [facing, setFacing] = useState("environment");
   const [count, setCount] = useState(0);
   const [failed, setFailed] = useState(false);
@@ -93,7 +89,7 @@ export default function AvatarCamera({ open, onClose, onCapture, initialMode = "
   const twoStep = shotMode === "double";
   const timerS = twoStep ? TIMER_DOUBLE_S : TIMER_S;
   const part = retakePart || (upper ? "lower" : "upper");
-  useEffect(() => { if (open) setShotMode(initialMode); }, [open, initialMode]);
+  useEffect(() => { if (open) setShotMode("single"); }, [open]);
   useEffect(() => { setUpper(null); setCount(0); setTorch(false); }, [shotMode, open]);
   useEffect(() => { if (!open) window.speechSynthesis?.cancel(); }, [open]);
 
@@ -181,15 +177,8 @@ export default function AvatarCamera({ open, onClose, onCapture, initialMode = "
       </div>
       {!failed && (
         <div className="px-4 py-5 flex flex-col items-center gap-3 text-white">
-          <div className={`flex gap-2 ${retakePart ? "hidden" : ""}`}>
-            {MODES.map((m) => (
-              <button key={m.k} onClick={() => setShotMode(m.k)}
-                className={`px-3 py-1.5 text-[11px] tracking-[0.15em] uppercase border ${shotMode === m.k ? "bg-white text-black border-white" : "border-white/40 text-white/80"}`}
-                data-testid={`avatar-camera-mode-${m.k}`}>{m.label}</button>
-            ))}
-          </div>
           <p className="text-[11px] text-white/70 text-center max-w-xs" data-testid="avatar-camera-mode-desc">
-            {twoStep ? "Per chi ha poco spazio davanti allo specchio, circa 1 metro: busto e gambe in 2 scatti, li uniamo noi." : "Il corpo intero in un solo scatto: appoggia il telefono a 2-3 metri."}
+            {twoStep ? "Per chi ha poco spazio davanti allo specchio, circa 1 metro: busto e gambe in 2 scatti, li uniamo noi." : "Il corpo intero in un solo scatto: appoggia il telefono a 1,5-2 metri, senza zoom."}
           </p>
           {twoStep ? (
             <>

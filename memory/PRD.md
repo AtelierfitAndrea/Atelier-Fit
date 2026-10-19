@@ -217,3 +217,7 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 - PHOTO_CALIB_CM = −2 now applied to ALL photo measurements (chest/waist/hips), single and 2-shot.
 - Product size recommendation is now deterministic (_apply_true_size): LLM only extracts the chart; size = first chart size whose upper bound ≥ user measurement (+1 cm tolerance) on category dims (top/outerwear chest; bottom waist+hips; dress all), ±1 for fit notes; explanation rewritten with real numbers. Fixes M→XL over-sizing.
 - Dashboard: PricingCards moved to the last section (before WeightModal/footer).
+
+## 2026-10-19 — Single full-body only
+- 2-shot mode removed from the UI (camera always "single"; two-part code in pose.js/AvatarBox now unused). Texts: telefono a 1,5-2 metri, senza zoom.
+- Lens policy changed: allow normal/wide (0.5x-1x); switch away only from tele/zoom/periscope/macro lenses; zoom constraint clamped to ≤1x (no digital zoom).
