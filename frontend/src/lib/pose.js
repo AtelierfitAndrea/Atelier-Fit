@@ -79,8 +79,8 @@ export async function extractBodyRatios(file) {
   for (let y = H - 1; y >= 0 && bottom < 0; y -= 1) for (let x = 0; x < W; x += 4) if (mask[y * W + x] >= 0.5) { bottom = y; break; }
   const bodyH = bottom - top;
   if (top < 0) throw new Error("no_pose");
-  if (top <= H * 0.005) throw new Error("cut_top");
-  if (bottom >= H - 2) throw new Error("cut_bottom");
+  if (top <= H * 0.02) throw new Error("cut_top");
+  if (bottom >= H * 0.98) throw new Error("cut_bottom");
   if (bodyH < H * 0.4) throw new Error("too_far");
 
   const sY = (p[11].y + p[12].y) / 2; const hY = (p[23].y + p[24].y) / 2; const torso = hY - sY;

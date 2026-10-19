@@ -221,3 +221,6 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 ## 2026-10-19 — Single full-body only
 - 2-shot mode removed from the UI (camera always "single"; two-part code in pose.js/AvatarBox now unused). Texts: telefono a 1,5-2 metri, senza zoom.
 - Lens policy changed: allow normal/wide (0.5x-1x); switch away only from tele/zoom/periscope/macro lenses; zoom constraint clamped to ≤1x (no digital zoom).
+
+## 2026-10-19 — Wide framing
+- Camera prefers ultra-wide lens (label ultra/0.5/grandangol) on the chosen side, never tele; zoom constraint = zoom.min (0.5x where supported). Preview object-contain (full captured frame, no tight crop). Silhouette 80% height (≈10% margin top/bottom). Pose cut checks: top ≥2%, bottom ≤98% of frame. Texts updated.

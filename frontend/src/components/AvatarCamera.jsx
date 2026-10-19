@@ -31,7 +31,7 @@ function LowerSilhouette() {
 
 function Silhouette() {
   return (
-    <svg viewBox="0 0 100 200" className="absolute inset-0 m-auto h-[88%] pointer-events-none" aria-hidden="true" data-testid="avatar-camera-silhouette">
+    <svg viewBox="0 0 100 200" className="absolute inset-0 m-auto h-[80%] pointer-events-none" aria-hidden="true" data-testid="avatar-camera-silhouette">
       <g fill="none" stroke="#fff" strokeOpacity="0.85" strokeWidth="1.2" strokeDasharray="3 2">
         <ellipse cx="50" cy="16" rx="10" ry="12" />
         <path d="M40 30 Q50 34 60 30 L76 38 Q80 40 80 46 L84 92 M40 30 L24 38 Q20 40 20 46 L16 92" />
@@ -44,8 +44,9 @@ function Silhouette() {
 
 const VIDEO = { width: { ideal: 1080 }, height: { ideal: 1920 } };
 const NOT_NORMAL_LENS = /tele|zoom|periscop|macro/i;
+const WIDE_LENS = /ultra|0[.,]5|grandangol/i;
 
-// Normal or wide lens (0.5x-1x) only: never telephoto, no digital zoom.
+// Widest lens available (0.5x ultra-wide when present), never telephoto, no digital zoom.
 async function openNormalLens(facing) {
   let st = await navigator.mediaDevices.getUserMedia({ video: { facingMode: facing, ...VIDEO }, audio: false });
   try {
@@ -53,14 +54,15 @@ async function openNormalLens(facing) {
     const side = facing === "user" ? /front|user|anteriore|frontale/i : /back|rear|environment|posteriore/i;
     const current = st.getVideoTracks()[0];
     const curLabel = current?.label || "";
-    const normal = devices.find((d) => side.test(d.label) && !NOT_NORMAL_LENS.test(d.label));
-    if (normal && NOT_NORMAL_LENS.test(curLabel) && normal.deviceId !== current.getSettings?.().deviceId) {
+    const onSide = devices.filter((d) => side.test(d.label) && !NOT_NORMAL_LENS.test(d.label));
+    const pick = onSide.find((d) => WIDE_LENS.test(d.label)) || onSide[0];
+    if (pick && pick.deviceId !== current.getSettings?.().deviceId && (NOT_NORMAL_LENS.test(curLabel) || WIDE_LENS.test(pick.label))) {
       st.getTracks().forEach((t) => t.stop());
-      st = await navigator.mediaDevices.getUserMedia({ video: { deviceId: { exact: normal.deviceId }, ...VIDEO }, audio: false });
+      st = await navigator.mediaDevices.getUserMedia({ video: { deviceId: { exact: pick.deviceId }, ...VIDEO }, audio: false });
     }
     const track = st.getVideoTracks()[0];
     const zoom = track?.getCapabilities?.()?.zoom;
-    if (zoom) await track.applyConstraints({ advanced: [{ zoom: Math.max(zoom.min, Math.min(1, zoom.max)) }] });
+    if (zoom) await track.applyConstraints({ advanced: [{ zoom: zoom.min }] });
   } catch (_e) { /* keep the default stream */ }
   return st;
 }
@@ -162,7 +164,7 @@ export default function AvatarCamera({ open, onClose, onCapture, initialMode = "
               onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) onCapture(f); }} data-testid="avatar-camera-native-input" />
           </div>
         ) : (
-          <video ref={videoRef} autoPlay playsInline muted className="absolute inset-0 w-full h-full object-cover"
+          <video ref={videoRef} autoPlay playsInline muted className="absolute inset-0 w-full h-full object-contain bg-black"
             style={{ transform: facing === "user" || twoStep ? "scaleX(-1)" : "none" }} data-testid="avatar-camera-video" />
         )}
         {!failed && (twoStep ? (part === "lower" ? <LowerSilhouette /> : <UpperSilhouette />) : <Silhouette />)}
@@ -170,7 +172,7 @@ export default function AvatarCamera({ open, onClose, onCapture, initialMode = "
           <p className="absolute top-3 left-1/2 -translate-x-1/2 w-[92%] max-w-md text-center text-xs text-white bg-black/70 backdrop-blur-sm px-4 py-2 rounded-full" data-testid="avatar-camera-hint">
             {twoStep
               ? (part === "lower" ? "2/2 Gambe: dalla vita ai piedi (la vita sulla linea dorata)" : "1/2 Busto: dalla testa a metà coscia (i fianchi sulla linea dorata)")
-              : "Allinea il corpo intero, dalla testa ai piedi"}
+              : "Corpo intero dentro la sagoma, con spazio sopra la testa e sotto i piedi"}
           </p>
         )}
         {count > 0 && <div className="absolute inset-0 flex items-center justify-center font-serif text-8xl text-white" data-testid="avatar-camera-countdown">{count}</div>}
@@ -178,7 +180,7 @@ export default function AvatarCamera({ open, onClose, onCapture, initialMode = "
       {!failed && (
         <div className="px-4 py-5 flex flex-col items-center gap-3 text-white">
           <p className="text-[11px] text-white/70 text-center max-w-xs" data-testid="avatar-camera-mode-desc">
-            {twoStep ? "Per chi ha poco spazio davanti allo specchio, circa 1 metro: busto e gambe in 2 scatti, li uniamo noi." : "Il corpo intero in un solo scatto: appoggia il telefono a 1,5-2 metri, senza zoom."}
+            {twoStep ? "Per chi ha poco spazio davanti allo specchio, circa 1 metro: busto e gambe in 2 scatti, li uniamo noi." : "Il corpo intero in un solo scatto: telefono a 1,5-2 metri, grandangolo, lascia spazio sopra la testa e sotto i piedi."}
           </p>
           {twoStep ? (
             <>

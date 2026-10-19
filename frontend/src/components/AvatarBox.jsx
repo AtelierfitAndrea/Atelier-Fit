@@ -91,7 +91,7 @@ function BodyForm({ initial, onSubmit, onCancel }) {
 function Notes() {
   return (
     <div className="mt-4 space-y-1.5" data-testid="avatar-notes">
-      <p className="text-xs text-neutral-600" data-testid="avatar-modes-note"><b>1 foto intera</b>, dalla testa ai piedi: telefono a 1,5-2 metri, fotocamera normale senza zoom.</p>
+      <p className="text-xs text-neutral-600" data-testid="avatar-modes-note"><b>1 foto intera</b>, dalla testa ai piedi con un po' di spazio sopra e sotto: telefono a 1,5-2 metri, grandangolo, senza zoom.</p>
       <p className="text-xs text-neutral-600">👙 Consiglio Atelier: con abbigliamento aderente o costume attendibilità 98%.</p>
       <p className="text-[11px] text-neutral-400" data-testid="avatar-privacy-note">🔒 La foto è criptata e visibile solo dal tuo account Atelier. Non la mostriamo a nessuno. Puoi cancellarla quando vuoi.</p>
     </div>
