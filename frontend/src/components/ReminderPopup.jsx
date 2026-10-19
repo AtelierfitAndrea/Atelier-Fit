@@ -5,7 +5,7 @@ import { api } from "@/lib/api";
 import { useAvatar } from "@/lib/avatar";
 
 export default function ReminderPopup() {
-  const { reminderDue, setReminderDue } = useAvatar();
+  const { reminderDue, setReminderDue, reminderYoung } = useAvatar();
   const navigate = useNavigate();
   if (!reminderDue) return null;
 
@@ -20,10 +20,10 @@ export default function ReminderPopup() {
       <div className="bg-white max-w-md w-full border hairline p-8 fade-up">
         <Ruler size={26} weight="thin" className="text-[#8C7355]" />
         <h3 className="font-serif text-3xl tracking-tight mt-4" data-testid="measures-reminder-title">Le tue misure sono cambiate?</h3>
-        <p className="mt-2 text-neutral-600" data-testid="measures-reminder-text">Aggiorna peso e misure</p>
+        <p className="mt-2 text-neutral-600" data-testid="measures-reminder-text">{reminderYoung ? "Sei ancora in fase di crescita, controllale" : "Aggiorna peso e misure"}</p>
         <div className="mt-8 flex gap-3 flex-wrap">
-          <button onClick={now} className="btn-primary" data-testid="measures-reminder-edit">Modifica ora</button>
-          <button onClick={later} className="btn-ghost" data-testid="measures-reminder-later">Ricordamelo dopo</button>
+          <button onClick={now} className="btn-primary" data-testid="measures-reminder-edit">Aggiorna ora</button>
+          <button onClick={later} className="btn-ghost" data-testid="measures-reminder-later">Ricordamelo tra 7 giorni</button>
         </div>
       </div>
     </div>

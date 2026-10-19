@@ -47,7 +47,7 @@ export default function OnboardingGate() {
         )}
         {current === "measures" && (
           <>
-            <h2 className="mt-3 font-serif text-3xl tracking-tight">Dacci le tue misure reali, le salviamo una volta sola!</h2>
+            <h2 className="mt-3 font-serif text-3xl tracking-tight">Dacci le tue misure reali, le salviamo noi per te!</h2>
             <p className="mt-2 text-sm text-neutral-600">Non dovrai più misurarti: la taglia per ogni brand è calcolata da queste.</p>
             <div className="mt-6"><MeasuresForm onSaved={() => setStep("photo")} /></div>
             <button onClick={() => setStep("photo")} className="mt-4 text-xs text-neutral-500 underline" data-testid="onboarding-skip-measures">Lo faccio dopo</button>

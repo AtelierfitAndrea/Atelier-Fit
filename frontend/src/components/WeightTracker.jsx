@@ -55,7 +55,7 @@ export default function WeightTracker({ onChange }) {
           <Scales size={22} weight="duotone" />
           <div>
             <div className="label-caps">Controllo peso</div>
-            <div className="font-serif text-xl">Ogni 2 mesi, per una vestibilità sempre perfetta</div>
+            <div className="font-serif text-xl">Ti avvisiamo noi quando è il momento di ricontrollare</div>
           </div>
         </div>
         <StatusPill status={status} />

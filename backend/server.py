@@ -593,7 +593,7 @@ async def get_avatar(user: User = Depends(get_current_user)):
     doc = await db.users.find_one({"user_id": user.user_id}, {"_id": 0, "avatar_path": 1, "avatar_at": 1, "is_family_profile": 1, "name": 1, "reminder_snoozed_until": 1}) or {}
     return {"path": doc.get("avatar_path"), "created_at": doc.get("avatar_at"),
             "profile_name": doc.get("name") if doc.get("is_family_profile") else None,
-            "reminder_due": await _reminder_due(user.user_id, doc)}
+            "reminder_due": await _reminder_due(user.user_id, doc), "reminder_young": _is_young(await _get_measurements(user.user_id))}
 
 
 async def _reminder_due(user_id: str, doc: dict) -> bool:
@@ -603,10 +603,21 @@ async def _reminder_due(user_id: str, doc: dict) -> bool:
     stamps = [d for d in (_parse_dt(m.get("measured_at")), _parse_dt(m.get("photo_measured_at")), _parse_dt((last_w or {}).get("recorded_at"))) if d]
     now = datetime.now(timezone.utc)
     snoozed = _parse_dt(doc.get("reminder_snoozed_until"))
-    return bool(stamps and now - max(stamps) > timedelta(days=AVATAR_REMINDER_DAYS) and not (snoozed and snoozed > now))
+    return bool(stamps and now - max(stamps) > timedelta(days=_update_interval_days(m)) and not (snoozed and snoozed > now))
 
 
-AVATAR_REMINDER_DAYS = 60
+YOUNG_AGE = 22
+YOUNG_INTERVAL_DAYS = 90
+ADULT_INTERVAL_DAYS = 180
+
+
+def _is_young(m: dict) -> bool:
+    return bool(m.get("age")) and m["age"] < YOUNG_AGE
+
+
+def _update_interval_days(m: dict) -> int:
+    # Smart reminder: under 22 still growing -> 90 days, otherwise (or age unknown) 180 days.
+    return YOUNG_INTERVAL_DAYS if _is_young(m) else ADULT_INTERVAL_DAYS
 REMINDER_SNOOZE_DAYS = 7
 
 
@@ -674,7 +685,6 @@ async def save_measurements(m: Measurements, user: User = Depends(get_current_us
 
 
 # ----- Weight history (check every 2 months) -----
-WEIGHT_CHECK_DAYS = 60
 
 
 class WeightEntry(BaseModel):
@@ -683,13 +693,13 @@ class WeightEntry(BaseModel):
     recorded_at: Optional[str] = None
 
 
-def _weight_status(last_iso: Optional[str]) -> dict:
+def _weight_status(last_iso: Optional[str], days: int = ADULT_INTERVAL_DAYS) -> dict:
     if not last_iso:
         return {"last_check_at": None, "next_check_at": None, "days_overdue": 0, "due": True}
     last = datetime.fromisoformat(last_iso)
     if last.tzinfo is None:
         last = last.replace(tzinfo=timezone.utc)
-    nxt = last + timedelta(days=WEIGHT_CHECK_DAYS)
+    nxt = last + timedelta(days=days)
     now = datetime.now(timezone.utc)
     delta_days = (now - nxt).days
     return {
@@ -709,7 +719,7 @@ async def get_weight_history(user: User = Depends(get_current_user)):
         if "weight_enc" in it:
             it["weight_kg"] = _dec(it.pop("weight_enc"))
     last_iso = items[0]["recorded_at"] if items else None
-    return {"entries": items, "status": _weight_status(last_iso)}
+    return {"entries": items, "status": _weight_status(last_iso, _update_interval_days(await _get_measurements(user.user_id)))}
 
 
 @api_router.post("/profile/weight-history")
@@ -740,7 +750,7 @@ async def add_weight_entry(entry: WeightEntry, user: User = Depends(get_current_
     doc.pop("weight_enc", None)
     # Refresh accuracy snapshot
     await _compute_accuracy(user.user_id)
-    return {"entry": doc, "status": _weight_status(recorded_at)}
+    return {"entry": doc, "status": _weight_status(recorded_at, _update_interval_days(await _get_measurements(user.user_id)))}
 
 
 @api_router.delete("/profile/weight-history/{entry_id}")
@@ -1042,7 +1052,7 @@ async def _compute_accuracy(user_id: str) -> dict:
 
     # Weight is optional: freshness follows the latest real measurement or weight update.
     stamps = [d for d in (_parse_dt(m.get("measured_at")), _parse_dt(last_weight_update)) if d]
-    weight_stale = bool(stamps) and (datetime.now(timezone.utc) - max(stamps)).days > WEIGHT_CHECK_DAYS
+    weight_stale = bool(stamps) and (datetime.now(timezone.utc) - max(stamps)).days > _update_interval_days(m)
     if weight_stale:
         accuracy -= 30
     if not complete:

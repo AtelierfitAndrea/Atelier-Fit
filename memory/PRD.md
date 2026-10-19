@@ -241,3 +241,8 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 - RIMOSSO calcolo misure da foto (pose.js, quick-estimate, auto-measure, tape-calibration, MetroCalibration, TapeCalibration). Avatar = "La foto avatar serve solo per la prova vestiti"
 - ReminderPopup globale (AppShell) ogni 60 giorni dall'ultimo aggiornamento misure/peso: "Le tue misure sono cambiate?" Modifica ora / Ricordamelo dopo (7 giorni)
 - Onboarding: nome → misure → foto
+
+## 2026-06 — Promemoria misure smart per età (DONE, unit + screenshot)
+- _update_interval_days: età < 22 → 90 giorni ("Sei ancora in fase di crescita, controllale"), età ≥ 22 o assente → 180 giorni ("Aggiorna peso e misure"); GET /profile/avatar restituisce reminder_due + reminder_young; bottoni "Aggiorna ora" / "Ricordamelo tra 7 giorni"
+- Stessa finestra per accuracy/weight-status (niente più "ogni 2 mesi")
+- Titolo misure: "Dacci le tue misure reali, le salviamo noi per te!"; testo Home versione finale

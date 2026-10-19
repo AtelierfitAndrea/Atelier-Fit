@@ -20,7 +20,7 @@ export default function Profile() {
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-10" data-testid="profile-root">
       <div className="lg:col-span-7">
         <div className="label-caps mb-3">Le tue misure</div>
-        <h1 className="font-serif text-4xl md:text-5xl tracking-tighter leading-[1.05]" data-testid="profile-title">Dacci le tue misure reali, le salviamo una volta sola!</h1>
+        <h1 className="font-serif text-4xl md:text-5xl tracking-tighter leading-[1.05]" data-testid="profile-title">Dacci le tue misure reali, le salviamo noi per te!</h1>
         <p className="mt-4 text-neutral-600 max-w-lg leading-relaxed">
           Restano salvate sul tuo account per sempre. La taglia per ogni brand è calcolata solo da queste misure.
         </p>
