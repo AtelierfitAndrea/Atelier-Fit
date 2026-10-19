@@ -11,6 +11,7 @@ import PrivacyBox from "@/components/PrivacyBox";
 import AccountPersonalBox from "@/components/AccountPersonalBox";
 import OutfitGrid from "@/components/OutfitGrid";
 import IncludedNote from "@/components/IncludedNote";
+import CopyLook from "@/components/CopyLook";
 
 const CATEGORIES = [
   { k: "top", l: "Top" },
@@ -174,6 +175,8 @@ export default function Studio() {
           </div>
         </div>
       )}
+
+      <CopyLook personPath={personPath} uploadFile={uploadFile} />
 
       <OutfitGrid personPath={personPath} uploadFile={uploadFile} />
 

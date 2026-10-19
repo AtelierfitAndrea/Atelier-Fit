@@ -1359,6 +1359,19 @@ HANDS_RULE = (
 )
 
 
+def _measurements_desc(m_doc: Optional[dict]) -> str:
+    parts = []
+    for k, label in [
+        ("height_cm", "height"), ("weight_kg", "weight"),
+        ("chest_cm", "chest"), ("waist_cm", "waist"), ("hips_cm", "hips"),
+        ("shoulder_cm", "shoulders"), ("inseam_cm", "inseam"), ("foot_cm", "foot length"),
+    ]:
+        v = (m_doc or {}).get(k)
+        if v:
+            parts.append(f"{label} {v}{'kg' if k == 'weight_kg' else 'cm'}")
+    return (" Body measurements of the person: " + ", ".join(parts) + ".") if parts else ""
+
+
 # ----- Try-on generation -----
 class TryOnRequest(BaseModel):
     person_path: str
@@ -1384,20 +1397,7 @@ async def tryon_generate(req: TryOnRequest, user: User = Depends(get_current_use
     person_b64 = base64.b64encode(person_bytes).decode('utf-8')
     garment_b64 = base64.b64encode(garment_bytes).decode('utf-8')
 
-    measurements_desc = ""
-    if m_doc:
-        parts = []
-        for k, label in [
-            ("height_cm", "height"), ("weight_kg", "weight"),
-            ("chest_cm", "chest"), ("waist_cm", "waist"), ("hips_cm", "hips"),
-            ("shoulder_cm", "shoulders"), ("inseam_cm", "inseam"), ("foot_cm", "foot length"),
-        ]:
-            v = m_doc.get(k)
-            if v:
-                unit = "kg" if k == "weight_kg" else "cm"
-                parts.append(f"{label} {v}{unit}")
-        if parts:
-            measurements_desc = " Body measurements of the person: " + ", ".join(parts) + "."
+    measurements_desc = _measurements_desc(m_doc)
 
     category = (req.garment_category or "garment").lower()
     prompt = (
@@ -1489,6 +1489,166 @@ async def tryon_generate(req: TryOnRequest, user: User = Depends(get_current_use
     await consume_tryon_quota(user.account_id, status)
     doc.pop("_id", None)
     return doc
+
+
+# ----- Copia Look da Modello -----
+COPYLOOK_CATS = ("top", "bottom", "dress", "outerwear", "shoes")
+
+
+class CopyLookExtractRequest(BaseModel):
+    model_path: str
+
+
+class CopyLookItem(BaseModel):
+    name: str
+    category: str
+    image_path: Optional[str] = None
+
+
+class CopyLookApplyRequest(BaseModel):
+    model_path: str
+    items: List[CopyLookItem]
+
+
+class CopyLookSaveRequest(BaseModel):
+    image_path: str
+    name: str
+    category: str
+
+
+def _crop_box(img_bytes: bytes, box: list) -> bytes:
+    from PIL import Image, ImageOps
+    import io
+    im = ImageOps.exif_transpose(Image.open(io.BytesIO(img_bytes))).convert("RGB")
+    w, h = im.size
+    y0, x0, y1, x1 = [max(0, min(1000, float(v))) for v in box]
+    pad = 15
+    crop = im.crop((int(max(0, x0 - pad) * w / 1000), int(max(0, y0 - pad) * h / 1000),
+                    int(min(1000, x1 + pad) * w / 1000), int(min(1000, y1 + pad) * h / 1000)))
+    out = io.BytesIO()
+    crop.save(out, "JPEG", quality=90)
+    return out.getvalue()
+
+
+@api_router.post("/copylook/extract")
+async def copylook_extract(req: CopyLookExtractRequest, user: User = Depends(get_current_user)):
+    if _path_owner(req.model_path) != user.user_id:
+        raise HTTPException(status_code=403, detail="Accesso negato")
+    img_bytes, _ = get_object(req.model_path)
+    prompt = (
+        "This is a photo of a fashion model. Detect EVERY clothing item and shoes worn by the model "
+        "(ignore jewellery, bags and accessories). Return ONLY JSON:\n"
+        "{\"items\": [{\"name\": \"short Italian name with colour and material, e.g. Blazer beige in lino\", "
+        "\"category\": \"top|bottom|dress|outerwear|shoes\", \"box_2d\": [ymin, xmin, ymax, xmax]}]}\n"
+        "box_2d is normalised 0-1000 and must tightly contain only that garment. A pair of shoes is ONE item whose box covers both shoes. "
+        "No text outside the JSON."
+    )
+    chat = LlmChat(api_key=EMERGENT_KEY, session_id=f"copylook-{uuid.uuid4().hex[:8]}", system_message="You are a fashion garment detector. Reply with JSON only.")
+    chat.with_model("gemini", "gemini-3.8-flash")
+    try:
+        reply = await chat.send_message(UserMessage(text=prompt, file_contents=[ImageContent(base64.b64encode(img_bytes).decode())]))
+    except Exception as e:
+        logger.error(f"copylook extract error: {e}")
+        raise HTTPException(status_code=500, detail="Analisi della foto non riuscita, riprova.")
+    raw = (_extract_json(reply) or {}).get("items") or []
+    items, seen = [], set()
+    for it in raw[:8]:
+        cat = str(it.get("category") or "").lower()
+        if cat not in COPYLOOK_CATS or (cat == "shoes" and cat in seen):
+            continue
+        seen.add(cat)
+        image_path = None
+        box = it.get("box_2d")
+        if isinstance(box, list) and len(box) == 4:
+            try:
+                image_path = f"{APP_NAME}/garment/{user.user_id}/{uuid.uuid4().hex}.jpg"
+                put_object(image_path, await run_in_threadpool(_crop_box, img_bytes, box), "image/jpeg")
+            except Exception as e:
+                logger.warning(f"copylook crop failed: {e}")
+                image_path = None
+        items.append({"name": str(it.get("name") or cat.capitalize())[:80], "category": cat, "image_path": image_path})
+    if not items:
+        raise HTTPException(status_code=422, detail="Non abbiamo trovato capi nella foto. Usa una foto a figura intera del modello.")
+    m_doc = await _get_measurements(user.user_id)
+    for it in items:
+        it["recommended_size"] = recommend_size(m_doc, it["category"])
+    return {"items": items}
+
+
+@api_router.post("/copylook/apply")
+async def copylook_apply(req: CopyLookApplyRequest, user: User = Depends(get_current_user)):
+    status = await get_subscription_status(user.account_id)
+    if status["is_blocked"]:
+        raise HTTPException(status_code=402, detail="Quota exhausted — subscribe or buy an extra try-on.")
+    if _path_owner(req.model_path) != user.user_id:
+        raise HTTPException(status_code=403, detail="Accesso negato")
+    items = [i for i in req.items if i.category in COPYLOOK_CATS]
+    if not items:
+        raise HTTPException(status_code=400, detail="Seleziona almeno un capo")
+    acc = await db.users.find_one({"user_id": user.user_id}, {"_id": 0, "avatar_path": 1})
+    person_path = (acc or {}).get("avatar_path")
+    if not person_path:
+        raise HTTPException(status_code=400, detail="Crea prima il tuo Avatar nella Home")
+    m_doc = await _get_measurements(user.user_id)
+    sizes = [(i, recommend_size(m_doc, i.category)) for i in items]
+    person_bytes, _ = get_object(person_path)
+    model_bytes, _ = get_object(req.model_path)
+    garments_txt = "\n".join(f"• {i.name} ({i.category}) — size {s} for this person" for i, s in sizes)
+    prompt = (
+        "Create a photorealistic virtual try-on. IMAGE 1 is a real photo of a specific person — the ONLY person who may appear. "
+        "IMAGE 2 shows a fashion model wearing a complete look. Copy ONLY these garments from the model onto the person of IMAGE 1:\n"
+        f"{garments_txt}\n\n"
+        "ABSOLUTE REQUIREMENTS:\n"
+        "• Keep the EXACT face, head, hair, skin tone, body shape, proportions and pose of IMAGE 1. NEVER use the model's body or face.\n"
+        "• Keep the ORIGINAL BACKGROUND, lighting and framing of IMAGE 1.\n"
+        "• Re-cut each garment to the person's REAL body and size: it must fit like the indicated size would fit this body "
+        "(natural drape, length and ease relative to the person's measurements), not like it fits the model.\n"
+        "• Preserve colour, pattern, cut and material of each garment exactly as in IMAGE 2.\n"
+        "• Garments not listed stay as they are in IMAGE 1. Exactly ONE person in the output.\n\n"
+        f"{HANDS_RULE}{_measurements_desc(m_doc)}"
+    )
+    chat = LlmChat(api_key=EMERGENT_KEY, session_id=f"copylook-apply-{user.user_id}-{uuid.uuid4().hex[:8]}",
+                   system_message="You are a professional fashion virtual try-on generator. Re-dress the SAME person of IMAGE 1, never the model.")
+    chat.with_model("gemini", "gemini-3.1-flash-image-preview").with_params(modalities=["image", "text"])
+    msg = UserMessage(text=prompt, file_contents=[ImageContent(base64.b64encode(person_bytes).decode()), ImageContent(base64.b64encode(model_bytes).decode())])
+    try:
+        _text, images = await chat.send_message_multimodal_response(msg)
+    except Exception as e:
+        logger.error(f"copylook apply error: {e}")
+        raise HTTPException(status_code=500, detail=f"Image generation failed: {str(e)}")
+    if not images:
+        raise HTTPException(status_code=500, detail="No image was generated")
+    result_path = f"{APP_NAME}/tryon/{user.user_id}/{uuid.uuid4().hex}.png"
+    put_object(result_path, base64.b64decode(images[0]['data']), "image/png")
+    accuracy_snapshot = await _compute_accuracy(user.user_id)
+    rec = " · ".join(f"{i.category.capitalize()} {s}" for i, s in sizes)
+    doc = {
+        "id": str(uuid.uuid4()),
+        "user_id": user.user_id,
+        "person_path": person_path,
+        "garment_path": req.model_path,
+        "result_path": result_path,
+        "garment_name": "Look copiato: " + ", ".join(i.name for i in items)[:120],
+        "garment_category": "look",
+        "recommended_size": rec,
+        "copied_items": [{"name": i.name, "category": i.category, "size": s} for i, s in sizes],
+        "fitting_accuracy_at_time": accuracy_snapshot["accuracy"],
+        "is_reliable_at_time": accuracy_snapshot["reliable"],
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.tryons.insert_one(doc)
+    await consume_tryon_quota(user.account_id, status)
+    doc.pop("_id", None)
+    return doc
+
+
+@api_router.post("/copylook/save-garment")
+async def copylook_save_garment(req: CopyLookSaveRequest, user: User = Depends(get_current_user)):
+    if _path_owner(req.image_path) != user.user_id:
+        raise HTTPException(status_code=403, detail="Accesso negato")
+    meta = {"product_name": req.name, "brand": "Look copiato", "category": req.category}
+    return await _save_garment(user.user_id, None, meta, req.image_path)
+
 
 
 @api_router.get("/tryons")

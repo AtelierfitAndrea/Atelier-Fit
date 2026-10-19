@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
-import { Camera, CheckCircle, Trash } from "@phosphor-icons/react";
+import { Camera, CheckCircle, Trash, Images } from "@phosphor-icons/react";
+import GalleryWarning, { photoAgeDays } from "@/components/GalleryWarning";
 import { api, fileUrl } from "@/lib/api";
 import { useAvatar } from "@/lib/avatar";
 import { extractBodyRatios, extractTwoPartRatios } from "@/lib/pose";
@@ -111,6 +112,8 @@ export default function AvatarBox({ manage = false }) {
   const [issue, setIssue] = useState(null);
   const [camMode, setCamMode] = useState("single");
   const [retake, setRetake] = useState(null);
+  const [gallery, setGallery] = useState(null);
+  const galleryRef = useRef();
 
   useEffect(() => {
     if (!updateRequest || manage) return;
@@ -209,6 +212,12 @@ export default function AvatarBox({ manage = false }) {
           {busy && <div className="absolute inset-0 bg-white/70 flex items-center justify-center label-caps" data-testid="avatar-busy">Calcolo misure…</div>}
         </button>
         <div className="flex-1">
+          <div className="flex gap-3 flex-wrap mb-4">
+            <button type="button" disabled={busy} onClick={() => { askLevelPermission(); setCamOpen(true); }} className="btn-primary disabled:opacity-50" data-testid="avatar-shoot-now-btn"><Camera size={14} /> Scatta ora</button>
+            <button type="button" disabled={busy} onClick={() => galleryRef.current?.click()} className="btn-ghost disabled:opacity-50" data-testid="avatar-gallery-btn"><Images size={14} /> Carica da galleria</button>
+            <input ref={galleryRef} type="file" accept="image/*" className="hidden" data-testid="avatar-gallery-input"
+              onChange={async (e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) setGallery({ file: f, ...(await photoAgeDays(f)) }); }} />
+          </div>
           {avatar?.path && !pending && (
             <p className="text-sm text-neutral-700">Una sola foto per tutto: le tue misure sono calcolate e la usiamo per ogni prova e outfit.
               {!manage && <> Per cambiarla vai in <Link to="/settings" className="underline" data-testid="avatar-settings-link">Impostazioni</Link>.</>}
@@ -232,7 +241,8 @@ export default function AvatarBox({ manage = false }) {
           <Notes />
         </div>
       </div>
-      <AvatarCamera open={camOpen} initialMode={camMode} retakePart={retake?.part} keep={retake?.keep} onClose={() => { setCamOpen(false); setRetake(null); }} onCapture={onCapture} />
+      <GalleryWarning info={gallery} onCancel={() => setGallery(null)} onAccept={() => { const f = gallery.file; setGallery(null); onCapture(f); }} />
+      <AvatarCamera={camOpen} initialMode={camMode} retakePart={retake?.part} keep={retake?.keep} onClose={() => { setCamOpen(false); setRetake(null); }} onCapture={onCapture} />
     </section>
   );
 }
