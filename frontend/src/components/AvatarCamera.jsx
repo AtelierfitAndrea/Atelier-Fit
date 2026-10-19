@@ -29,6 +29,30 @@ function LowerSilhouette() {
   );
 }
 
+// Spirit level: phone upright (beta ~90°) and not tilted sideways (gamma ~0°).
+function Level() {
+  const [o, setO] = useState(null);
+  useEffect(() => {
+    const on = (e) => { if (e.beta !== null) setO({ beta: e.beta, gamma: e.gamma }); };
+    window.addEventListener("deviceorientation", on);
+    return () => window.removeEventListener("deviceorientation", on);
+  }, []);
+  if (!o) return null;
+  const tilt = Math.max(-30, Math.min(30, o.gamma || 0));
+  const pitch = Math.max(-30, Math.min(30, (o.beta || 0) - 90));
+  const ok = Math.abs(tilt) < 3 && Math.abs(pitch) < 6;
+  return (
+    <div className="absolute right-3 top-1/2 -translate-y-1/2 flex flex-col items-center gap-1" data-testid="avatar-camera-level">
+      <div className={`relative w-14 h-14 rounded-full border-2 ${ok ? "border-emerald-400" : "border-white/70"} bg-black/40`}>
+        <div className={`absolute w-4 h-4 rounded-full ${ok ? "bg-emerald-400" : "bg-[#FDE68A]"}`}
+          style={{ left: `calc(50% - 8px + ${tilt * 0.7}px)`, top: `calc(50% - 8px + ${pitch * 0.7}px)` }} />
+        <div className="absolute inset-0 m-auto w-5 h-5 rounded-full border border-white/60" />
+      </div>
+      <span className={`text-[10px] ${ok ? "text-emerald-300" : "text-white/80"}`} data-testid="avatar-camera-level-status">{ok ? "Dritto" : "Raddrizza"}</span>
+    </div>
+  );
+}
+
 function Silhouette() {
   return (
     <svg viewBox="0 0 100 200" className="absolute inset-0 m-auto h-[80%] pointer-events-none" aria-hidden="true" data-testid="avatar-camera-silhouette">
@@ -46,8 +70,8 @@ const VIDEO = { width: { ideal: 1080 }, height: { ideal: 1920 } };
 const NOT_NORMAL_LENS = /tele|zoom|periscop|macro/i;
 const WIDE_LENS = /ultra|0[.,]5|grandangol/i;
 
-// Widest lens available (0.5x ultra-wide when present), never telephoto, no digital zoom.
-async function openNormalLens(facing) {
+// 1x main lens by default; 0.5x ultra-wide only on request. Never telephoto, no digital zoom.
+async function openNormalLens(facing, wide) {
   let st = await navigator.mediaDevices.getUserMedia({ video: { facingMode: facing, ...VIDEO }, audio: false });
   try {
     const devices = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === "videoinput");
@@ -55,14 +79,15 @@ async function openNormalLens(facing) {
     const current = st.getVideoTracks()[0];
     const curLabel = current?.label || "";
     const onSide = devices.filter((d) => side.test(d.label) && !NOT_NORMAL_LENS.test(d.label));
-    const pick = onSide.find((d) => WIDE_LENS.test(d.label)) || onSide[0];
-    if (pick && pick.deviceId !== current.getSettings?.().deviceId && (NOT_NORMAL_LENS.test(curLabel) || WIDE_LENS.test(pick.label))) {
+    const pick = wide ? onSide.find((d) => WIDE_LENS.test(d.label)) : onSide.find((d) => !WIDE_LENS.test(d.label) && !/dual|triple|tripla|doppia/i.test(d.label));
+    const curBad = NOT_NORMAL_LENS.test(curLabel) || (wide ? !WIDE_LENS.test(curLabel) : WIDE_LENS.test(curLabel) || /dual|triple|tripla|doppia/i.test(curLabel));
+    if (pick && curBad && pick.deviceId !== current.getSettings?.().deviceId) {
       st.getTracks().forEach((t) => t.stop());
       st = await navigator.mediaDevices.getUserMedia({ video: { deviceId: { exact: pick.deviceId }, ...VIDEO }, audio: false });
     }
     const track = st.getVideoTracks()[0];
     const zoom = track?.getCapabilities?.()?.zoom;
-    if (zoom) await track.applyConstraints({ advanced: [{ zoom: zoom.min }] });
+    if (zoom) await track.applyConstraints({ advanced: [{ zoom: wide ? zoom.min : Math.max(zoom.min, Math.min(1, zoom.max)) }] });
   } catch (_e) { /* keep the default stream */ }
   return st;
 }
@@ -84,6 +109,7 @@ export default function AvatarCamera({ open, onClose, onCapture, initialMode = "
   const fileRef = useRef();
   const [shotMode, setShotMode] = useState("single");
   const [facing, setFacing] = useState("environment");
+  const [wide, setWide] = useState(false);
   const [count, setCount] = useState(0);
   const [failed, setFailed] = useState(false);
   const [upper, setUpper] = useState(null);
@@ -99,7 +125,7 @@ export default function AvatarCamera({ open, onClose, onCapture, initialMode = "
     if (!open) return undefined;
     let cancelled = false;
     setFailed(false);
-    openNormalLens(facing)
+    openNormalLens(facing, wide)
       .then((st) => {
         if (cancelled) { st.getTracks().forEach((t) => t.stop()); return; }
         streamRef.current = st;
@@ -108,7 +134,7 @@ export default function AvatarCamera({ open, onClose, onCapture, initialMode = "
       .catch(() => setFailed(true));
     if (!navigator.mediaDevices?.getUserMedia) setFailed(true);
     return () => { cancelled = true; streamRef.current?.getTracks().forEach((t) => t.stop()); streamRef.current = null; };
-  }, [open, facing]);
+  }, [open, facing, wide]);
 
   useEffect(() => {
     if (!count) return undefined;
@@ -175,12 +201,18 @@ export default function AvatarCamera({ open, onClose, onCapture, initialMode = "
               : "Corpo intero dentro la sagoma, con spazio sopra la testa e sotto i piedi"}
           </p>
         )}
+        {!failed && <Level />}
+        {!failed && wide && (
+          <p className="absolute bottom-3 left-1/2 -translate-x-1/2 w-[92%] max-w-md text-center text-[11px] text-black bg-[#FDE68A] px-3 py-2 rounded" data-testid="avatar-camera-wide-warning">
+            0.5x può allargare la figura ai bordi: tieni il corpo al centro, a 1,5-2 metri, l&apos;effetto è minimo. Se le misure sembrano gonfie torna a 1x.
+          </p>
+        )}
         {count > 0 && <div className="absolute inset-0 flex items-center justify-center font-serif text-8xl text-white" data-testid="avatar-camera-countdown">{count}</div>}
       </div>
       {!failed && (
         <div className="px-4 py-5 flex flex-col items-center gap-3 text-white">
           <p className="text-[11px] text-white/70 text-center max-w-xs" data-testid="avatar-camera-mode-desc">
-            {twoStep ? "Per chi ha poco spazio davanti allo specchio, circa 1 metro: busto e gambe in 2 scatti, li uniamo noi." : "Il corpo intero in un solo scatto: telefono a 1,5-2 metri, grandangolo, lascia spazio sopra la testa e sotto i piedi."}
+            {twoStep ? "Per chi ha poco spazio davanti allo specchio, circa 1 metro: busto e gambe in 2 scatti, li uniamo noi." : "Il corpo intero in un solo scatto: telefono a 1,5-2 metri, zoom 1x, lascia spazio sopra la testa e sotto i piedi."}
           </p>
           {twoStep ? (
             <>
@@ -209,6 +241,13 @@ export default function AvatarCamera({ open, onClose, onCapture, initialMode = "
                   <Timer size={30} />
                 </button>
                 <button onClick={snap} aria-label="Scatta subito" className="text-white/80" data-testid="avatar-camera-snap-btn"><Camera size={26} /></button>
+              </div>
+              <div className="flex gap-2" data-testid="avatar-camera-zoom">
+                {[[false, "1x"], [true, "0.5x"]].map(([w, l]) => (
+                  <button key={l} onClick={() => setWide(w)}
+                    className={`w-14 py-1.5 rounded-full text-xs border ${wide === w ? "bg-white text-black border-white" : "border-white/40 text-white/80"}`}
+                    data-testid={`avatar-camera-zoom-${w ? "05" : "1"}`}>{l}</button>
+                ))}
               </div>
               <span className="text-[11px] text-white/60" data-testid="avatar-camera-step">Tocca il cerchio: scatto tra {TIMER_S} secondi</span>
             </>

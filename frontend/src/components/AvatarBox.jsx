@@ -88,10 +88,13 @@ function BodyForm({ initial, onSubmit, onCancel }) {
   );
 }
 
+// iOS asks permission for the motion sensors (needed by the phone level) inside a tap.
+const askLevelPermission = () => { try { window.DeviceOrientationEvent?.requestPermission?.().catch(() => {}); } catch (_e) { /* not needed */ } };
+
 function Notes() {
   return (
     <div className="mt-4 space-y-1.5" data-testid="avatar-notes">
-      <p className="text-xs text-neutral-600" data-testid="avatar-modes-note"><b>1 foto intera</b>, dalla testa ai piedi con un po' di spazio sopra e sotto: telefono a 1,5-2 metri, grandangolo, senza zoom.</p>
+      <p className="text-xs text-neutral-600" data-testid="avatar-modes-note"><b>1 foto intera</b>, dalla testa ai piedi con un po' di spazio sopra e sotto: telefono a 1,5-2 metri, zoom 1x (0.5x solo se serve).</p>
       <p className="text-xs text-neutral-600">👙 Consiglio Atelier: con abbigliamento aderente o costume attendibilità 98%.</p>
       <p className="text-[11px] text-neutral-400" data-testid="avatar-privacy-note">🔒 La foto è criptata e visibile solo dal tuo account Atelier. Non la mostriamo a nessuno. Puoi cancellarla quando vuoi.</p>
     </div>
@@ -192,7 +195,7 @@ export default function AvatarBox({ manage = false }) {
         )}
       </div>
       <div className="mt-6 flex flex-col sm:flex-row gap-6 items-start">
-        <button type="button" onClick={() => !busy && setCamOpen(true)}
+        <button type="button" onClick={() => { if (busy) return; askLevelPermission(); setCamOpen(true); }}
           className="upload-zone relative overflow-hidden w-full sm:w-60 shrink-0 cursor-pointer" style={{ aspectRatio: "3/4" }}
           data-testid="avatar-tap-zone">
           {shown ? (
@@ -222,7 +225,7 @@ export default function AvatarBox({ manage = false }) {
           )}
           {manage && avatar?.path && (
             <div className="mt-4 flex gap-3">
-              <button onClick={() => setCamOpen(true)} className="btn-primary" data-testid="avatar-change-btn"><Camera size={14} /> Cambia foto</button>
+              <button onClick={() => { askLevelPermission(); setCamOpen(true); }} className="btn-primary" data-testid="avatar-change-btn"><Camera size={14} /> Cambia foto</button>
               <button onClick={remove} className="btn-ghost" data-testid="avatar-delete-btn"><Trash size={14} /> Elimina foto</button>
             </div>
           )}

@@ -613,8 +613,13 @@ PHOTO_CALIB_CM = -2  # photo silhouettes (clothes, arms) overestimate chest/wais
 async def _measure_and_save(user: User, raw: bytes, ratios: dict, height_cm, weight_kg, gender, forget_weight, store_photo: bool, calib_cm: int = PHOTO_CALIB_CM):
     saved_m, height_cm, weight_kg, gender = await _resolve_body_inputs(user, height_cm, weight_kg, gender, forget_weight)
     est = estimate_body(ratios, height_cm, weight_kg, gender)
-    if calib_cm:
-        est.update({k: est[k] + calib_cm for k in ("chest_cm", "waist_cm", "hips_cm") if est.get(k)})
+    raw_est = {"photo_raw_chest": est.get("chest_cm"), "photo_raw_waist": est.get("waist_cm")}
+    # Personal tape calibration (chest/waist) replaces the generic photo correction.
+    tape = {"chest_cm": saved_m.get("tape_offset_chest"), "waist_cm": saved_m.get("tape_offset_waist")}
+    for k in ("chest_cm", "waist_cm", "hips_cm"):
+        off = tape.get(k) if tape.get(k) is not None else calib_cm
+        if est.get(k) and off:
+            est[k] = round(est[k] + off)
     sizes = brand_sizes(est, gender)
     now = datetime.now(timezone.utc).isoformat()
     if store_photo:
@@ -629,7 +634,7 @@ async def _measure_and_save(user: User, raw: bytes, ratios: dict, height_cm, wei
     new_weight = weight_kg is not None and weight_kg != saved_m.get("weight_kg")
     saved = await _set_measurements(user.user_id, {
         **est, "height_cm": height_cm, "weight_kg": weight_kg, "gender": gender,
-        "brand_sizes": sizes, "precision": precision, "method": "auto_photo", "photo_measured_at": now,
+        "brand_sizes": sizes, "precision": precision, "method": "auto_photo", "photo_measured_at": now, **raw_est,
     }, now, remove=("weight_kg",) if forget_weight else ())
     if new_weight:
         await db.weight_history.insert_one({
@@ -638,6 +643,36 @@ async def _measure_and_save(user: User, raw: bytes, ratios: dict, height_cm, wei
         })
     await _compute_accuracy(user.user_id)
     return {"measurements": saved, "brand_sizes": sizes, "precision": precision}
+
+
+class TapeCalibIn(BaseModel):
+    chest_cm: float = Field(ge=60, le=170)
+    waist_cm: float = Field(ge=45, le=170)
+
+
+@api_router.get("/profile/tape-calibration")
+async def get_tape_calibration(user: User = Depends(get_current_user)):
+    m = await _get_measurements(user.user_id)
+    return {"done": m.get("tape_calibrated_at") is not None, "chest_cm": m.get("tape_chest"), "waist_cm": m.get("tape_waist"),
+            "calibrated_at": m.get("tape_calibrated_at"), "has_photo": m.get("method") == "auto_photo"}
+
+
+@api_router.post("/profile/tape-calibration")
+async def set_tape_calibration(body: TapeCalibIn, user: User = Depends(get_current_user)):
+    m = await _get_measurements(user.user_id)
+    if m.get("method") != "auto_photo":
+        raise HTTPException(status_code=400, detail="Crea prima il tuo Avatar: la taratura allinea le stime della foto")
+    # Raw photo estimate (before any correction); older records only have the corrected value.
+    raw_c = m.get("photo_raw_chest") or (m.get("chest_cm", 0) - PHOTO_CALIB_CM)
+    raw_w = m.get("photo_raw_waist") or (m.get("waist_cm", 0) - PHOTO_CALIB_CM)
+    now = datetime.now(timezone.utc).isoformat()
+    patch = {**m, "chest_cm": round(body.chest_cm), "waist_cm": round(body.waist_cm)}
+    patch["brand_sizes"] = brand_sizes(patch, m.get("gender"))
+    patch.update({"tape_offset_chest": round(body.chest_cm - raw_c, 1), "tape_offset_waist": round(body.waist_cm - raw_w, 1),
+                  "tape_chest": round(body.chest_cm), "tape_waist": round(body.waist_cm), "tape_calibrated_at": now})
+    saved = await _set_measurements(user.user_id, patch, now)
+    await _compute_accuracy(user.user_id)
+    return {"measurements": saved, "brand_sizes": patch["brand_sizes"]}
 
 
 # ----- Il Mio Avatar: one full-body photo for measurements + try-ons -----

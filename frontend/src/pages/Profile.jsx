@@ -4,6 +4,7 @@ import Avatar3D from "@/components/Avatar3D";
 import WeightTracker from "@/components/WeightTracker";
 import FittingAccuracy from "@/components/FittingAccuracy";
 import MeasureResult from "@/components/AutoMeasure";
+import MetroCalibration from "@/components/MetroCalibration";
 import { Link } from "react-router-dom";
 
 export default function Profile() {
@@ -39,7 +40,10 @@ export default function Profile() {
 
         <div className="mt-10 space-y-10">
           {loaded && (m.brand_sizes ? (
-            <MeasureResult data={{ measurements: m, brand_sizes: m.brand_sizes, precision: m.precision }} />
+            <div className="space-y-6">
+              <MeasureResult data={{ measurements: m, brand_sizes: m.brand_sizes, precision: m.precision }} />
+              <MetroCalibration onDone={(nm) => { setM((old) => ({ ...old, ...nm })); setAccuracyNonce((n) => n + 1); }} />
+            </div>
           ) : (
             <Link to="/dashboard#il-mio-avatar" className="block border hairline p-6 bg-white hover:border-[#0A0A0A]" data-testid="profile-create-avatar">
               <div className="font-serif text-xl">Crea il tuo Avatar</div>
