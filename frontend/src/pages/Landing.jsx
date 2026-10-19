@@ -27,7 +27,7 @@ export default function Landing() {
           </h1>
           <div className="mt-4 label-caps text-neutral-500" data-testid="hero-slogan-author">- by Andrea M.</div>
           <p className="mt-10 max-w-4xl font-serif text-2xl md:text-3xl lg:text-4xl leading-snug text-white" data-testid="hero-main-text">
-            &quot;Siamo il tuo commesso di fiducia, basta stress da camerino, basta resi da shopping online. Ti basta caricare una foto, darci peso e altezza, noi di Atelier ti indichiamo la taglia perfetta per te!! Scegli i capi che vuoi dai brand che più ami e noi te li mettiamo addosso, nella comodità del tuo divano di casa. La promessa My Atelier.&quot;
+            &quot;Siamo il tuo commesso di fiducia, basta stress da camerino, basta resi da shopping online. Ti basta darci le tue misure reali e una tua foto, noi le salviamo sul tuo account una volta sola e non dovrai più misurarti! Noi di Atelier ti indichiamo la taglia perfetta per te!! Scegli i capi che vuoi dai brand che più ami e noi te li mettiamo addosso, nella comodità del tuo divano di casa. La promessa My Atelier.&quot;
           </p>
         </div>
       </section>
