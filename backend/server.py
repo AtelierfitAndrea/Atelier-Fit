@@ -559,7 +559,7 @@ async def save_real_measurements(body: RealMeasuresIn, user: User = Depends(get_
             "id": str(uuid.uuid4()), "user_id": user.user_id, "weight_enc": _enc(body.weight_kg),
             "note": "Misure reali", "recorded_at": now,
         })
-    await db.users.update_one({"user_id": user.user_id}, {"$unset": {"reminder_snoozed_until": ""}})
+    await db.users.update_one({"user_id": user.user_id}, {"$set": {"measures_updated_at": now}, "$unset": {"reminder_snoozed_until": ""}})
     await _compute_accuracy(user.user_id)
     return {**saved, "complete": True}
 
@@ -590,7 +590,7 @@ def _clean_jpeg(raw: bytes) -> bytes:
 # ----- Il Mio Avatar: one full-body photo for measurements + try-ons -----
 @api_router.get("/profile/avatar")
 async def get_avatar(user: User = Depends(get_current_user)):
-    doc = await db.users.find_one({"user_id": user.user_id}, {"_id": 0, "avatar_path": 1, "avatar_at": 1, "is_family_profile": 1, "name": 1, "reminder_snoozed_until": 1}) or {}
+    doc = await db.users.find_one({"user_id": user.user_id}, {"_id": 0, "avatar_path": 1, "avatar_at": 1, "is_family_profile": 1, "name": 1, "reminder_snoozed_until": 1, "measures_updated_at": 1}) or {}
     return {"path": doc.get("avatar_path"), "created_at": doc.get("avatar_at"),
             "profile_name": doc.get("name") if doc.get("is_family_profile") else None,
             "reminder_due": await _reminder_due(user.user_id, doc), "reminder_young": _is_young(await _get_measurements(user.user_id))}
@@ -600,7 +600,7 @@ async def _reminder_due(user_id: str, doc: dict) -> bool:
     # Every 2 months: "have your measurements changed?" (snooze = 7 days).
     m = await _get_measurements(user_id)
     last_w = await db.weight_history.find_one({"user_id": user_id}, {"_id": 0, "recorded_at": 1}, sort=[("recorded_at", -1)])
-    stamps = [d for d in (_parse_dt(m.get("measured_at")), _parse_dt(m.get("photo_measured_at")), _parse_dt((last_w or {}).get("recorded_at"))) if d]
+    stamps = [d for d in (_parse_dt(doc.get("measures_updated_at")), _parse_dt(m.get("measured_at")), _parse_dt(m.get("photo_measured_at")), _parse_dt((last_w or {}).get("recorded_at"))) if d]
     now = datetime.now(timezone.utc)
     snoozed = _parse_dt(doc.get("reminder_snoozed_until"))
     return bool(stamps and now - max(stamps) > timedelta(days=_update_interval_days(m)) and not (snoozed and snoozed > now))

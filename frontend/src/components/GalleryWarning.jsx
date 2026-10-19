@@ -41,7 +41,7 @@ export default function GalleryWarning({ info, onAccept, onCancel }) {
     <div className="fixed inset-0 z-[80] bg-black/60 flex items-center justify-center p-4" data-testid="gallery-warning">
       {step === 1 ? (
         <Step key="s1" testid="gallery-warning-1" title="Foto non recente"
-          text="Attenzione: foto non recente, misurazioni e vestibilità potrebbero non essere attendibili per cambiamenti fisici nel tempo."
+          text="Attenzione: foto non recente. La prova vestiti potrebbe non rispecchiare il tuo aspetto attuale, per i cambiamenti fisici nel tempo. Le tue taglie restano calcolate solo dalle tue misure reali."
           label="Accetto e procedo a mio rischio" onCancel={onCancel}
           onOk={() => (old ? setStep(2) : onAccept())} />
       ) : (

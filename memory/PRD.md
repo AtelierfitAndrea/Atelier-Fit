@@ -246,3 +246,4 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 - _update_interval_days: età < 22 → 90 giorni ("Sei ancora in fase di crescita, controllale"), età ≥ 22 o assente → 180 giorni ("Aggiorna peso e misure"); GET /profile/avatar restituisce reminder_due + reminder_young; bottoni "Aggiorna ora" / "Ricordamelo tra 7 giorni"
 - Stessa finestra per accuracy/weight-status (niente più "ogni 2 mesi")
 - Titolo misure: "Dacci le tue misure reali, le salviamo noi per te!"; testo Home versione finale
+- 2026-06: Popup promemoria nero/oro, testi <22 / ≥22 aggiornati; mostrato max 1 volta ogni 7 giorni (snooze registrato appena appare); users.measures_updated_at salvato a ogni salvataggio misure. Primo avviso galleria riscritto: parla solo della prova vestiti.
