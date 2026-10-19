@@ -7,6 +7,7 @@ export const GUIDES = {
   waist_cm: { title: "Vita", text: "Misura nel punto più stretto del busto, appena sopra l'ombelico, respirando normalmente." },
   hips_cm: { title: "Fianchi", text: "Piedi uniti: misura il punto più largo di glutei e fianchi, con il metro orizzontale." },
   shoulder_cm: { title: "Spalle", text: "Da un'estremità della spalla all'altra, passando dietro il collo lungo la parte alta della schiena." },
+  foot_cm: { title: "Lunghezza piede", text: "Scalzo, tallone contro il muro e piede ben appoggiato: misura dal tallone alla punta dell'alluce. Misura entrambi i piedi e usa il più lungo." },
   inseam_cm: { title: "Lunghezza gamba", text: "Dall'inguine fino alla caviglia, lungo l'interno gamba. In alternativa misura un pantalone che ti sta bene." },
 };
 
@@ -21,13 +22,31 @@ const TAPE = {
   inseam_cm: <path d="M57 141 L52 242" />,
 };
 
+const TAPE_CSS = `
+  .mg-tape{fill:none;stroke:#8C7355;stroke-width:1.6;stroke-dasharray:100;stroke-linecap:round;animation:mgDraw 5s ease-in-out infinite}
+  @keyframes mgDraw{0%{stroke-dashoffset:100;opacity:1}50%{stroke-dashoffset:0;opacity:1}85%{stroke-dashoffset:0;opacity:1}100%{stroke-dashoffset:0;opacity:0}}
+`;
+
+function FootFigure() {
+  return (
+    <svg viewBox="0 0 200 110" className="w-56 h-auto mx-auto" data-testid="measure-guide-figure-foot_cm">
+      <style>{TAPE_CSS}</style>
+      <path d="M14 20 L14 92" stroke="#0A0A0A" strokeWidth="0.8" />
+      <path d="M16 70 Q16 52 34 50 L120 44 Q150 42 170 52 Q188 60 186 72 Q184 82 168 82 L40 84 Q16 86 16 70 Z" fill="none" stroke="#0A0A0A" strokeWidth="0.8" strokeLinejoin="round" />
+      <path d="M8 92 L194 92" stroke="#0A0A0A" strokeWidth="0.5" strokeDasharray="2 3" />
+      <path d="M16 100 L186 100" pathLength="100" className="mg-tape" data-testid="measure-guide-tape" />
+      <path d="M16 96 L16 104 M186 96 L186 104" stroke="#8C7355" strokeWidth="1" />
+      <text x="16" y="16" fontSize="7" fill="#8C7355">tallone</text>
+      <text x="168" y="40" fontSize="7" fill="#8C7355">punta</text>
+    </svg>
+  );
+}
+
 function Figure({ field }) {
+  if (field === "foot_cm") return <FootFigure />;
   return (
     <svg viewBox="0 0 120 260" className="w-40 h-auto mx-auto" data-testid={`measure-guide-figure-${field}`}>
-      <style>{`
-        .mg-tape{fill:none;stroke:#8C7355;stroke-width:1.6;stroke-dasharray:100;stroke-linecap:round;animation:mgDraw 5s ease-in-out infinite}
-        @keyframes mgDraw{0%{stroke-dashoffset:100;opacity:1}50%{stroke-dashoffset:0;opacity:1}85%{stroke-dashoffset:0;opacity:1}100%{stroke-dashoffset:0;opacity:0}}
-      `}</style>
+      <style>{TAPE_CSS}</style>
       <circle cx="60" cy="22" r="11" fill="none" stroke="#0A0A0A" strokeWidth="0.8" />
       <path d={BODY} fill="none" stroke="#0A0A0A" strokeWidth="0.8" strokeLinejoin="round" />
       {cloneElement(TAPE[field], { pathLength: 100, className: "mg-tape", "data-testid": "measure-guide-tape" })}

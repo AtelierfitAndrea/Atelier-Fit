@@ -26,6 +26,7 @@ export default function FittingAccuracy({ nonce = 0 }) {
     hips_cm: "fianchi",
     shoulder_cm: "spalle",
     inseam_cm: "lunghezza gamba",
+    foot_cm: "lunghezza piede",
   };
 
   let message;

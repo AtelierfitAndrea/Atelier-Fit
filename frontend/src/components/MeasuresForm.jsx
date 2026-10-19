@@ -5,15 +5,17 @@ import { api } from "@/lib/api";
 import { useAvatar } from "@/lib/avatar";
 import MeasureGuide, { GUIDES } from "@/components/MeasureGuide";
 
-const REQUIRED = [["height_cm", 120, 230], ["chest_cm", 60, 170], ["waist_cm", 45, 170], ["hips_cm", 60, 180], ["shoulder_cm", 30, 70], ["inseam_cm", 50, 110]];
+const REQUIRED = [["height_cm", 120, 230], ["chest_cm", 60, 170], ["waist_cm", 45, 170], ["hips_cm", 60, 180], ["shoulder_cm", 30, 70], ["inseam_cm", 50, 110], ["foot_cm", 18, 35]];
+const PLACEHOLDER = { foot_cm: "es. 27.5" };
+const NOTE = { foot_cm: "Per darti la taglia esatta anche per sneakers e scarpe - Zara, Nike, Adidas hanno vestibilità diverse" };
 const OPTIONAL = [["weight_kg", "Peso", "kg", 35, 200], ["age", "Età", "anni", 14, 100]];
 
-function NumField({ id, label, unit, value, onChange, bad, onGuide }) {
+function NumField({ id, label, unit, value, onChange, bad, onGuide, placeholder = "—", note }) {
   return (
     <label className="block">
       <span className="label-caps block mb-2 whitespace-nowrap">{label}</span>
       <div className={`flex items-center border focus-within:border-[#0A0A0A] ${bad ? "border-[#B91C1C]" : "hairline"}`}>
-        <input type="number" inputMode="decimal" step="0.5" value={value ?? ""} placeholder="—" onChange={(e) => onChange(e.target.value)}
+        <input type="number" inputMode="decimal" step="0.5" value={value ?? ""} placeholder={placeholder} onChange={(e) => onChange(e.target.value)}
           className="w-full px-3 py-3 bg-transparent outline-none font-serif text-lg" data-testid={`measure-input-${id}`} />
         <span className="px-3 text-xs text-neutral-500">{unit}</span>
       </div>
@@ -22,6 +24,7 @@ function NumField({ id, label, unit, value, onChange, bad, onGuide }) {
           <PlayCircle size={14} /> Guarda come
         </button>
       )}
+      {note && <p className="mt-1 text-[11px] leading-snug text-neutral-500" data-testid={`measure-note-${id}`}>{note}</p>}
     </label>
   );
 }
@@ -67,7 +70,7 @@ export default function MeasuresForm({ onSaved }) {
       <div className="label-caps">Obbligatorie · con il metro da sarta</div>
       <div className="mt-4 grid grid-cols-2 md:grid-cols-3 gap-4">
         {REQUIRED.map(([k, lo, hi]) => (
-          <NumField key={k} id={k} label={GUIDES[k].title} unit="cm" value={v[k]} onChange={set(k)} bad={tried && invalid(k, lo, hi)} onGuide={() => setGuide(k)} />
+          <NumField key={k} id={k} label={GUIDES[k].title} unit="cm" value={v[k]} onChange={set(k)} bad={tried && invalid(k, lo, hi)} onGuide={() => setGuide(k)} placeholder={PLACEHOLDER[k]} note={NOTE[k]} />
         ))}
       </div>
       <div className="mt-8 label-caps">Facoltative</div>

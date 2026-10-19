@@ -18,7 +18,7 @@ import httpx
 from bs4 import BeautifulSoup
 import json as pyjson
 from cryptography.fernet import Fernet, InvalidToken
-from body_measure import brand_sizes
+from body_measure import brand_sizes, shoe_size
 import re
 import stripe
 
@@ -184,19 +184,14 @@ async def get_current_user(
 def recommend_size(measurements: dict, category: str) -> str:
     """Size recommendation from the user's real tape measurements only."""
     cat = (category or "").lower()
-    if cat != "shoes" and not _measures_complete(measurements):
+    if not _measures_complete(measurements):
         return INCOMPLETE_SIZE
     measurements = measurements or {}
     std = next((b for b in measurements.get("brand_sizes") or [] if b.get("brand") == "H&M"), None)
     if std and cat in ("top", "dress", "outerwear", "bottom"):
         return std["bottom"] if cat == "bottom" else std["top"]
     if cat == "shoes":
-        foot = measurements.get("foot_cm")
-        if not foot:
-            return "40 EU"
-        # Rough EU shoe size from foot length
-        eu = round(foot * 1.5 + 2)
-        return f"{eu} EU"
+        return f"{shoe_size(measurements['foot_cm'])} EU"
     # Tops / dresses / outerwear use chest
     if cat in ("top", "dress", "outerwear"):
         chest = measurements.get("chest_cm")
@@ -523,7 +518,7 @@ async def _migrate_plaintext_personal_data() -> None:
         await db.weight_history.update_one({"_id": w["_id"]}, {"$set": {"weight_enc": _enc(w["weight_kg"])}, "$unset": {"weight_kg": ""}})
 
 
-REQUIRED_MEASURES = ("height_cm", "chest_cm", "waist_cm", "hips_cm", "shoulder_cm", "inseam_cm")
+REQUIRED_MEASURES = ("height_cm", "chest_cm", "waist_cm", "hips_cm", "shoulder_cm", "inseam_cm", "foot_cm")
 INCOMPLETE_SIZE = "Completa le tue misure"
 
 
@@ -538,6 +533,7 @@ class RealMeasuresIn(BaseModel):
     hips_cm: float = Field(ge=60, le=180)
     shoulder_cm: float = Field(ge=30, le=70)
     inseam_cm: float = Field(ge=50, le=110)
+    foot_cm: float = Field(ge=18, le=35)
     weight_kg: Optional[float] = Field(None, ge=35, le=200)
     age: Optional[int] = Field(None, ge=14, le=100)
     gender: Optional[str] = Field(None, pattern="^(female|male)$")

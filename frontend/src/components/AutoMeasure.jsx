@@ -8,6 +8,7 @@ export default function MeasureResult({ data }) {
             <div className="label-caps">{b.brand}</div>
             <div className="font-serif text-2xl mt-1">{b.top}</div>
             <div className="text-xs text-neutral-500">Sopra {b.top} · Sotto {b.bottom}</div>
+            {b.shoes && <div className="text-xs text-neutral-500" data-testid={`brand-shoe-${b.brand}`}>Scarpe EU {b.shoes}</div>}
           </div>
         ))}
       </div>

@@ -91,5 +91,26 @@ def brand_sizes(m: dict, gender: str) -> list:
     for brand, off in BRANDS.items():
         top = _size_for(_BASE[g], m["chest_cm"], 1, off)
         bottom = max(_size_for(_BASE[g], m["waist_cm"], 2, off), _size_for(_BASE[g], m["hips_cm"], 3, off), key=order.index)
-        out.append({"brand": brand, "top": top, "bottom": bottom})
+        row = {"brand": brand, "top": top, "bottom": bottom}
+        if m.get("foot_cm"):
+            row["shoes"] = shoe_size(m["foot_cm"], brand)
+        out.append(row)
     return out
+
+
+def _fmt_eu(v: float) -> str:
+    whole, frac = int(v), round((v - int(v)) * 3)
+    if frac == 3:
+        whole, frac = whole + 1, 0
+    return f"{whole}" + ("" if frac == 0 else (" ⅓" if frac == 1 else " ⅔"))
+
+
+def shoe_size(foot_cm: float, brand: str = "") -> str:
+    """Indicative EU shoe size from foot length (heel to toe), per brand fit."""
+    if brand == "Nike":
+        return f"{round((foot_cm * 1.5 + 2) * 2) / 2:g}"  # half sizes, 27 cm -> 42.5
+    if brand == "Adidas":
+        return _fmt_eu(round((foot_cm * 1.5 + 2.2) * 3) / 3)  # thirds, 27 cm -> 42 2/3
+    if brand == "Zara":
+        return str(math.ceil(42 + (foot_cm - 27.3) / 0.67 - 0.05))  # 27.3 cm -> 42, roomy whole sizes
+    return str(round(foot_cm * 1.5 + 1.75))

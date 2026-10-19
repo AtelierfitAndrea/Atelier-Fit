@@ -34,7 +34,7 @@ export default function Profile() {
           ) : (
             <div className="border hairline p-6 bg-white" data-testid="profile-incomplete">
               <div className="font-serif text-xl">{INCOMPLETE}</div>
-              <p className="text-sm text-neutral-600 mt-1">Compila i 6 campi obbligatori: poi ti indichiamo la taglia per ogni brand.</p>
+              <p className="text-sm text-neutral-600 mt-1">Compila i 7 campi obbligatori: poi ti indichiamo la taglia per ogni brand.</p>
             </div>
           )}
           <WeightTracker key={nonce} onChange={() => { load(); setNonce((n) => n + 1); }} />
@@ -49,6 +49,7 @@ export default function Profile() {
             <div className="mt-6 grid grid-cols-2 gap-3 text-sm">
               <Info label="Taglia top" value={std?.top || INCOMPLETE} testid="profile-size-top" />
               <Info label="Taglia bottom" value={std?.bottom || INCOMPLETE} testid="profile-size-bottom" />
+              <Info label="Scarpe (EU)" value={std?.shoes || INCOMPLETE} testid="profile-size-shoes" />
             </div>
           </div>
         </div>
