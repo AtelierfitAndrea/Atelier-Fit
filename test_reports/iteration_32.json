@@ -1,0 +1,40 @@
+{
+  "summary": "Tested Copia Look da Modello (backend + Studio UI) and Avatar 'Carica da galleria' with the 2-step warning modal. Found and FIXED 2 frontend bugs: (1) CRITICAL: AvatarBox.jsx line 245 '<AvatarCamera={camOpen}' (prop name 'open' missing) gave a Babel parse error, so the frontend did not compile at all; (2) GalleryWarning 'step' state stayed set between openings (the component was always mounted), so after cancelling or accepting an old photo at step 2, the NEXT gallery pick (even a fresh one) opened straight at step 2 ('Foto di 0 giorni fa'). This skipped the mandatory warning 1. After the fixes, backend passed 10/10 (1 real apply) and every UI flow passed (1 real apply from the UI).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/copylook/extract", "issue": "Crops are loose. 'Blazer nero' and 'Camicia bianca' crops both show almost the whole torso, including the other garment, so items saved to the wardrobe are not well isolated. Consider tighter boxes or segmentation."},
+      {"endpoint": "/api/copylook/extract", "issue": "Each extract call stores new cropped files under garment/{user}. Crops that are never saved are never cleaned up, so storage grows."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "AvatarBox", "issue": "FIXED: JSX syntax error '<AvatarCamera={camOpen}'. The whole app failed to compile.", "selector": "n/a", "priority": "CRITICAL"},
+      {"component": "GalleryWarning/AvatarBox", "issue": "FIXED: step state persisted. A fresh photo picked after a step-2 cancel/accept opened directly at gallery-warning-2. Fix: render GalleryWarning only when gallery is set, so it unmounts.", "selector": "[data-testid=gallery-warning-1]", "priority": "HIGH"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "TryOnDetail (/tryon/{id}) for a copied look", "issues": ["Labels are in English inside the Italian UI: WARDROBE, FITTING Nº (no number shown), RECOMMENDED SIZE, GENERATED, CATEGORY, GARMENT, YOU, TRY ANOTHER, DELETE. Category shows raw 'look'."]},
+      {"screen": "Studio Copia Look item card", "issues": ["Category label is raw English (OUTERWEAR/TOP/BOTTOM/SHOES) in the Italian UI"]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_copylook.py", "/app/test_reports/pytest/pytest_copylook.xml"],
+  "action_items": [
+    "Review the 2 fixes applied in AvatarBox.jsx (open={camOpen}; {gallery && <GalleryWarning .../>})",
+    "Optional: tighten the copylook crop boxes; clean up unsaved crops",
+    "Optional: translate the TryOnDetail labels and the copylook category labels into Italian"
+  ],
+  "critical_code_review_comments": [
+    "copylook_apply has no check that the user is not blocked/ quota in the UI flow beyond status; fine. Backend 402 / 403 / 400 checks are in place.",
+    "copylook_extract does not consume quota (correct per spec); apply consumes 1 try-on via consume_tryon_quota.",
+    "server.py is 2500+ lines and should be split into modules (routers).",
+    "CopyLook.apply sends image_path, which the backend ignores; harmless."
+  ],
+  "updated_files": ["/app/frontend/src/components/AvatarBox.jsx", "/app/backend/tests/test_copylook.py"],
+  "success_rate": {"backend": "100% (10/10)", "frontend": "100% after fixes"},
+  "seed_data_creation": "Temporary owner session inserted then deleted. Test garments (2) and test try-ons (2) were deleted via the API. Owner avatar untouched: in the UI test, avatar POSTs were route-blocked and a plain grey image was used, which leads to pose error avatar-photo-issue.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Dashboard is /dashboard (not /). Use cookie session_token on the preview domain plus localStorage atelier_owner='1'. Run test_copylook.py with env OWNER_TEST_TOKEN=<owner session> and RUN_APPLY=1 for the real Gemini apply (~5-40s). For gallery tests, dispatch a DataTransfer File with lastModified set into [data-testid=avatar-gallery-input], and block POST /api/profile/avatar to protect the owner avatar.",
+  "rca of the issue": "Bug 2: GalleryWarning kept useState(step) and returned null when info was null, so it was never unmounted and step=2 survived across openings. Repro: pick a file older than 30 days, then confirm step 1, cancel step 2, then pick a fresh file. Step 2 showed instead of step 1. Mitigation: conditional render (unmount)."
+}

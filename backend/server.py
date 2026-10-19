@@ -1522,7 +1522,7 @@ def _crop_box(img_bytes: bytes, box: list) -> bytes:
     im = ImageOps.exif_transpose(Image.open(io.BytesIO(img_bytes))).convert("RGB")
     w, h = im.size
     y0, x0, y1, x1 = [max(0, min(1000, float(v))) for v in box]
-    pad = 15
+    pad = 5
     crop = im.crop((int(max(0, x0 - pad) * w / 1000), int(max(0, y0 - pad) * h / 1000),
                     int(min(1000, x1 + pad) * w / 1000), int(min(1000, y1 + pad) * h / 1000)))
     out = io.BytesIO()

@@ -5,6 +5,8 @@ import { UserFocus, Scissors, ArrowRight, BookmarkSimple, Check } from "@phospho
 import { api, fileUrl } from "@/lib/api";
 import { useSubscription } from "@/lib/subscription";
 
+const CAT_IT = { top: "Top", bottom: "Pantaloni/Gonna", dress: "Abito", outerwear: "Capospalla", shoes: "Scarpe" };
+
 function ItemCard({ item, selected, onToggle, onSave, saved }) {
   return (
     <div className={`border p-3 bg-white transition-colors ${selected ? "border-[#0A0A0A]" : "hairline opacity-60"}`} data-testid={`copylook-item-${item.idx}`}>
@@ -15,7 +17,7 @@ function ItemCard({ item, selected, onToggle, onSave, saved }) {
         <div className="mt-2 flex items-start justify-between gap-2">
           <div>
             <div className="text-sm font-medium leading-tight" data-testid={`copylook-item-name-${item.idx}`}>{item.name}</div>
-            <div className="label-caps text-[#8C7355] mt-1">{item.category} · tua taglia {item.recommended_size}</div>
+            <div className="label-caps text-[#8C7355] mt-1">{CAT_IT[item.category] || item.category} · tua taglia {item.recommended_size}</div>
           </div>
           <span className={`w-5 h-5 shrink-0 border flex items-center justify-center ${selected ? "bg-[#0A0A0A] text-white" : ""}`}>{selected && <Check size={12} weight="bold" />}</span>
         </div>

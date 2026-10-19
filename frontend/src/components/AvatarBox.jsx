@@ -241,8 +241,8 @@ export default function AvatarBox({ manage = false }) {
           <Notes />
         </div>
       </div>
-      <GalleryWarning info={gallery} onCancel={() => setGallery(null)} onAccept={() => { const f = gallery.file; setGallery(null); onCapture(f); }} />
-      <AvatarCamera={camOpen} initialMode={camMode} retakePart={retake?.part} keep={retake?.keep} onClose={() => { setCamOpen(false); setRetake(null); }} onCapture={onCapture} />
+      {gallery && <GalleryWarning info={gallery} onCancel={() => setGallery(null)} onAccept={() => { const f = gallery.file; setGallery(null); onCapture(f); }} />}
+      <AvatarCamera open={camOpen} initialMode={camMode} retakePart={retake?.part} keep={retake?.keep} onClose={() => { setCamOpen(false); setRetake(null); }} onCapture={onCapture} />
     </section>
   );
 }

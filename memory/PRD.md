@@ -228,3 +228,9 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 ## 2026-10-19 — 1x default + 0.5x option, phone level, tape calibration
 - AvatarCamera: zoom buttons 1x (default: main lens, zoom 1) / 0.5x (ultra-wide lens or zoom.min) with yellow warning; never tele. Level (deviceorientation beta/gamma, "Dritto"/"Raddrizza"); iOS permission requested on tap in AvatarBox.
 - Taratura Metro (Profile, MetroCalibration.jsx): POST/GET /api/profile/tape-calibration {chest_cm, waist_cm} → sets current chest/waist to tape values, stores tape_offset_chest/waist = tape − raw photo estimate; future photo measurements use personal offsets (hips keep −2 generic). Raw estimates stored as photo_raw_chest/waist. Badge "tarata col metro". Tested iteration_31 (100%).
+
+## 2026-06 — Copia Look da Modello + Avatar da galleria (DONE, iteration_32)
+- Studio › CopyLook.jsx: carica foto modello → POST /api/copylook/extract (Gemini 3.8 Flash box_2d + ritaglio PIL) → elenco capi con taglia utente → POST /api/copylook/apply (Nano Banana, 1 prova, tryon category "look") → /tryon/{id}; POST /api/copylook/save-garment salva il ritaglio nell'armadio
+- AvatarBox: "Scatta ora" / "Carica da galleria"; GalleryWarning.jsx avviso obbligatorio + checkbox; secondo avviso se foto > 30 giorni (EXIF via exifr, fallback lastModified)
+## Backlog
+- P1 Stripe live keys; P2 etichette TryOnDetail in italiano; P2 ritagli più precisi (segmentazione) e pulizia ritagli non salvati
