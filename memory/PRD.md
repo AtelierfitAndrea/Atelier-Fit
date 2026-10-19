@@ -248,3 +248,4 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 - Titolo misure: "Dacci le tue misure reali, le salviamo noi per te!"; testo Home versione finale
 - 2026-06: Popup promemoria nero/oro, testi <22 / ≥22 aggiornati; mostrato max 1 volta ogni 7 giorni (snooze registrato appena appare); users.measures_updated_at salvato a ogni salvataggio misure. Primo avviso galleria riscritto: parla solo della prova vestiti.
 - 2026-06: Lunghezza piede (foot_cm 18-35, obbligatoria, "Guarda come" con animazione tallone→punta, nota brand). body_measure.shoe_size per brand (Nike mezze taglie, Adidas terzi, Zara intere, altri standard); brand_sizes include "shoes"; recommend_size shoes usa misure reali
+- 2026-06: Dashboard disclaimer accuratezza (bronzo, tra Honeymoon e Fitting Accuracy) — nascosto automaticamente quando misure complete e accuracy = 100
