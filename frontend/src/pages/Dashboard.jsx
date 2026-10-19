@@ -54,7 +54,12 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-14" data-testid="dashboard-root">
+      <div className="space-y-3">
       <HoneymoonBanner />
+      <div className="flex items-center gap-3 border border-[#8B7355]/30 bg-[#FAF8F5] px-4 py-2.5" data-testid="accuracy-disclaimer">
+        <Ruler size={16} weight="thin" className="shrink-0 text-[#8B7355]" />
+        <p className="text-xs italic text-[#8B7355] leading-snug">L&apos;attendibilità e la percentuale di misura perfetta salirà fino al 100% una volta registrate le tue misure reali.</p>
+      </div>
 
       <div className="flex items-center gap-4 flex-wrap" data-testid="accuracy-row">
         <AccuracyBadge nonce={nonce} />
@@ -66,6 +71,7 @@ export default function Dashboard() {
         >
           Aggiorna peso <ArrowRight size={14} weight="bold" />
         </button>
+      </div>
       </div>
 
 
