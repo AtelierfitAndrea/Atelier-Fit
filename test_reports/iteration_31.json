@@ -1,0 +1,30 @@
+{
+  "summary": "Tested backend and frontend (mobile 390x844) as user_avatar_test. Setup: user_avatar_test and session avatar_tok_test were missing again, so I re-created them as a fresh user (Marta). I added avatar.test@example.com to OWNER_EMAILS temporarily, then restored it and restarted the backend. /tmp/fullbody.jpg was missing. I copied /app/memory/test_fullbody.jpg, but pose.js rejected it as 'Foto troppo buia' (mean luma 53 < 55), so I brightened it 2x (luma 102) for the test. Backend: new tests/test_tape_calibration.py, 4/4 passed: 401 unauth; fresh user has_photo false and POST 400; 422 validation; calibrate, re-apply offsets, and redo. Frontend: all requested items PASS. (1) Camera with Back Camera, Back Ultra Wide Camera and Back Telephoto Camera. When the default stream is Back Camera, it applies zoom 1 with no warning. 0.5x re-opens the stream with deviceId uw-id, applies zoom 0.5 and shows avatar-camera-wide-warning with the exact text. 1x goes back to facingMode Back Camera with zoom 1 and the warning is removed. When the default stream is Ultra Wide, 1x re-opens with back-id and zoom 1, and 0.5x keeps the UW stream with zoom 0.5. The telephoto lens is never picked. (2) Level: hidden before any event. beta 90/gamma 0 shows Dritto; 90/10, 80/0 and 90/-4 show Raddrizza; 93/2 shows Dritto. (3) Home avatar-box has 3 notes: modes-note, the 👙 Consiglio and privacy-note. (4) Taratura: on a fresh /profile, metro-calibration is hidden and profile-create-avatar is shown. After the first avatar (body form 168/60 female) the result is 79/68/89, raw 81/70. Saving 88/70 shows metro-calibration-done 'Fatta: torace 88 cm · vita 70 cm' and it persists after reload. GET measurements returns 88/70 (hips 89 unchanged). GET tape-calibration returns done true, 88/70, has_photo true. The second avatar with the same photo (no body form) gives exactly 88/70, hips 89 (generic -2). (5) Validation: save is disabled when empty, at chest 59 or 171, and at waist 44. It is enabled at 60, 170 and 88.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "AvatarCamera level", "issues": ["The level sits at right-3 over the video. The 10px 'Raddrizza' label in white/80 has no backing, so it is hard or impossible to read over a light background (/tmp/it31_level.jpg). Give the label a bg-black/60 pill, or larger text."]},
+      {"screen": "Profile after Taratura", "issues": ["Chest and waist still show '±2cm stima AI' even though they now equal the user's tape values. Consider a 'metro' badge for calibrated values."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_tape_calibration.py", "/app/tests/it31_camera.py", "/app/test_reports/pytest/pytest_tape.xml"],
+  "action_items": [
+    "Optional: improve the contrast of the level status label.",
+    "Optional: show a 'metro' or 'tarata' label instead of '±2cm stima AI' on calibrated chest/waist.",
+    "Test fixture: user_avatar_test keeps disappearing from the DB and is not in OWNER_EMAILS. Document a stable test allowlist in /app/memory/test_credentials.md. /app/memory/test_fullbody.jpg is too dark for pose.js (luma 53 < 55): replace it with a brighter photo."
+  ],
+  "critical_code_review_comments": [
+    "openNormalLens: when 0.5x is chosen but there is no ultra-wide device and zoom.min >= 1, it silently stays at 1x while the UI shows 0.5x selected plus the warning. Consider disabling 0.5x when neither is available.",
+    "The tape offsets are absolute cm (tape minus raw at calibration time) and are applied forever, even after big weight changes. Consider expiring them or asking to redo after weight changes over 5 kg.",
+    "If the user later goes through quick-estimate (method height_weight), MetroCalibration hides (has_photo false) even though the calibration is done. That is acceptable, but the offsets remain silently.",
+    "_measure_and_save: 'if est.get(k) and off' skips a 0.0 tape offset. That is correct because raw equals tape, but the logic is implicit."
+  ],
+  "updated_files": ["/app/frontend/src/components/AvatarBox.jsx (added data-testid=avatar-tip-note to the 👙 note)", "/app/backend/tests/test_tape_calibration.py", "/app/tests/it31_camera.py"],
+  "success_rate": {"backend": "100% (4/4)", "frontend": "100% (5/5 requested items)"},
+  "seed_data_creation": "Re-created users{user_id:'user_avatar_test', email:'avatar.test@example.com', display_name:'Marta', terms_version:'1.0-2026-06'} and session avatar_tok_test. It now has an avatar plus measurements 88/70/89 (tape-calibrated, offsets chest +7, waist 0). OWNER_EMAILS was restored to 'andremo2014@gmail.com', so avatar_tok_test returns 403 again. The pytest user TEST_tape_user is self-cleaning. /tmp/fullbody.jpg is the test_fullbody.jpg brightened 2x. user_389c87aaadc6 was not touched.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "To use avatar_tok_test, add avatar.test@example.com to OWNER_EMAILS in backend/.env and restart the backend; the pytest suite needs this too. To get pose.js to accept the photo, brighten memory/test_fullbody.jpg (PIL ImageEnhance.Brightness 2.0). For the camera lens test, set window.__devs and __defaultLabel before cam_mock_lens.js (see tests/it31_camera.py). The native fallback path takes about 30s for MediaPipe in headless."
+}

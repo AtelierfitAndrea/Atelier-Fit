@@ -23,7 +23,9 @@ export default function MeasureResult({ data }) {
         {rows.map(([l, v]) => (
           <li key={l} className="flex justify-between py-2 text-sm">
             <span>{l}</span>
-            <span><span className="font-serif text-lg">{v} cm</span> <span className="text-xs text-neutral-500">±2cm stima AI</span></span>
+            <span><span className="font-serif text-lg">{v} cm</span> {m.tape_calibrated_at && ((l === "Torace" && v === Math.round(m.tape_chest)) || (l === "Vita" && v === Math.round(m.tape_waist)))
+              ? <span className="text-xs text-emerald-700" data-testid={`measure-tape-badge-${l.toLowerCase()}`}>tarata col metro</span>
+              : <span className="text-xs text-neutral-500">{m.tape_calibrated_at ? "allineata al metro" : "±2cm stima AI"}</span>}</span>
           </li>
         ))}
       </ul>

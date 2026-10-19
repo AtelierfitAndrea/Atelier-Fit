@@ -224,3 +224,7 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 
 ## 2026-10-19 — Wide framing
 - Camera prefers ultra-wide lens (label ultra/0.5/grandangol) on the chosen side, never tele; zoom constraint = zoom.min (0.5x where supported). Preview object-contain (full captured frame, no tight crop). Silhouette 80% height (≈10% margin top/bottom). Pose cut checks: top ≥2%, bottom ≤98% of frame. Texts updated.
+
+## 2026-10-19 — 1x default + 0.5x option, phone level, tape calibration
+- AvatarCamera: zoom buttons 1x (default: main lens, zoom 1) / 0.5x (ultra-wide lens or zoom.min) with yellow warning; never tele. Level (deviceorientation beta/gamma, "Dritto"/"Raddrizza"); iOS permission requested on tap in AvatarBox.
+- Taratura Metro (Profile, MetroCalibration.jsx): POST/GET /api/profile/tape-calibration {chest_cm, waist_cm} → sets current chest/waist to tape values, stores tape_offset_chest/waist = tape − raw photo estimate; future photo measurements use personal offsets (hips keep −2 generic). Raw estimates stored as photo_raw_chest/waist. Badge "tarata col metro". Tested iteration_31 (100%).

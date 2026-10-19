@@ -48,7 +48,7 @@ function Level() {
           style={{ left: `calc(50% - 8px + ${tilt * 0.7}px)`, top: `calc(50% - 8px + ${pitch * 0.7}px)` }} />
         <div className="absolute inset-0 m-auto w-5 h-5 rounded-full border border-white/60" />
       </div>
-      <span className={`text-[10px] ${ok ? "text-emerald-300" : "text-white/80"}`} data-testid="avatar-camera-level-status">{ok ? "Dritto" : "Raddrizza"}</span>
+      <span className={`text-[11px] px-2 py-0.5 rounded-full bg-black/70 ${ok ? "text-emerald-300" : "text-white"}`} data-testid="avatar-camera-level-status">{ok ? "Dritto" : "Raddrizza"}</span>
     </div>
   );
 }
