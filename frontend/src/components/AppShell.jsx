@@ -1,5 +1,7 @@
 import { Link, NavLink, useNavigate } from "react-router-dom";
+import { useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth";
+import { api } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 import LanguageSwitcher from "@/components/LanguageSwitcher";
 import FamilySwitcher from "@/components/FamilySwitcher";
@@ -8,7 +10,22 @@ import OnboardingGate from "@/components/OnboardingGate";
 import ReminderPopup from "@/components/ReminderPopup";
 import { SignOut, House, User as UserIcon, TShirt, Sparkle, GearSix, MagnifyingGlass, Crown, Question } from "@phosphor-icons/react";
 
+function useSupportPending() {
+  const { user } = useAuth();
+  const [n, setN] = useState(0);
+  useEffect(() => {
+    if (!user?.is_owner) return undefined;
+    const load = () => api.get("/admin/support/pending-count").then(({ data }) => setN(data.pending)).catch(() => {});
+    load();
+    const id = setInterval(load, 60000);
+    window.addEventListener("atelier-support-changed", load);
+    return () => { clearInterval(id); window.removeEventListener("atelier-support-changed", load); };
+  }, [user?.is_owner]);
+  return n;
+}
+
 export default function AppShell({ children }) {
+  const pending = useSupportPending();
   const { user, logout } = useAuth();
   const { t } = useI18n();
   const navigate = useNavigate();
@@ -57,8 +74,11 @@ export default function AppShell({ children }) {
           </nav>
           <div className="flex items-center gap-2 sm:gap-4 min-w-0">
             {user?.is_owner && (
-              <Link to="/stanza" title="Stanza del Proprietario" className="text-[#D4AF37] hover:scale-110 transition-transform" data-testid="owner-crown-btn">
+              <Link to={pending ? "/stanza/assistenza" : "/stanza"} title={pending ? `${pending} conversazioni da gestire` : "Stanza del Proprietario"} className="relative text-[#D4AF37] hover:scale-110 transition-transform" data-testid="owner-crown-btn">
                 <Crown size={24} weight="fill" />
+                {pending > 0 && (
+                  <span className="absolute -top-2 -right-2.5 min-w-[17px] h-[17px] px-1 rounded-full bg-[#D4AF37] text-[#0A0A0A] text-[10px] font-semibold leading-[17px] text-center ring-2 ring-[#0A0A0A]" data-testid="owner-crown-pending">{pending > 99 ? "99+" : pending}</span>
+                )}
               </Link>
             )}
             <Link to="/assistenza" className="md:hidden" title="Assistenza" data-testid="nav-support-mobile"><Question size={22} weight="duotone" /></Link>

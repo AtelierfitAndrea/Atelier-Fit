@@ -310,6 +310,22 @@ def create_support_router(db, get_account_user, require_owner, extract_json, eme
     async def faq():
         return [{"q": q, "a": a} for q, a in FAQ]
 
+    class VoteIn(BaseModel):
+        useful: bool
+
+    @r.get("/support/faq/my-votes")
+    async def my_faq_votes(user=Depends(get_account_user)):
+        docs = await db.support_faq_votes.find({"user_id": user.user_id}, {"_id": 0, "idx": 1, "useful": 1}).to_list(50)
+        return {str(d["idx"]): d["useful"] for d in docs}
+
+    @r.post("/support/faq/{idx}/vote")
+    async def vote_faq(idx: int, body: VoteIn, user=Depends(get_account_user)):
+        if not 0 <= idx < len(FAQ):
+            raise HTTPException(status_code=404, detail="FAQ non trovata")
+        await db.support_faq_votes.update_one({"user_id": user.user_id, "idx": idx},
+                                              {"$set": {"useful": body.useful, "question": FAQ[idx][0], "voted_at": _now()}}, upsert=True)
+        return {"idx": idx, "useful": body.useful}
+
     @r.post("/support/tickets")
     async def create_ticket(body: TicketIn, bg: BackgroundTasks, user=Depends(get_account_user)):
         t = await new_ticket(user.email, user.name, body.subject, "app", user.user_id)
@@ -392,6 +408,17 @@ def create_support_router(db, get_account_user, require_owner, extract_json, eme
         if not res.matched_count:
             raise HTTPException(status_code=404, detail="Conversazione non trovata")
         return {"status": body.status}
+
+    @r.get("/admin/support/pending-count")
+    async def admin_pending(_owner=Depends(require_owner)):
+        q = {"status": {"$ne": "closed"}, "$or": [{"status": "needs_human"}, {"unread_admin": True}]}
+        return {"pending": await db.support_tickets.count_documents(q)}
+
+    @r.get("/admin/support/faq-stats")
+    async def admin_faq_stats(_owner=Depends(require_owner)):
+        rows = await db.support_faq_votes.aggregate([{"$group": {"_id": "$idx", "yes": {"$sum": {"$cond": ["$useful", 1, 0]}}, "no": {"$sum": {"$cond": ["$useful", 0, 1]}}}}]).to_list(50)
+        by = {r["_id"]: r for r in rows}
+        return [{"idx": i, "q": q, "yes": by.get(i, {}).get("yes", 0), "no": by.get(i, {}).get("no", 0)} for i, (q, _a) in enumerate(FAQ)]
 
     @r.put("/admin/support/settings")
     async def admin_settings(body: SettingsIn, _owner=Depends(require_owner)):

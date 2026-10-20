@@ -258,3 +258,4 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 - Frontend: /assistenza (utente, link footer), /stanza/assistenza (owner: inbox, filtri, toggle auto-risposte, controlla mail ora, bozza AI, risposta manuale, stato)
 - Env: SUPPORT_EMAIL, SUPPORT_EMAIL_PASSWORD, SUPPORT_IMAP_HOST/PORT, SUPPORT_SMTP_HOST/PORT, SUPPORT_CC_EMAIL, WEBHOOK_CRON_SECRET (vanno aggiunti anche ai Secrets di produzione)
 - 2026-06: Sezione "Assistenza / FAQ" nel menu (nav-support + icona mobile): 10 FAQ in accordion (GET /api/support/faq, unica fonte con la KB dell'AI) + domanda libera con risposta AI. Nessuna mail di prova: solo ascolto in entrata (cron 15 min).
+- 2026-06: FAQ "Ti è stata utile?" Sì/No (1 voto per utente per FAQ, support_faq_votes; tabella % utile in /stanza/assistenza, rosso sotto 60%). Badge oro sulla corona 👑 con conversazioni da gestire (needs_human o non lette, non chiuse; refresh 60s) → link diretto all'inbox.

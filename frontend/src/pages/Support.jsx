@@ -44,9 +44,30 @@ function Thread({ t, onSent }) {
   );
 }
 
+function FaqVote({ idx, vote, onVote }) {
+  if (vote !== undefined) {
+    return <p className="mt-4 text-xs italic text-[#8B7355]" data-testid={`support-faq-thanks-${idx}`}>Grazie per il feedback{vote ? "" : ": se ti serve altro, fai una domanda libera qui sotto"}.</p>;
+  }
+  return (
+    <div className="mt-4 flex items-center gap-3 text-xs" data-testid={`support-faq-vote-${idx}`}>
+      <span className="italic text-[#8B7355]">Ti è stata utile?</span>
+      <button onClick={() => onVote(idx, true)} className="border hairline px-3 py-1 hover:border-[#0A0A0A]" data-testid={`support-faq-yes-${idx}`}>Sì</button>
+      <button onClick={() => onVote(idx, false)} className="border hairline px-3 py-1 hover:border-[#0A0A0A]" data-testid={`support-faq-no-${idx}`}>No</button>
+    </div>
+  );
+}
+
 function Faq() {
   const [faq, setFaq] = useState([]);
-  useEffect(() => { api.get("/support/faq").then(({ data }) => setFaq(data)).catch(() => {}); }, []);
+  const [votes, setVotes] = useState({});
+  useEffect(() => {
+    api.get("/support/faq").then(({ data }) => setFaq(data)).catch(() => {});
+    api.get("/support/faq/my-votes").then(({ data }) => setVotes(data)).catch(() => {});
+  }, []);
+  const vote = async (idx, useful) => {
+    try { await api.post(`/support/faq/${idx}/vote`, { useful }); setVotes((v) => ({ ...v, [idx]: useful })); }
+    catch { toast.error("Riprova"); }
+  };
   return (
     <section className="lg:col-span-12" data-testid="support-faq">
       <div className="label-caps mb-3">Domande frequenti</div>
@@ -54,7 +75,10 @@ function Faq() {
         {faq.map((f, i) => (
           <AccordionItem key={f.q} value={`faq-${i}`} className="hairline" data-testid={`support-faq-item-${i}`}>
             <AccordionTrigger className="font-serif text-lg text-left hover:no-underline" data-testid={`support-faq-q-${i}`}>{f.q}</AccordionTrigger>
-            <AccordionContent className="text-sm text-neutral-700 leading-relaxed" data-testid={`support-faq-a-${i}`}>{f.a}</AccordionContent>
+            <AccordionContent className="text-sm text-neutral-700 leading-relaxed" data-testid={`support-faq-a-${i}`}>
+              {f.a}
+              <FaqVote idx={i} vote={votes[i]} onVote={vote} />
+            </AccordionContent>
           </AccordionItem>
         ))}
       </Accordion>

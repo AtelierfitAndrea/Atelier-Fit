@@ -85,13 +85,45 @@ function Detail({ id, onChanged }) {
   );
 }
 
+function FaqStats() {
+  const [rows, setRows] = useState([]);
+  useEffect(() => { api.get("/admin/support/faq-stats").then(({ data }) => setRows(data)).catch(() => {}); }, []);
+  return (
+    <div className="mt-10 border p-6" style={{ borderColor: `${GOLD}40` }} data-testid="admin-faq-stats">
+      <div className="text-xs tracking-[0.3em]" style={{ color: GOLD }}>FAQ · TI È STATA UTILE?</div>
+      <table className="mt-4 w-full text-sm">
+        <thead><tr className="text-left text-[10px] tracking-[0.2em] text-white/40">
+          <th className="py-2 font-normal">DOMANDA</th><th className="font-normal text-right">SÌ</th><th className="font-normal text-right">NO</th><th className="font-normal text-right">UTILE</th>
+        </tr></thead>
+        <tbody>
+          {rows.map((r) => {
+            const tot = r.yes + r.no;
+            const pct = tot ? Math.round((r.yes / tot) * 100) : null;
+            return (
+              <tr key={r.idx} className="border-t border-white/10" data-testid={`admin-faq-stat-${r.idx}`}>
+                <td className="py-2 pr-4">{r.q}</td>
+                <td className="text-right" style={{ color: GOLD }}>{r.yes}</td>
+                <td className="text-right text-white/60">{r.no}</td>
+                <td className="text-right" style={{ color: pct !== null && pct < 60 ? "#F87171" : GOLD }}>{pct === null ? "—" : `${pct}%`}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 export default function AdminSupport() {
   const [data, setData] = useState(null);
   const [filter, setFilter] = useState("");
   const [sel, setSel] = useState(null);
   const [syncing, setSyncing] = useState(false);
 
-  const load = useCallback(() => api.get("/admin/support/tickets", { params: filter ? { status: filter } : {} }).then(({ data: d }) => setData(d)), [filter]);
+  const load = useCallback(() => api.get("/admin/support/tickets", { params: filter ? { status: filter } : {} }).then(({ data: d }) => {
+    setData(d);
+    window.dispatchEvent(new Event("atelier-support-changed"));
+  }), [filter]);
   useEffect(() => { load(); }, [load]);
 
   const toggle = async (v) => {
@@ -143,6 +175,7 @@ export default function AdminSupport() {
             {sel ? <Detail key={sel} id={sel} onChanged={load} /> : <div className="p-8 text-white/40 text-sm">Seleziona una conversazione</div>}
           </div>
         </div>
+        <FaqStats />
       </div>
     </div>
   );
