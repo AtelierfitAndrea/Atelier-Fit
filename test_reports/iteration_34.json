@@ -1,0 +1,43 @@
+{
+  "summary": "Support desk (support.py + /assistenza + /stanza/assistenza) tested end-to-end. Backend: 31/31 pytest pass (auth gating 401/403 on all admin+customer endpoints, cron 401/accepted/duplicate/400, relevant ticket -> Claude reply sent in ~10s status answered, follow-up -> 2nd AI reply, foreign ticket 404, invoice request -> needs_human with no AI message, auto_reply OFF -> AI draft hidden from user + needs_human, admin list counts/preview/filter, ai-draft, manual reply author admin sent true (drafts purged), PATCH status + 422/404, sync returns {new, fetched}). Frontend: footer link -> /assistenza, validation toast, category chips, submit -> ticket with support-waiting then 'Risposta inviata' via polling, follow-up inputs; /stanza admin-support-link -> inbox, filters with counts, toggle OFF/ON with toasts, sync, row -> detail with messages and INVIATA labels, BOZZA AI fills textarea, status select persists. 4 real emails sent in total. auto_reply restored to true (verified in DB).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "AI reply (SYSTEM_PROMPT)", "issue": "Claude returns Markdown (**Profilo > Le tue misure**, **Analisi prodotto**). Shown as raw asterisks in the plain-text email, the HTML email, the /assistenza thread and the admin detail. Add 'no Markdown, plain text only' to the prompt and/or strip ** before sending."},
+      {"endpoint": "process() on follow-up", "issue": "AI overwrites ticket.category on every reply (user picked 'giacche', the follow-up about trousers changed it to 'pantaloni'). Consider setting it only when category is null (email tickets)."},
+      {"endpoint": "POST /api/admin/support/tickets/{id}/reply", "issue": "Drafts are deleted and status set to 'answered' before checking whether SMTP worked; if send fails you get a 502 but the ticket still says answered and the draft is gone."},
+      {"endpoint": "POST /api/cron/support-poll", "issue": "A valid JSON body that is not an object (e.g. a list) makes (env or {}).get crash with a 500. Use isinstance(env, dict)."},
+      {"endpoint": "POST /api/support/tickets/{id}/messages", "issue": "Follow-ups are accepted on closed tickets (the UI hides the input but the API allows it) and they reopen the ticket and trigger the AI."},
+      {"endpoint": "POST /api/admin/support/sync", "issue": "Runs poll + AI + SMTP in the same request. With several new emails this can go past the ingress timeout. Consider running it in the background and returning early."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "AdminSupport Detail status select", "issue": "Changing the status calls load(), which runs setReply(draft||''). This wipes the AI draft or the manual reply being typed in admin-support-reply-input (reproduced: 955-char AI draft was cleared after the status change).", "selector": "[data-testid='admin-support-status-select']", "priority": "MEDIUM"},
+      {"component": "AdminSupport list", "issue": "The unread gold dot stays on the row after it is opened, until the list reloads (onChanged is not called after the detail GET marks it read).", "selector": "[data-testid^='admin-support-row-']", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/stanza/assistenza header", "issues": ["Auto-reply Switch uses shadcn bg-primary/bg-input. On the #0A0A0A background the track is almost invisible, so only a white dot shows and ON vs OFF is hard to tell. Style the checked track gold (#D4AF37) and the unchecked one white/20."]},
+      {"screen": "/assistenza + emails", "issues": ["Raw Markdown asterisks in AI replies (see backend minor)."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_support_desk.py", "/app/test_reports/pytest/support_desk.xml"],
+  "action_items": [
+    "Tell Claude to answer in plain text without Markdown (or strip **) in support.py SYSTEM_PROMPT",
+    "AdminSupport Detail: after a status change, don't overwrite the reply textarea (only set the draft on the first load)",
+    "Make the auto-reply Switch track visible on the dark background (gold when checked)",
+    "Optional: keep the user-chosen category; check the send result before deleting drafts / setting answered; isinstance check in the cron body; block follow-ups on closed tickets"
+  ],
+  "critical_code_review_comments": [
+    "IMAP read-only + BODY.PEEK confirmed in code; Sent copy goes to INBOX.Sent via APPEND; CC set on every send; Auto-Submitted header is set and checked for loop prevention. Good.",
+    "MAX_AUTO_REPLIES_PER_TICKET=5 protects against loops. Good.",
+    "uvicorn WatchFiles also reloads on changes in backend/tests/*. A reload during a BackgroundTask can lose an in-flight AI reply (ticket stays 'open'). Not seen in prod, just a dev caveat."
+  ],
+  "updated_files": ["/app/backend/tests/test_support_desk.py"],
+  "success_rate": {"backend": "100% (31/31)", "frontend": "~92% (1 medium UX bug, 1 design issue)"},
+  "seed_data_creation": "Created 4 TEST_ tickets for owner user_389c87aaadc6 (TEST_ Taglia giacca tra due misure, TEST_ Fattura abbonamento [closed], TEST_ Foto scura, TEST_ UI Numero scarpe Adidas). 4 real emails sent (CC andremo2014). Temp sessions, non-owner user and TEST_ cron_runs were deleted.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Run test_support_desk.py with env vars REACT_APP_BACKEND_URL, SUP_OWNER_TOKEN (session for user_389c87aaadc6), SUP_NONOWNER_TOKEN (a non-owner user session), WEBHOOK_CRON_SECRET. Each run sends 3 real emails. support_settings.auto_reply is true, last_uid=1."
+}

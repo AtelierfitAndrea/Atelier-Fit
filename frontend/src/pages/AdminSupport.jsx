@@ -40,17 +40,19 @@ function Detail({ id, onChanged }) {
   const [t, setT] = useState(null);
   const [reply, setReply] = useState("");
   const [busy, setBusy] = useState("");
-  const load = useCallback(() => api.get(`/admin/support/tickets/${id}`).then(({ data }) => {
+  const load = useCallback((initReply = false) => api.get(`/admin/support/tickets/${id}`).then(({ data }) => {
     setT(data);
-    const draft = [...data.messages].reverse().find((m) => m.draft);
-    setReply(draft ? draft.body : "");
+    if (initReply) {
+      const draft = [...data.messages].reverse().find((m) => m.draft);
+      setReply(draft ? draft.body : "");
+    }
   }), [id]);
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { load(true).then(onChanged); }, [load]); // eslint-disable-line react-hooks/exhaustive-deps
   if (!t) return <div className="p-8 text-white/40 text-sm">Caricamento…</div>;
 
   const send = async () => {
     setBusy("send");
-    try { await api.post(`/admin/support/tickets/${id}/reply`, { message: reply }); toast.success("Risposta inviata (CC andremo2014@gmail.com)"); await load(); onChanged(); }
+    try { await api.post(`/admin/support/tickets/${id}/reply`, { message: reply }); toast.success("Risposta inviata (CC andremo2014@gmail.com)"); setReply(""); await load(); onChanged(); }
     catch (e) { toast.error(e?.response?.data?.detail || "Invio non riuscito"); } finally { setBusy(""); }
   };
   const draft = async () => {
@@ -99,8 +101,8 @@ export default function AdminSupport() {
   };
   const sync = async () => {
     setSyncing(true);
-    try { const { data: r } = await api.post("/admin/support/sync"); if (r.error) toast.error(`Casella non raggiungibile: ${r.error}`); else toast.success(`Sincronizzata: ${r.new || 0} nuove conversazioni`); load(); }
-    finally { setSyncing(false); }
+    try { await api.post("/admin/support/sync"); toast.success("Controllo della casella avviato"); setTimeout(() => { load(); setSyncing(false); }, 8000); }
+    catch { toast.error("Controllo non riuscito"); setSyncing(false); }
   };
 
   const s = data?.settings || {};
@@ -116,7 +118,7 @@ export default function AdminSupport() {
           <div className="flex items-center gap-5 flex-wrap">
             <label className="flex items-center gap-3 text-xs tracking-[0.2em]" style={{ color: GOLD }}>
               RISPOSTE AUTOMATICHE AI
-              <Switch checked={!!s.auto_reply} onCheckedChange={toggle} data-testid="admin-support-autoreply-toggle" />
+              <Switch checked={!!s.auto_reply} onCheckedChange={toggle} className="data-[state=checked]:bg-[#D4AF37] data-[state=unchecked]:bg-white/20" data-testid="admin-support-autoreply-toggle" />
             </label>
             <button onClick={sync} disabled={syncing} className="text-xs tracking-[0.3em] border px-4 py-2 disabled:opacity-40" style={{ borderColor: GOLD, color: GOLD }} data-testid="admin-support-sync-btn">{syncing ? "CONTROLLO…" : "CONTROLLA MAIL ORA"}</button>
             <Link to="/stanza" className="text-xs tracking-[0.3em] border px-4 py-2" style={{ borderColor: GOLD, color: GOLD }} data-testid="admin-support-back-btn">KPI</Link>

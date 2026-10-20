@@ -250,3 +250,10 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 - 2026-06: Lunghezza piede (foot_cm 18-35, obbligatoria, "Guarda come" con animazione tallone→punta, nota brand). body_measure.shoe_size per brand (Nike mezze taglie, Adidas terzi, Zara intere, altri standard); brand_sizes include "shoes"; recommend_size shoes usa misure reali
 - 2026-06: Dashboard disclaimer accuratezza (bronzo, tra Honeymoon e Fitting Accuracy) — nascosto automaticamente quando misure complete e accuracy = 100
 - 2026-06: Stripe passato in LIVE (account acct_1UOM2IC7OX8nXTMU, restricted key). Prodotti live creati via setup_stripe.py; webhook live we_1USXDuC7OX8nXTMUcoyXhNcg → https://myatelierapp.it/api/stripe/webhook. Preview e produzione entrambe LIVE (scelta utente). Redeploy avviato.
+
+## 2026-06 — Assistenza studio@myatelierapp.it (DONE, iteration_34 + fix)
+- backend/support.py (router): ticket in-app (/api/support/tickets), polling IMAP pop.securemail.pro:993 read-only/BODY.PEEK (mail restano sul server), risposte SMTP smtp.securemail.pro:465 da studio@ con CC andremo2014@gmail.com + copia in INBOX.Sent; thread via In-Reply-To/References
+- AI: Claude Sonnet 4.5 (claude-sonnet-4-5-20250929) + KB 10 FAQ adattata ai percorsi reali; richieste non pertinenti → needs_human senza risposta; max 5 auto-risposte per ticket; auto-reply OFF → bozza AI
+- Cron .emergent/crons.yml support-poll ogni 15 min → POST /api/cron/support-poll (Bearer WEBHOOK_CRON_SECRET); prima connessione parte dall'UID attuale (non risponde a mail vecchie)
+- Frontend: /assistenza (utente, link footer), /stanza/assistenza (owner: inbox, filtri, toggle auto-risposte, controlla mail ora, bozza AI, risposta manuale, stato)
+- Env: SUPPORT_EMAIL, SUPPORT_EMAIL_PASSWORD, SUPPORT_IMAP_HOST/PORT, SUPPORT_SMTP_HOST/PORT, SUPPORT_CC_EMAIL, WEBHOOK_CRON_SECRET (vanno aggiunti anche ai Secrets di produzione)

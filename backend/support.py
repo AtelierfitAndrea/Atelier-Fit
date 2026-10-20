@@ -49,6 +49,7 @@ Devi restituire SOLO un JSON valido:
 {{"relevant": true|false, "category": "maglie|giacche|pantaloni|scarpe|outfit|foto|misure|privacy|altro", "reply": "testo della mail"}}
 - relevant = true se la richiesta riguarda l'uso di My Atelier: capi (maglie, giacche, pantaloni, scarpe, vestiti), foto/avatar, misure e taglie, privacy, outfit, prove virtuali.
 - relevant = false per fatture, pagamenti/rimborsi, partnership, pubblicità, spam, newsletter, richieste legali o qualsiasi altro tema: in quel caso reply = "".
+- La reply è testo semplice: NIENTE Markdown (niente asterischi, cancelletti o grassetti); per i percorsi usa il formato Profilo > Le tue misure.
 - La reply: saluto con il nome se noto, soluzione chiara in pochi paragrafi o punti, chiusura "Un caro saluto,\\nIl team My Atelier". Niente oggetto, niente firma extra.
 """
 
@@ -193,7 +194,8 @@ def create_support_router(db, get_account_user, require_owner, extract_json, eme
         chat.with_model("anthropic", "claude-sonnet-4-5-20250929")
         prompt = f"Nome cliente: {ticket.get('name') or 'non noto'}\nOggetto: {ticket.get('subject')}\n\nConversazione:\n{await thread_text(ticket['id'])}\n\nRispondi all'ultimo messaggio del CLIENTE."
         data = extract_json(await chat.send_message(UserMessage(text=prompt))) or {}
-        return {"relevant": bool(data.get("relevant")), "category": str(data.get("category") or "altro")[:20], "reply": str(data.get("reply") or "").strip()}
+        reply = re.sub(r"\*\*|__|^#+\s*", "", str(data.get("reply") or ""), flags=re.M).strip()
+        return {"relevant": bool(data.get("relevant")), "category": str(data.get("category") or "altro")[:20], "reply": reply}
 
     async def deliver(ticket: dict, body: str, author: str, **extra) -> dict:
         last_in = await db.support_messages.find_one({"ticket_id": ticket["id"], "author": "user", "email_message_id": {"$ne": None}}, {"_id": 0}, sort=[("created_at", -1)])
@@ -216,7 +218,8 @@ def create_support_router(db, get_account_user, require_owner, extract_json, eme
             logger.error(f"support: AI failed for {ticket_id}: {e}")
             await db.support_tickets.update_one({"id": ticket_id}, {"$set": {"status": "needs_human", "ai_error": str(e)[:200]}})
             return
-        await db.support_tickets.update_one({"id": ticket_id}, {"$set": {"category": ans["category"]}})
+        if not ticket.get("category"):
+            await db.support_tickets.update_one({"id": ticket_id}, {"$set": {"category": ans["category"]}})
         if not ans["relevant"] or not ans["reply"]:
             await db.support_tickets.update_one({"id": ticket_id}, {"$set": {"status": "needs_human"}})
             return
@@ -315,7 +318,8 @@ def create_support_router(db, get_account_user, require_owner, extract_json, eme
 
     @r.post("/support/tickets/{ticket_id}/messages")
     async def follow_up(ticket_id: str, body: FollowUpIn, bg: BackgroundTasks, user=Depends(get_account_user)):
-        await own_ticket(ticket_id, user)
+        if (await own_ticket(ticket_id, user)).get("status") == "closed":
+            raise HTTPException(status_code=400, detail="Questa richiesta è chiusa: aprine una nuova")
         msg = await add_message(ticket_id, "user", body.message)
         await db.support_tickets.update_one({"id": ticket_id}, {"$set": {"status": "open"}})
         bg.add_task(process, ticket_id)
@@ -355,11 +359,11 @@ def create_support_router(db, get_account_user, require_owner, extract_json, eme
         t = await db.support_tickets.find_one({"id": ticket_id}, {"_id": 0})
         if not t:
             raise HTTPException(status_code=404, detail="Conversazione non trovata")
-        await db.support_messages.delete_many({"ticket_id": ticket_id, "draft": True})
         msg = await deliver(t, body.message, "admin")
-        await db.support_tickets.update_one({"id": ticket_id}, {"$set": {"status": "answered"}})
         if not msg.get("sent"):
             raise HTTPException(status_code=502, detail=f"Invio non riuscito: {msg.get('send_error')}")
+        await db.support_messages.delete_many({"ticket_id": ticket_id, "draft": True})
+        await db.support_tickets.update_one({"id": ticket_id}, {"$set": {"status": "answered"}})
         return msg
 
     @r.post("/admin/support/tickets/{ticket_id}/ai-draft")
@@ -386,8 +390,9 @@ def create_support_router(db, get_account_user, require_owner, extract_json, eme
         return await settings()
 
     @r.post("/admin/support/sync")
-    async def admin_sync(_owner=Depends(require_owner)):
-        return await poll_mailbox()
+    async def admin_sync(bg: BackgroundTasks, _owner=Depends(require_owner)):
+        bg.add_task(poll_mailbox)
+        return {"status": "started"}
 
     @r.post("/cron/support-poll")
     async def cron_poll(request: Request, bg: BackgroundTasks):
@@ -400,7 +405,9 @@ def create_support_router(db, get_account_user, require_owner, extract_json, eme
             env = await request.json()
         except Exception:
             raise HTTPException(status_code=400, detail="Invalid body")
-        run_id = request.headers.get("x-webhook-id") or (env or {}).get("run_id") or str(uuid.uuid4())
+        if not isinstance(env, dict):
+            raise HTTPException(status_code=400, detail="Invalid body")
+        run_id = request.headers.get("x-webhook-id") or env.get("run_id") or str(uuid.uuid4())
         if await db.cron_runs.find_one({"run_id": run_id}):
             return {"status": "duplicate"}
         await db.cron_runs.insert_one({"run_id": run_id, "name": "support-poll", "at": _now()})
