@@ -114,6 +114,7 @@ export default function AdminAtelier() {
               <h1 className="tracking-[0.5em] text-2xl font-light" style={{ color: GOLD }}>MY ATELIER</h1>
               <p className="mt-1 text-xs tracking-[0.3em] text-white/50">DASHBOARD FONDATORE</p>
             </div>
+            <Link to="/stanza/assistenza" className="text-xs tracking-[0.3em] border px-4 py-2 mr-3" style={{ borderColor: GOLD, color: GOLD }} data-testid="admin-support-link">ASSISTENZA</Link>
             <Link to="/dashboard" className="text-xs tracking-[0.3em] border px-4 py-2" style={{ borderColor: GOLD, color: GOLD }} data-testid="admin-back-btn">TORNA ALL'APP</Link>
           </div>
           {stats.demo && (

@@ -1,0 +1,8 @@
+crons:
+  - name: support-poll
+    description: "Legge ogni 15 minuti le nuove mail di studio@myatelierapp.it e invia le risposte AI"
+    cron: "*/15 * * * *"
+    # Cron endpoints must ack 2xx immediately; enqueue/background the actual work.
+    endpoint: "{{BASE_URL}}/api/cron/support-poll"
+    method: POST
+    enabled: true

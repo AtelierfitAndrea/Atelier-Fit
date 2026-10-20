@@ -2378,6 +2378,8 @@ async def product_analyze_screenshot(
     return result
 
 
+from support import create_support_router
+api_router.include_router(create_support_router(db, get_account_user, require_owner, _extract_json, EMERGENT_KEY))
 app.include_router(api_router)
 
 app.add_middleware(

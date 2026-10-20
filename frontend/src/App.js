@@ -18,6 +18,8 @@ import AppShell from "@/components/AppShell";
 import Terms from "@/pages/Terms";
 import ComingSoon, { LAUNCH_AT } from "@/components/ComingSoon";
 import AdminAtelier from "@/pages/AdminAtelier";
+import AdminSupport from "@/pages/AdminSupport";
+import Support from "@/pages/Support";
 import PaymentResult from "@/pages/PaymentResult";
 import SessionRevokedNotice from "@/components/SessionRevokedNotice";
 import "@/App.css";
@@ -61,6 +63,8 @@ function AppRouter() {
       <Route path="/settings" element={<Protected><Settings /></Protected>} />
       <Route path="/analyze" element={<Protected><AnalyzeProduct /></Protected>} />
       <Route path="/stanza" element={user?.is_owner ? <AdminAtelier /> : <Navigate to="/dashboard" replace />} />
+      <Route path="/stanza/assistenza" element={user?.is_owner ? <AdminSupport /> : <Navigate to="/dashboard" replace />} />
+      <Route path="/assistenza" element={<Protected><Support /></Protected>} />
       <Route path="/payment/success" element={<Protected><PaymentResult /></Protected>} />
       <Route path="/payment/cancel" element={<Protected><PaymentResult /></Protected>} />
       <Route path="*" element={<Navigate to="/" replace />} />
