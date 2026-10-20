@@ -1,0 +1,118 @@
+"""Head lock for try-ons: safe top margin, bottom canvas extension for long garments, original head pasted back."""
+import io
+import os
+import re
+
+import cv2
+import numpy as np
+from PIL import Image, ImageOps
+
+_FACE_MODEL = os.path.join(os.path.dirname(__file__), "models", "face_yunet.onnx")
+TOP_PAD_MIN_PX = 50
+TOP_PAD_RATIO = 0.06
+BOTTOM_PAD_RATIO = 0.20
+HEAD_SAFE_ZONE = 0.15
+LONG_WORDS = re.compile(r"\b(long|lungo|lunga|maxi|gown|abito|vestito|dress|trench|cappotto|coat|kaftan|caftano)\b", re.I)
+
+HEAD_LOCK_RULE = (
+    "HEAD LOCK — STRICT:\n"
+    "• Preserve original head, face, hair 100% identical. Keep 50px safe margin from top edge. "
+    "Do not crop, alter or regenerate head area.\n"
+    "• The output must have EXACTLY the same width and height as IMAGE 1, with the person in the same position.\n"
+    "• IMAGE 1 already includes an empty margin at the top and, for long outfits, an extended band at the bottom: "
+    "if the outfit is long, expand image height at bottom only — continue the floor/background naturally into the bottom band "
+    "and let the garment hem and the feet extend there. Never zoom or shift the person upwards.\n"
+)
+
+
+def is_long(category: str, name: str = "") -> bool:
+    return (category or "").lower() == "dress" or bool(LONG_WORDS.search(name or ""))
+
+
+def _face_box(rgb: np.ndarray):
+    h, w = rgb.shape[:2]
+    scale = 640 / max(h, w)
+    small = cv2.resize(rgb, (int(w * scale), int(h * scale)))
+    det = cv2.FaceDetectorYN.create(_FACE_MODEL, "", (small.shape[1], small.shape[0]), 0.6)
+    _ok, faces = det.detect(cv2.cvtColor(small, cv2.COLOR_RGB2BGR))
+    if faces is None or not len(faces):
+        return None
+    x, y, fw, fh = max(faces, key=lambda f: f[2] * f[3])[:4] / scale
+    return int(x), int(y), int(fw), int(fh)
+
+
+def _bg_color(rows: np.ndarray) -> tuple:
+    w = rows.shape[1]
+    side = np.concatenate([rows[:, : max(1, w // 4)], rows[:, -max(1, w // 4):]], axis=1).reshape(-1, 3)
+    return tuple(int(v) for v in np.median(side, axis=0))
+
+
+def prepare(person_bytes: bytes, long_garment: bool) -> tuple:
+    """Returns (canvas_png_bytes, meta) with top safe margin and optional bottom extension."""
+    im = np.array(ImageOps.exif_transpose(Image.open(io.BytesIO(person_bytes))).convert("RGB"))
+    h, w = im.shape[:2]
+    top = max(TOP_PAD_MIN_PX, int(h * TOP_PAD_RATIO))
+    bottom = int(h * BOTTOM_PAD_RATIO) if long_garment else 0
+    # Bands are filled with the plain background colour (never the person: head/feet touching the edge must not smear).
+    canvas = cv2.copyMakeBorder(im, top, bottom, 0, 0, cv2.BORDER_CONSTANT, value=_bg_color(im[:3]))
+    if bottom:
+        canvas[top + h:] = _bg_color(im[-3:])
+    # face_lock_mask = face + hair + 50px top padding; head_safe_zone = top 15% of the photo.
+    # face_lock_mask = soft ellipse over face + hair (+ chin); the whole head sits below the top safe margin.
+    # Without a detectable face, fall back to head_safe_zone = top 15% of the photo.
+    mask = np.zeros(canvas.shape[:2], np.float32)
+    face = _face_box(im)
+    if face:
+        fx, fy, fw, fh = face
+        y_top, y_bot = fy - fh * 0.75 + top, fy + fh * 1.12 + top
+        cv2.ellipse(mask, (int(fx + fw / 2), int((y_top + y_bot) / 2)), (int(fw * 0.95), int((y_bot - y_top) / 2)), 0, 0, 360, 1.0, -1)
+    else:
+        mask[: top + int(h * HEAD_SAFE_ZONE)] = 1.0
+    mask = cv2.GaussianBlur(mask, (0, 0), max(4, h / 160))
+    buf = io.BytesIO()
+    Image.fromarray(canvas).save(buf, "PNG")
+    face_c = (face[0], face[1] + top, face[2], face[3]) if face else None
+    return buf.getvalue(), {"canvas": canvas, "mask": mask, "face": face_c}
+
+
+def finalize(result_bytes: bytes, meta: dict) -> bytes:
+    canvas, mask = meta["canvas"], meta["mask"].copy()
+    H, W = canvas.shape[:2]
+    res = np.array(Image.open(io.BytesIO(result_bytes)).convert("RGB"))
+    rh, rw = res.shape[:2]
+    if abs(rw / rh - W / H) > 0.04:
+        # Model changed the aspect: fit the full HEIGHT (head and feet never cut), then trim or pad the sides only.
+        nw = int(rw * H / rh)
+        res = cv2.resize(res, (nw, H), interpolation=cv2.INTER_LANCZOS4)
+        if nw >= W:
+            x0 = (nw - W) // 2
+            res = res[:, x0:x0 + W]
+        else:
+            lp = (W - nw) // 2
+            res = cv2.copyMakeBorder(res, 0, 0, lp, W - nw - lp, cv2.BORDER_REPLICATE)
+    else:
+        res = cv2.resize(res, (W, H), interpolation=cv2.INTER_LANCZOS4)
+    # If the model zoomed/shifted the person, scale+move the result so its face lands exactly on the original face.
+    rf, of = _face_box(res), meta.get("face")
+    if rf and of and 0.6 < of[2] / rf[2] < 1.6:
+        sc = of[2] / rf[2]
+        ocx, ocy = of[0] + of[2] / 2, of[1] + of[3] / 2
+        rcx, rcy = rf[0] + rf[2] / 2, rf[1] + rf[3] / 2
+        if abs(sc - 1) > 0.02 or abs(ocx - rcx) > 3 or abs(ocy - rcy) > 3:
+            # Keep the generated full body (hem, feet) and move the ORIGINAL head onto the generated face position.
+            k = 1 / sc
+            M = np.float32([[k, 0, rcx - k * ocx], [0, k, rcy - k * ocy]])
+            canvas = cv2.warpAffine(canvas, M, (W, H), flags=cv2.INTER_LANCZOS4, borderMode=cv2.BORDER_REPLICATE)
+            mask = cv2.warpAffine(mask, M, (W, H), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT, borderValue=0)
+    else:
+        band = slice(0, int(H * 0.45))
+        a = cv2.cvtColor(canvas[band], cv2.COLOR_RGB2GRAY).astype(np.float32)
+        b = cv2.cvtColor(res[band], cv2.COLOR_RGB2GRAY).astype(np.float32)
+        (dx, dy), resp = cv2.phaseCorrelate(a, b)
+        if resp > 0.05 and abs(dx) < W * 0.08 and abs(dy) < H * 0.08:
+            res = cv2.warpAffine(res, np.float32([[1, 0, -dx], [0, 1, -dy]]), (W, H), borderMode=cv2.BORDER_REPLICATE)
+    m = mask[..., None]
+    out = (canvas.astype(np.float32) * m + res.astype(np.float32) * (1 - m)).clip(0, 255).astype(np.uint8)
+    buf = io.BytesIO()
+    Image.fromarray(out).save(buf, "PNG")
+    return buf.getvalue()

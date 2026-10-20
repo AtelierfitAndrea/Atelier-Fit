@@ -19,6 +19,7 @@ from bs4 import BeautifulSoup
 import json as pyjson
 from cryptography.fernet import Fernet, InvalidToken
 from body_measure import brand_sizes, shoe_size
+import head_lock
 import re
 import stripe
 
@@ -1281,7 +1282,8 @@ async def tryon_generate(req: TryOnRequest, user: User = Depends(get_current_use
     # Load both images
     person_bytes, person_ct = get_object(req.person_path)
     garment_bytes, garment_ct = get_object(req.garment_path)
-    person_b64 = base64.b64encode(person_bytes).decode('utf-8')
+    canvas_bytes, lock = await run_in_threadpool(head_lock.prepare, person_bytes, head_lock.is_long(req.garment_category, req.garment_name or ""))
+    person_b64 = base64.b64encode(canvas_bytes).decode('utf-8')
     garment_b64 = base64.b64encode(garment_bytes).decode('utf-8')
 
     measurements_desc = _measurements_desc(m_doc)
@@ -1308,6 +1310,7 @@ async def tryon_generate(req: TryOnRequest, user: User = Depends(get_current_use
         f"• Do NOT cut, crop or extend the head/arms/legs beyond the original frame.\n"
         f"• Do NOT invent new tattoos, jewellery or accessories that are not in IMAGE 1.\n\n"
         f"{HANDS_RULE}"
+        f"{head_lock.HEAD_LOCK_RULE}"
         f"{measurements_desc}"
     )
 
@@ -1334,7 +1337,7 @@ async def tryon_generate(req: TryOnRequest, user: User = Depends(get_current_use
     if not images:
         raise HTTPException(status_code=500, detail="No image was generated")
     img = images[0]
-    out_bytes = base64.b64decode(img['data'])
+    out_bytes = await run_in_threadpool(head_lock.finalize, base64.b64decode(img['data']), lock)
     result_path = f"{APP_NAME}/tryon/{user.user_id}/{uuid.uuid4().hex}.png"
     put_object(result_path, out_bytes, "image/png")
 
@@ -1492,12 +1495,13 @@ async def copylook_apply(req: CopyLookApplyRequest, user: User = Depends(get_cur
         "(natural drape, length and ease relative to the person's measurements), not like it fits the model.\n"
         "• Preserve colour, pattern, cut and material of each garment exactly as in IMAGE 2.\n"
         "• Garments not listed stay as they are in IMAGE 1. Exactly ONE person in the output.\n\n"
-        f"{HANDS_RULE}{_measurements_desc(m_doc)}"
+        f"{HANDS_RULE}{head_lock.HEAD_LOCK_RULE}{_measurements_desc(m_doc)}"
     )
     chat = LlmChat(api_key=EMERGENT_KEY, session_id=f"copylook-apply-{user.user_id}-{uuid.uuid4().hex[:8]}",
                    system_message="You are a professional fashion virtual try-on generator. Re-dress the SAME person of IMAGE 1, never the model.")
     chat.with_model("gemini", "gemini-3.1-flash-image-preview").with_params(modalities=["image", "text"])
-    msg = UserMessage(text=prompt, file_contents=[ImageContent(base64.b64encode(person_bytes).decode()), ImageContent(base64.b64encode(model_bytes).decode())])
+    canvas_bytes, lock = await run_in_threadpool(head_lock.prepare, person_bytes, any(head_lock.is_long(i.category, i.name) for i in items))
+    msg = UserMessage(text=prompt, file_contents=[ImageContent(base64.b64encode(canvas_bytes).decode()), ImageContent(base64.b64encode(model_bytes).decode())])
     try:
         _text, images = await chat.send_message_multimodal_response(msg)
     except Exception as e:
@@ -1506,7 +1510,7 @@ async def copylook_apply(req: CopyLookApplyRequest, user: User = Depends(get_cur
     if not images:
         raise HTTPException(status_code=500, detail="No image was generated")
     result_path = f"{APP_NAME}/tryon/{user.user_id}/{uuid.uuid4().hex}.png"
-    put_object(result_path, base64.b64decode(images[0]['data']), "image/png")
+    put_object(result_path, await run_in_threadpool(head_lock.finalize, base64.b64decode(images[0]['data']), lock), "image/png")
     accuracy_snapshot = await _compute_accuracy(user.user_id)
     rec = " · ".join(f"{i.category.capitalize()} {s}" for i, s in sizes)
     doc = {
@@ -2125,8 +2129,8 @@ async def _compose_outfit(user: User, person_path: Optional[str], items: list, l
         raise HTTPException(status_code=400, detail="Crea prima il tuo Avatar nella Home")
     # Build the multi-image prompt
     person_bytes, _ = get_object(person_path)
-    person_b64 = base64.b64encode(person_bytes).decode("utf-8")
-    file_contents = [ImageContent(person_b64)]
+    canvas_bytes, lock = await run_in_threadpool(head_lock.prepare, person_bytes, any(head_lock.is_long(g.get("category"), g.get("name") or "") for g in items))
+    file_contents = [ImageContent(base64.b64encode(canvas_bytes).decode("utf-8"))]
     layer_lines = []
     for idx, g in enumerate(items, start=2):
         try:
@@ -2153,7 +2157,7 @@ async def _compose_outfit(user: User, person_path: Optional[str], items: list, l
         "• Preserve each garment's exact colour, pattern, cut and material from its product shot.\n"
         "• Natural fabric drape, folds and shadows that match IMAGE 1 lighting.\n\n"
         "FORBIDDEN: altering face/hands, replacing the background with a studio, cropping the head, adding items not provided.\n\n"
-        + HANDS_RULE
+        + HANDS_RULE + head_lock.HEAD_LOCK_RULE
     )
 
     session_id = f"outfit-{user.user_id}-{uuid.uuid4().hex[:8]}"
@@ -2175,7 +2179,7 @@ async def _compose_outfit(user: User, person_path: Optional[str], items: list, l
         raise HTTPException(status_code=500, detail=f"Generazione outfit non riuscita: {e}")
     if not images:
         raise HTTPException(status_code=500, detail="Nessuna immagine generata")
-    out_bytes = base64.b64decode(images[0]["data"])
+    out_bytes = await run_in_threadpool(head_lock.finalize, base64.b64decode(images[0]["data"]), lock)
     result_path = f"{APP_NAME}/outfit/{user.user_id}/{uuid.uuid4().hex}.png"
     put_object(result_path, out_bytes, "image/png")
     return person_path, result_path
