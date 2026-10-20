@@ -257,3 +257,4 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 - Cron .emergent/crons.yml support-poll ogni 15 min → POST /api/cron/support-poll (Bearer WEBHOOK_CRON_SECRET); prima connessione parte dall'UID attuale (non risponde a mail vecchie)
 - Frontend: /assistenza (utente, link footer), /stanza/assistenza (owner: inbox, filtri, toggle auto-risposte, controlla mail ora, bozza AI, risposta manuale, stato)
 - Env: SUPPORT_EMAIL, SUPPORT_EMAIL_PASSWORD, SUPPORT_IMAP_HOST/PORT, SUPPORT_SMTP_HOST/PORT, SUPPORT_CC_EMAIL, WEBHOOK_CRON_SECRET (vanno aggiunti anche ai Secrets di produzione)
+- 2026-06: Sezione "Assistenza / FAQ" nel menu (nav-support + icona mobile): 10 FAQ in accordion (GET /api/support/faq, unica fonte con la KB dell'AI) + domanda libera con risposta AI. Nessuna mail di prova: solo ascolto in entrata (cron 15 min).

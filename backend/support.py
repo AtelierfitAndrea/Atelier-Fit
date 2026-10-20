@@ -23,20 +23,25 @@ from emergentintegrations.llm.chat import LlmChat, UserMessage
 
 logger = logging.getLogger("support")
 
-KNOWLEDGE_BASE = """KNOWLEDGE BASE UFFICIALE MY ATELIER (fonte primaria, rispondi SEMPRE partendo da qui).
-Percorsi reali dell'app: Home (Il Mio Avatar), Prova taglia (Camerino virtuale: prova capi, Copia Look da Modello, Componi il tuo outfit), Analisi prodotto (taglia da link), Il tuo armadio, Profilo (Le tue misure), Impostazioni (gestione foto Avatar e abbonamento).
+FAQ = [
+    ('La foto non viene o dà errore', 'Serve una foto a figura intera, dalla testa ai piedi, luce naturale davanti, sfondo neutro, senza altri oggetti o persone, formato JPG, massimo 10 MB. Riprova da Home > Il Mio Avatar con “Scatta ora” o “Carica da galleria”.'),
+    ('La foto è scura o sfocata', 'Avvicina la luce al viso, niente controluce, tieni il telefono fermo e dritto (aiutati con la livella della fotocamera), scatta da circa 1,5-2 metri con zoom 1x.'),
+    ('Come prendo le misure?', 'Vai in Profilo > Le tue misure e inserisci altezza, torace, vita, fianchi, spalle, lunghezza gamba e lunghezza piede (peso ed età facoltativi). Usa un metro morbido da sarta; il tasto “Guarda come” accanto a ogni campo mostra dove passare il metro. Le misure restano salvate sul tuo account.'),
+    ('La taglia consigliata non mi torna', 'Ricontrolla le misure inserite in Profilo. Se sei tra due taglie, per giacche e capispalla scegli la più grande, per pantaloni aderenti la più piccola. Per un capo preciso usa Analisi prodotto incollando il link: confrontiamo la tabella taglie del brand con le tue misure.'),
+    ('Posso provare un outfit completo?', 'Sì, puoi provare maglia + giacca + pantaloni + scarpe insieme in Prova taglia > “Componi il tuo outfit” (fino a 4 capi, anche di brand diversi). Con “Copia Look da Modello” puoi anche caricare la foto di un modello e indossare il suo look.'),
+    ('Le mie foto e i miei dati sono al sicuro?', 'Foto e misure restano solo nel tuo profilo, sono crittografate, non vengono condivise con nessuno e servono solo a vestirti virtualmente.'),
+    ('Posso cancellare la mia foto?', 'Sì, da Impostazioni > Il Mio Avatar > “Elimina foto”. La cancellazione è immediata e definitiva dal server.'),
+    ('Il vestito mi sembra lungo o corto', "L'AI adatta la lunghezza del capo alla tua altezza inserita in Profilo; se sei sotto 1,65 m ti consigliamo di valutare un orlo."),
+    ('Con le scarpe porto numeri diversi nei vari brand', 'Ogni brand calza in modo diverso (Zara, Nike, Adidas hanno vestibilità diverse). Inserisci la lunghezza del piede in cm in Profilo: calcoliamo il numero esatto per ogni brand.'),
+    ('Il risultato non mi piace', 'Puoi riprovare cambiando foto, luce o aggiornando le misure per un risultato più realistico. Il piano Free include 5 prove al mese; con i piani Single o Family le prove sono illimitate.'),
+]
 
-1. Foto non viene / errore: serve una foto a figura intera, dalla testa ai piedi, luce naturale davanti, sfondo neutro, senza altri oggetti o persone, formato JPG, massimo 10 MB. Riprova da Home > Il Mio Avatar con "Scatta ora" o "Carica da galleria".
-2. Foto scura o sfocata: avvicina la luce al viso, niente controluce, tieni il telefono fermo e dritto (aiutati con la livella della fotocamera), scatta da circa 1,5-2 metri con zoom 1x.
-3. Come prendo le misure: vai in Profilo > Le tue misure e inserisci altezza, torace, vita, fianchi, spalle, lunghezza gamba e lunghezza piede (peso ed età facoltativi). Usa un metro morbido da sarta; il tasto "Guarda come" accanto a ogni campo mostra dove passare il metro. Le misure restano salvate sul tuo account.
-4. La taglia non torna: ricontrolla le misure inserite in Profilo. Se sei tra due taglie, per giacche e capispalla scegli la più grande, per pantaloni aderenti la più piccola. Per un capo preciso usa Analisi prodotto incollando il link: confrontiamo la tabella taglie del brand con le tue misure.
-5. Outfit completo: sì, puoi provare maglia + giacca + pantaloni + scarpe insieme in Prova taglia > "Componi il tuo outfit" (fino a 4 capi, anche di brand diversi). Con "Copia Look da Modello" puoi anche caricare la foto di un modello e indossare il suo look.
-6. Privacy foto e dati: foto e misure restano solo nel tuo profilo, sono crittografate, non vengono condivise con nessuno e servono solo a vestirti virtualmente.
-7. Cancellare la foto: sì, da Impostazioni > Il Mio Avatar > "Elimina foto". La cancellazione è immediata e definitiva dal server.
-8. Vestito lungo o corto: l'AI adatta la lunghezza del capo alla tua altezza inserita in Profilo; se sei sotto 1,65 m ti consigliamo di valutare un orlo.
-9. Scarpe, numero diverso: ogni brand calza in modo diverso (Zara, Nike, Adidas hanno vestibilità diverse). Inserisci la lunghezza del piede in cm in Profilo: calcoliamo il numero esatto per ogni brand.
-10. Il risultato non piace: puoi riprovare cambiando foto, luce o aggiornando le misure per un risultato più realistico. Il piano Free include 5 prove al mese; con i piani Single o Family le prove sono illimitate.
-"""
+KNOWLEDGE_BASE = (
+    "KNOWLEDGE BASE UFFICIALE MY ATELIER (fonte primaria, rispondi SEMPRE partendo da qui).\n"
+    "Percorsi reali dell'app: Home (Il Mio Avatar), Prova taglia (Camerino virtuale: prova capi, Copia Look da Modello, Componi il tuo outfit), "
+    "Analisi prodotto (taglia da link), Il tuo armadio, Profilo (Le tue misure), Impostazioni (gestione foto Avatar e abbonamento), Assistenza (FAQ e domande libere).\n\n"
+    + "\n".join(f"{i}. {q} — {a}" for i, (q, a) in enumerate(FAQ, 1))
+)
 
 SYSTEM_PROMPT = f"""Sei l'assistenza clienti di My Atelier (studio@myatelierapp.it), atelier digitale di prova virtuale e taglie.
 Tono: italiano elegante, cortese, professionale e conciso, come un commesso di fiducia di un atelier. Niente emoji, niente parole come "gioco".
@@ -300,6 +305,10 @@ def create_support_router(db, get_account_user, require_owner, extract_json, eme
 
     async def public_messages(ticket_id: str) -> list:
         return await db.support_messages.find({"ticket_id": ticket_id, "draft": {"$ne": True}}, {"_id": 0, "email_message_id": 0, "references": 0}).sort("created_at", 1).to_list(200)
+
+    @r.get("/support/faq")
+    async def faq():
+        return [{"q": q, "a": a} for q, a in FAQ]
 
     @r.post("/support/tickets")
     async def create_ticket(body: TicketIn, bg: BackgroundTasks, user=Depends(get_account_user)):

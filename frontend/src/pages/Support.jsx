@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { EnvelopeSimple, PaperPlaneTilt } from "@phosphor-icons/react";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { api } from "@/lib/api";
 
 const CATS = [["maglie", "Maglie"], ["giacche", "Giacche"], ["pantaloni", "Pantaloni"], ["scarpe", "Scarpe"], ["outfit", "Outfit completo"], ["foto", "Foto"], ["misure", "Misure"], ["privacy", "Privacy"], ["altro", "Altro"]];
@@ -43,6 +44,24 @@ function Thread({ t, onSent }) {
   );
 }
 
+function Faq() {
+  const [faq, setFaq] = useState([]);
+  useEffect(() => { api.get("/support/faq").then(({ data }) => setFaq(data)).catch(() => {}); }, []);
+  return (
+    <section className="lg:col-span-12" data-testid="support-faq">
+      <div className="label-caps mb-3">Domande frequenti</div>
+      <Accordion type="single" collapsible className="border hairline bg-white px-6">
+        {faq.map((f, i) => (
+          <AccordionItem key={f.q} value={`faq-${i}`} className="hairline" data-testid={`support-faq-item-${i}`}>
+            <AccordionTrigger className="font-serif text-lg text-left hover:no-underline" data-testid={`support-faq-q-${i}`}>{f.q}</AccordionTrigger>
+            <AccordionContent className="text-sm text-neutral-700 leading-relaxed" data-testid={`support-faq-a-${i}`}>{f.a}</AccordionContent>
+          </AccordionItem>
+        ))}
+      </Accordion>
+    </section>
+  );
+}
+
 export default function Support() {
   const [cat, setCat] = useState("maglie");
   const [subject, setSubject] = useState("");
@@ -70,11 +89,16 @@ export default function Support() {
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-10" data-testid="support-root">
-      <div className="lg:col-span-5">
-        <div className="label-caps mb-3">Assistenza</div>
+      <div className="lg:col-span-12">
+        <div className="label-caps mb-3">Assistenza / FAQ</div>
         <h1 className="font-serif text-4xl md:text-5xl tracking-tighter leading-[1.05]">Come possiamo aiutarti?</h1>
-        <p className="mt-4 text-neutral-600 leading-relaxed">Maglie, giacche, pantaloni, scarpe, foto, misure o privacy: scrivici, ti rispondiamo qui e via email da studio@myatelierapp.it.</p>
-        <form onSubmit={submit} className="mt-8 border hairline bg-white p-6 space-y-5" data-testid="support-form">
+        <p className="mt-4 text-neutral-600 leading-relaxed max-w-2xl">Trova subito la risposta tra le domande frequenti su maglie, giacche, pantaloni, scarpe, foto, misure e privacy.</p>
+      </div>
+      <Faq />
+      <div className="lg:col-span-5">
+        <h2 className="font-serif text-2xl tracking-tight" data-testid="support-free-title">Non hai trovato la risposta?</h2>
+        <p className="mt-2 text-sm text-neutral-600 leading-relaxed">Fai una domanda libera: ti risponde l&apos;assistente My Atelier, qui e via email da studio@myatelierapp.it.</p>
+        <form onSubmit={submit} className="mt-6 border hairline bg-white p-6 space-y-5" data-testid="support-form">
           <div className="flex flex-wrap gap-2">
             {CATS.map(([k, l]) => (
               <button type="button" key={k} onClick={() => setCat(k)} className={`px-3 py-1.5 text-xs border hairline ${cat === k ? "bg-[#0A0A0A] text-white" : "bg-white"}`} data-testid={`support-cat-${k}`}>{l}</button>

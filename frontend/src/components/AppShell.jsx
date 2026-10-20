@@ -6,7 +6,7 @@ import FamilySwitcher from "@/components/FamilySwitcher";
 import TermsGate from "@/components/TermsGate";
 import OnboardingGate from "@/components/OnboardingGate";
 import ReminderPopup from "@/components/ReminderPopup";
-import { SignOut, House, User as UserIcon, TShirt, Sparkle, GearSix, MagnifyingGlass, Crown } from "@phosphor-icons/react";
+import { SignOut, House, User as UserIcon, TShirt, Sparkle, GearSix, MagnifyingGlass, Crown, Question } from "@phosphor-icons/react";
 
 export default function AppShell({ children }) {
   const { user, logout } = useAuth();
@@ -51,6 +51,9 @@ export default function AppShell({ children }) {
             <NavLink to="/settings" className={navItem} data-testid="nav-settings">
               <GearSix size={14} weight="duotone" /> {t("nav.settings")}
             </NavLink>
+            <NavLink to="/assistenza" className={navItem} data-testid="nav-support">
+              <Question size={14} weight="duotone" /> {t("nav.support")}
+            </NavLink>
           </nav>
           <div className="flex items-center gap-2 sm:gap-4 min-w-0">
             {user?.is_owner && (
@@ -58,6 +61,7 @@ export default function AppShell({ children }) {
                 <Crown size={24} weight="fill" />
               </Link>
             )}
+            <Link to="/assistenza" className="md:hidden" title="Assistenza" data-testid="nav-support-mobile"><Question size={22} weight="duotone" /></Link>
             <FamilySwitcher />
             {user?.picture && (
               <img src={user.picture} alt="" className="hidden sm:block w-8 h-8 object-cover" style={{ borderRadius: 2 }} />

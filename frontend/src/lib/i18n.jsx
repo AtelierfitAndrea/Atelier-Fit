@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useMemo, useState } from "react";
 
 const DICTIONARIES = {
   it: {
-    nav: { home: "Home", studio: "Prova taglia", wardrobe: "Il tuo armadio", profile: "Profilo", settings: "Impostazioni", analyze: "Analisi prodotto" },
+    nav: { home: "Home", studio: "Prova taglia", wardrobe: "Il tuo armadio", profile: "Profilo", settings: "Impostazioni", support: "Assistenza", analyze: "Analisi prodotto" },
     analyze: {
       kicker: "Nuovo",
       title: "Analisi Prodotto — Universale",
@@ -145,7 +145,7 @@ const DICTIONARIES = {
     },
   },
   en: {
-    nav: { home: "Home", studio: "Try size", wardrobe: "Your wardrobe", profile: "Profile", settings: "Settings", analyze: "Product analyzer" },
+    nav: { home: "Home", studio: "Try size", wardrobe: "Your wardrobe", profile: "Profile", settings: "Settings", support: "Help", analyze: "Product analyzer" },
     analyze: {
       kicker: "New",
       title: "Product Analyzer — Universal",
@@ -284,7 +284,7 @@ const DICTIONARIES = {
     },
   },
   fr: {
-    nav: { home: "Accueil", studio: "Essayer taille", wardrobe: "Votre dressing", profile: "Profil", settings: "Réglages", analyze: "Analyse produit" },
+    nav: { home: "Accueil", studio: "Essayer taille", wardrobe: "Votre dressing", profile: "Profil", settings: "Réglages", analyze: "Analyse produit", support: "Assistance" },
     analyze: {
       kicker: "Nouveau",
       title: "Analyse Produit — Universelle",
@@ -423,7 +423,7 @@ const DICTIONARIES = {
     },
   },
   de: {
-    nav: { home: "Start", studio: "Größe testen", wardrobe: "Dein Kleiderschrank", profile: "Profil", settings: "Einstellungen", analyze: "Produktanalyse" },
+    nav: { home: "Start", studio: "Größe testen", wardrobe: "Dein Kleiderschrank", profile: "Profil", settings: "Einstellungen", analyze: "Produktanalyse", support: "Hilfe" },
     analyze: {
       kicker: "Neu",
       title: "Produktanalyse — Universal",
