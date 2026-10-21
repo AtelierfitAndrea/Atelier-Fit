@@ -4,6 +4,8 @@ import { CloudArrowUp, X, Check, ArrowRight } from "@phosphor-icons/react";
 import { api, fileUrl } from "@/lib/api";
 import { useSubscription } from "@/lib/subscription";
 import IncludedNote from "@/components/IncludedNote";
+import HemCard from "@/components/HemCard";
+import FreeRetry from "@/components/FreeRetry";
 
 const SLOTS = [
   { k: "top", n: 1, l: "Maglia / Top" },
@@ -215,7 +217,11 @@ export default function OutfitGrid({ personPath, uploadFile }) {
 
       {result && (
         <div className="mt-10 grid grid-cols-1 lg:grid-cols-2 gap-8" data-testid="grid-result">
-          <img src={fileUrl(result.result_path)} alt="Outfit" className="w-full border hairline" data-testid="grid-result-image" />
+          <div className="space-y-4">
+            <img src={fileUrl(result.result_path)} alt="Outfit" className="w-full border hairline" data-testid="grid-result-image" />
+            <HemCard url={`/outfits/${result.id}/hem`} />
+            <FreeRetry kind="outfits" item={result} onDone={(d) => setResult((r) => ({ ...r, ...d, used: r.used }))} />
+          </div>
           <div className="space-y-5">
             <div className="label-caps">Salva i capi nel tuo armadio (opzionale)</div>
             {result.used.map(({ slot, item }) => (

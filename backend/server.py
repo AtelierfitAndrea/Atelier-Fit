@@ -20,6 +20,7 @@ import json as pyjson
 from cryptography.fernet import Fernet, InvalidToken
 from body_measure import brand_sizes, shoe_size
 import head_lock
+import hem as hem_mod
 import re
 import stripe
 
@@ -1271,24 +1272,17 @@ class TryOnRequest(BaseModel):
     garment_id: Optional[str] = None
 
 
-@api_router.post("/tryon/generate")
-async def tryon_generate(req: TryOnRequest, user: User = Depends(get_current_user)):
-    # Enforce subscription quota before any paid work (Nano Banana call).
-    status = await get_subscription_status(user.account_id)
-    if status["is_blocked"]:
-        raise HTTPException(status_code=402, detail="Quota exhausted — subscribe or buy an extra try-on.")
-    # Load measurements for prompt context
-    m_doc = await _get_measurements(user.user_id)
+async def _render_single(user_id: str, person_path: str, garment_path: str, category_in: Optional[str], name: Optional[str], m_doc: dict, extra: str = "") -> str:
     # Load both images
-    person_bytes, person_ct = get_object(req.person_path)
-    garment_bytes, garment_ct = get_object(req.garment_path)
-    canvas_bytes, lock = await run_in_threadpool(head_lock.prepare, person_bytes, head_lock.is_long(req.garment_category, req.garment_name or ""))
+    person_bytes, person_ct = get_object(person_path)
+    garment_bytes, garment_ct = get_object(garment_path)
+    canvas_bytes, lock = await run_in_threadpool(head_lock.prepare, person_bytes, head_lock.is_long(category_in, name or ""))
     person_b64 = base64.b64encode(canvas_bytes).decode('utf-8')
     garment_b64 = base64.b64encode(garment_bytes).decode('utf-8')
 
     measurements_desc = _measurements_desc(m_doc)
 
-    category = (req.garment_category or "garment").lower()
+    category = (category_in or "garment").lower()
     prompt = (
         f"Create a photorealistic virtual try-on image. IMAGE 1 is a real photo of a specific person — "
         f"the ONLY person who may appear in the output. IMAGE 2 shows a {category} to be worn.\n\n"
@@ -1312,9 +1306,10 @@ async def tryon_generate(req: TryOnRequest, user: User = Depends(get_current_use
         f"{HANDS_RULE}"
         f"{head_lock.HEAD_LOCK_RULE}"
         f"{measurements_desc}"
+        f"{extra}"
     )
 
-    session_id = f"tryon-{user.user_id}-{uuid.uuid4().hex[:8]}"
+    session_id = f"tryon-{user_id}-{uuid.uuid4().hex[:8]}"
     chat = LlmChat(
         api_key=EMERGENT_KEY,
         session_id=session_id,
@@ -1338,8 +1333,19 @@ async def tryon_generate(req: TryOnRequest, user: User = Depends(get_current_use
         raise HTTPException(status_code=500, detail="No image was generated")
     img = images[0]
     out_bytes = await run_in_threadpool(head_lock.finalize, base64.b64decode(img['data']), lock)
-    result_path = f"{APP_NAME}/tryon/{user.user_id}/{uuid.uuid4().hex}.png"
+    result_path = f"{APP_NAME}/tryon/{user_id}/{uuid.uuid4().hex}.png"
     put_object(result_path, out_bytes, "image/png")
+    return result_path
+
+
+@api_router.post("/tryon/generate")
+async def tryon_generate(req: TryOnRequest, user: User = Depends(get_current_user)):
+    # Enforce subscription quota before any paid work (Nano Banana call).
+    status = await get_subscription_status(user.account_id)
+    if status["is_blocked"]:
+        raise HTTPException(status_code=402, detail="Quota exhausted — subscribe or buy an extra try-on.")
+    m_doc = await _get_measurements(user.user_id)
+    result_path = await _render_single(user.user_id, req.person_path, req.garment_path, req.garment_category, req.garment_name, m_doc)
 
     rec_size = recommend_size(m_doc, req.garment_category or "")
     tryon_id = str(uuid.uuid4())
@@ -1465,6 +1471,41 @@ async def copylook_extract(req: CopyLookExtractRequest, user: User = Depends(get
     return {"items": items}
 
 
+async def _render_copylook(user_id: str, person_path: str, model_path: str, items: list, m_doc: dict, extra: str = "") -> str:
+    sizes = [(i, recommend_size(m_doc, i["category"])) for i in items]
+    person_bytes, _ = get_object(person_path)
+    model_bytes, _ = get_object(model_path)
+    garments_txt = "\n".join(f"• {i['name']} ({i['category']}) — size {s} for this person" for i, s in sizes)
+    prompt = (
+        "Create a photorealistic virtual try-on. IMAGE 1 is a real photo of a specific person — the ONLY person who may appear. "
+        "IMAGE 2 shows a fashion model wearing a complete look. Copy ONLY these garments from the model onto the person of IMAGE 1:\n"
+        f"{garments_txt}\n\n"
+        "ABSOLUTE REQUIREMENTS:\n"
+        "• Keep the EXACT face, head, hair, skin tone, body shape, proportions and pose of IMAGE 1. NEVER use the model's body or face.\n"
+        "• Keep the ORIGINAL BACKGROUND, lighting and framing of IMAGE 1.\n"
+        "• Re-cut each garment to the person's REAL body and size: it must fit like the indicated size would fit this body "
+        "(natural drape, length and ease relative to the person's measurements), not like it fits the model.\n"
+        "• Preserve colour, pattern, cut and material of each garment exactly as in IMAGE 2.\n"
+        "• Garments not listed stay as they are in IMAGE 1. Exactly ONE person in the output.\n\n"
+        f"{HANDS_RULE}{head_lock.HEAD_LOCK_RULE}{_measurements_desc(m_doc)}{extra}"
+    )
+    chat = LlmChat(api_key=EMERGENT_KEY, session_id=f"copylook-apply-{user_id}-{uuid.uuid4().hex[:8]}",
+                   system_message="You are a professional fashion virtual try-on generator. Re-dress the SAME person of IMAGE 1, never the model.")
+    chat.with_model("gemini", "gemini-3.1-flash-image-preview").with_params(modalities=["image", "text"])
+    canvas_bytes, lock = await run_in_threadpool(head_lock.prepare, person_bytes, any(head_lock.is_long(i["category"], i["name"]) for i in items))
+    msg = UserMessage(text=prompt, file_contents=[ImageContent(base64.b64encode(canvas_bytes).decode()), ImageContent(base64.b64encode(model_bytes).decode())])
+    try:
+        _text, images = await chat.send_message_multimodal_response(msg)
+    except Exception as e:
+        logger.error(f"copylook apply error: {e}")
+        raise HTTPException(status_code=500, detail=f"Image generation failed: {str(e)}")
+    if not images:
+        raise HTTPException(status_code=500, detail="No image was generated")
+    result_path = f"{APP_NAME}/tryon/{user_id}/{uuid.uuid4().hex}.png"
+    put_object(result_path, await run_in_threadpool(head_lock.finalize, base64.b64decode(images[0]['data']), lock), "image/png")
+    return result_path
+
+
 @api_router.post("/copylook/apply")
 async def copylook_apply(req: CopyLookApplyRequest, user: User = Depends(get_current_user)):
     status = await get_subscription_status(user.account_id)
@@ -1481,36 +1522,7 @@ async def copylook_apply(req: CopyLookApplyRequest, user: User = Depends(get_cur
         raise HTTPException(status_code=400, detail="Crea prima il tuo Avatar nella Home")
     m_doc = await _get_measurements(user.user_id)
     sizes = [(i, recommend_size(m_doc, i.category)) for i in items]
-    person_bytes, _ = get_object(person_path)
-    model_bytes, _ = get_object(req.model_path)
-    garments_txt = "\n".join(f"• {i.name} ({i.category}) — size {s} for this person" for i, s in sizes)
-    prompt = (
-        "Create a photorealistic virtual try-on. IMAGE 1 is a real photo of a specific person — the ONLY person who may appear. "
-        "IMAGE 2 shows a fashion model wearing a complete look. Copy ONLY these garments from the model onto the person of IMAGE 1:\n"
-        f"{garments_txt}\n\n"
-        "ABSOLUTE REQUIREMENTS:\n"
-        "• Keep the EXACT face, head, hair, skin tone, body shape, proportions and pose of IMAGE 1. NEVER use the model's body or face.\n"
-        "• Keep the ORIGINAL BACKGROUND, lighting and framing of IMAGE 1.\n"
-        "• Re-cut each garment to the person's REAL body and size: it must fit like the indicated size would fit this body "
-        "(natural drape, length and ease relative to the person's measurements), not like it fits the model.\n"
-        "• Preserve colour, pattern, cut and material of each garment exactly as in IMAGE 2.\n"
-        "• Garments not listed stay as they are in IMAGE 1. Exactly ONE person in the output.\n\n"
-        f"{HANDS_RULE}{head_lock.HEAD_LOCK_RULE}{_measurements_desc(m_doc)}"
-    )
-    chat = LlmChat(api_key=EMERGENT_KEY, session_id=f"copylook-apply-{user.user_id}-{uuid.uuid4().hex[:8]}",
-                   system_message="You are a professional fashion virtual try-on generator. Re-dress the SAME person of IMAGE 1, never the model.")
-    chat.with_model("gemini", "gemini-3.1-flash-image-preview").with_params(modalities=["image", "text"])
-    canvas_bytes, lock = await run_in_threadpool(head_lock.prepare, person_bytes, any(head_lock.is_long(i.category, i.name) for i in items))
-    msg = UserMessage(text=prompt, file_contents=[ImageContent(base64.b64encode(canvas_bytes).decode()), ImageContent(base64.b64encode(model_bytes).decode())])
-    try:
-        _text, images = await chat.send_message_multimodal_response(msg)
-    except Exception as e:
-        logger.error(f"copylook apply error: {e}")
-        raise HTTPException(status_code=500, detail=f"Image generation failed: {str(e)}")
-    if not images:
-        raise HTTPException(status_code=500, detail="No image was generated")
-    result_path = f"{APP_NAME}/tryon/{user.user_id}/{uuid.uuid4().hex}.png"
-    put_object(result_path, await run_in_threadpool(head_lock.finalize, base64.b64decode(images[0]['data']), lock), "image/png")
+    result_path = await _render_copylook(user.user_id, person_path, req.model_path, [{"name": i.name, "category": i.category} for i in items], m_doc)
     accuracy_snapshot = await _compute_accuracy(user.user_id)
     rec = " · ".join(f"{i.category.capitalize()} {s}" for i, s in sizes)
     doc = {
@@ -1553,7 +1565,7 @@ async def get_tryon(tryon_id: str, user: User = Depends(get_current_user)):
     doc = await db.tryons.find_one({"id": tryon_id, "user_id": user.user_id}, {"_id": 0})
     if not doc:
         raise HTTPException(status_code=404, detail="Not found")
-    return doc
+    return {**doc, "retry": _retry_state(doc)}
 
 
 @api_router.delete("/tryons/{tryon_id}")
@@ -2112,7 +2124,7 @@ class OutfitGenerateRequest(BaseModel):
 _DEFAULT_LAYER_TEXT = "  1) bottoms / dress 2) shoes 3) top / shirt 4) outerwear / jacket on top."
 
 
-async def _compose_outfit(user: User, person_path: Optional[str], items: list, layer_order_text: str = _DEFAULT_LAYER_TEXT):
+async def _compose_outfit(user: User, person_path: Optional[str], items: list, layer_order_text: str = _DEFAULT_LAYER_TEXT, extra: str = ""):
     """Layer the given garment images on the user's base photo; returns (person_path, result_path)."""
     # Resolve person photo — prefer explicit path, else latest person file for the user
     if not person_path:
@@ -2157,7 +2169,7 @@ async def _compose_outfit(user: User, person_path: Optional[str], items: list, l
         "• Preserve each garment's exact colour, pattern, cut and material from its product shot.\n"
         "• Natural fabric drape, folds and shadows that match IMAGE 1 lighting.\n\n"
         "FORBIDDEN: altering face/hands, replacing the background with a studio, cropping the head, adding items not provided.\n\n"
-        + HANDS_RULE + head_lock.HEAD_LOCK_RULE
+        + HANDS_RULE + head_lock.HEAD_LOCK_RULE + extra
     )
 
     session_id = f"outfit-{user.user_id}-{uuid.uuid4().hex[:8]}"
@@ -2380,6 +2392,143 @@ async def product_analyze_screenshot(
         "created_at": datetime.now(timezone.utc).isoformat(),
     })
     return result
+
+
+# ----- Lunghezza abito reale + Riprova gratuita -----
+RETRY_REASONS = {
+    "sfondo": "\n\nRETRY — the previous result changed the background. CRITICAL: keep the background of IMAGE 1 pixel-identical (same wall, floor, light).",
+    "viso": "\n\nRETRY — the previous result changed the face. CRITICAL: the face, hair and skin must be exactly the person of IMAGE 1.",
+    "capo": "\n\nRETRY — the previous result showed the wrong garment. CRITICAL: reproduce the garment exactly (colour, pattern, cut, length, material).",
+    "altro": "\n\nRETRY — the previous result was not satisfying: be maximally faithful to IMAGE 1 and to the garment.",
+}
+RETRY_WINDOW_H = 24
+
+
+class RetryIn(BaseModel):
+    reason: str = Field(pattern="^(sfondo|viso|capo|altro)$")
+
+
+def _retry_state(doc: dict) -> dict:
+    created = _parse_dt(doc.get("created_at"))
+    expired = not created or datetime.now(timezone.utc) - created > timedelta(hours=RETRY_WINDOW_H)
+    return {"available": not doc.get("retry_used") and not expired, "used": bool(doc.get("retry_used")), "expired": expired and not doc.get("retry_used")}
+
+
+async def _hem_for(coll, doc: dict, image_path: Optional[str], source_url: Optional[str], user_id: str) -> dict:
+    info = doc.get("hem_info")
+    if info is None:
+        if not image_path:
+            return {"applicable": False}
+        img, _ = get_object(image_path)
+        try:
+            info = await hem_mod.classify(img, EMERGENT_KEY, _extract_json)
+        except Exception as e:
+            logger.warning(f"hem classify failed: {e}")
+            return {"applicable": False}
+        page_len = await hem_mod.length_from_page(source_url) if info["long_garment"] else None
+        if page_len:
+            info.update({"length_cm": page_len, "length_source": "product"})
+        await coll.update_one({"id": doc["id"]}, {"$set": {"hem_info": info}})
+    m = await _get_measurements(user_id)
+    return hem_mod.compute(info, m.get("height_cm"))
+
+
+@api_router.get("/tryons/{tryon_id}/hem")
+async def tryon_hem(tryon_id: str, user: User = Depends(get_current_user)):
+    doc = await db.tryons.find_one({"id": tryon_id, "user_id": user.user_id}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Prova non trovata")
+    cat = (doc.get("garment_category") or "").lower()
+    copied = [i.get("category") for i in doc.get("copied_items") or []]
+    if cat not in hem_mod.LONG_CATEGORIES and not head_lock.is_long(cat, doc.get("garment_name") or "") and not any(c in hem_mod.LONG_CATEGORIES for c in copied):
+        return {"applicable": False}
+    g = await db.garments.find_one({"user_id": user.user_id, "image_path": doc.get("garment_path")}, {"_id": 0, "source_url": 1}) or {}
+    return await _hem_for(db.tryons, doc, doc.get("garment_path"), g.get("source_url"), user.user_id)
+
+
+@api_router.get("/outfits/{outfit_id}/hem")
+async def outfit_hem(outfit_id: str, user: User = Depends(get_current_user)):
+    doc = await db.outfits.find_one({"id": outfit_id, "user_id": user.user_id}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Outfit non trovato")
+    long_item = next((i for i in doc.get("items", []) if (i.get("category") or "") in hem_mod.LONG_CATEGORIES or head_lock.is_long(i.get("category"), i.get("name") or "")), None)
+    if not long_item:
+        return {"applicable": False}
+    return await _hem_for(db.outfits, doc, long_item.get("image_path"), long_item.get("source_url"), user.user_id)
+
+
+async def _log_retry(user: User, kind: str, doc: dict, reason: str, new_path: str):
+    now = datetime.now(timezone.utc).isoformat()
+    await db.free_retries.insert_one({"id": str(uuid.uuid4()), "user_id": user.user_id, "email": user.email, "kind": kind, "item_id": doc["id"],
+                                      "name": doc.get("garment_name") or ", ".join(i.get("name") or "" for i in doc.get("items", []))[:120],
+                                      "reason": reason, "previous_result_path": doc.get("result_path"), "result_path": new_path, "created_at": now})
+    return {"previous_result_path": doc.get("result_path"), "result_path": new_path, "retry_used": True, "retry_reason": reason, "retried_at": now}
+
+
+@api_router.get("/tryons/{tryon_id}/retry")
+async def tryon_retry_state(tryon_id: str, user: User = Depends(get_current_user)):
+    doc = await db.tryons.find_one({"id": tryon_id, "user_id": user.user_id}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Prova non trovata")
+    return _retry_state(doc)
+
+
+@api_router.post("/tryons/{tryon_id}/retry")
+async def tryon_retry(tryon_id: str, body: RetryIn, user: User = Depends(get_current_user)):
+    doc = await db.tryons.find_one({"id": tryon_id, "user_id": user.user_id}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Prova non trovata")
+    st = _retry_state(doc)
+    if not st["available"]:
+        raise HTTPException(status_code=409, detail="Riprova gratuita già usata" if st["used"] else "Riprova gratuita scaduta (24 ore)")
+    # Lock first so a double click can't produce two free generations.
+    lock = await db.tryons.update_one({"id": tryon_id, "retry_used": {"$ne": True}}, {"$set": {"retry_used": True}})
+    if not lock.modified_count:
+        raise HTTPException(status_code=409, detail="Riprova gratuita già usata")
+    m_doc = await _get_measurements(user.user_id)
+    extra = RETRY_REASONS[body.reason]
+    try:
+        if doc.get("garment_category") == "look":
+            items = [{"name": i["name"], "category": i["category"]} for i in doc.get("copied_items", [])]
+            new_path = await _render_copylook(user.user_id, doc["person_path"], doc["garment_path"], items, m_doc, extra)
+        else:
+            new_path = await _render_single(user.user_id, doc["person_path"], doc["garment_path"], doc.get("garment_category"), doc.get("garment_name"), m_doc, extra)
+    except Exception:
+        await db.tryons.update_one({"id": tryon_id}, {"$unset": {"retry_used": ""}})
+        raise
+    upd = await _log_retry(user, "tryon", doc, body.reason, new_path)
+    await db.tryons.update_one({"id": tryon_id}, {"$set": upd})
+    return {**doc, **upd}
+
+
+@api_router.post("/outfits/{outfit_id}/retry")
+async def outfit_retry(outfit_id: str, body: RetryIn, user: User = Depends(get_current_user)):
+    doc = await db.outfits.find_one({"id": outfit_id, "user_id": user.user_id}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Outfit non trovato")
+    st = _retry_state(doc)
+    if not st["available"]:
+        raise HTTPException(status_code=409, detail="Riprova gratuita già usata" if st["used"] else "Riprova gratuita scaduta (24 ore)")
+    lock = await db.outfits.update_one({"id": outfit_id, "retry_used": {"$ne": True}}, {"$set": {"retry_used": True}})
+    if not lock.modified_count:
+        raise HTTPException(status_code=409, detail="Riprova gratuita già usata")
+    items = sorted(doc["items"], key=lambda g: _LAYER_ORDER.get((g.get("category") or "top").lower(), 2))
+    text = _GRID_LAYER_TEXT if doc.get("source") == "grid" else _DEFAULT_LAYER_TEXT
+    try:
+        _p, new_path = await _compose_outfit(user, doc["person_path"], items, text, RETRY_REASONS[body.reason])
+    except Exception:
+        await db.outfits.update_one({"id": outfit_id}, {"$unset": {"retry_used": ""}})
+        raise
+    upd = await _log_retry(user, "outfit", doc, body.reason, new_path)
+    await db.outfits.update_one({"id": outfit_id}, {"$set": upd})
+    return {**doc, **upd}
+
+
+@api_router.get("/admin/free-retries")
+async def admin_free_retries(_owner: User = Depends(require_owner)):
+    rows = await db.free_retries.find({}, {"_id": 0}).sort("created_at", -1).to_list(50)
+    agg = await db.free_retries.aggregate([{"$group": {"_id": "$reason", "n": {"$sum": 1}}}]).to_list(10)
+    return {"counts": {r: 0 for r in RETRY_REASONS} | {a["_id"]: a["n"] for a in agg}, "last": rows}
 
 
 from support import create_support_router

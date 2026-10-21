@@ -95,6 +95,34 @@ function Payments({ byPlan, last }) {
   );
 }
 
+const REASON_IT = { sfondo: "Sfondo cambiato", viso: "Viso diverso", capo: "Capo sbagliato", altro: "Altro" };
+
+function FreeRetries() {
+  const [d, setD] = useState(null);
+  useEffect(() => { api.get("/admin/free-retries").then(({ data }) => setD(data)).catch(() => {}); }, []);
+  if (!d) return null;
+  return (
+    <div className="mt-6" data-testid="admin-free-retries">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {Object.entries(d.counts).map(([k, n]) => <Kpi key={k} label={(REASON_IT[k] || k).toUpperCase()} value={n} testid={`admin-retry-count-${k}`} />)}
+      </div>
+      <table className="mt-6 w-full text-sm">
+        <thead><tr className="text-left text-[10px] tracking-[0.2em] text-white/40"><th className="py-2 font-normal">DATA</th><th className="font-normal">UTENTE</th><th className="font-normal">PROVA</th><th className="font-normal">MOTIVO</th></tr></thead>
+        <tbody>
+          {d.last.length === 0 ? <tr><td colSpan={4} className="py-4 text-white/40">Nessuna riprova gratuita</td></tr> : d.last.map((r) => (
+            <tr key={r.id} className="border-t border-white/10" data-testid={`admin-retry-row-${r.id}`}>
+              <td className="py-2 text-white/60">{new Date(r.created_at).toLocaleString("it-IT", { dateStyle: "short", timeStyle: "short" })}</td>
+              <td className="text-white/80">{r.email}</td>
+              <td className="text-white/80 truncate max-w-[280px]">{r.kind === "outfit" ? "Outfit · " : ""}{r.name}</td>
+              <td style={{ color: GOLD }}>{REASON_IT[r.reason] || r.reason}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 export default function AdminAtelier() {
   const [stats, setStats] = useState(null);
   const [state, setState] = useState("loading");
@@ -134,6 +162,9 @@ export default function AdminAtelier() {
           <h2 className="mt-14 text-sm tracking-[0.4em]" style={{ color: GOLD }}>PAGAMENTI STRIPE</h2>
           <RevenueChart data={stats.daily_revenue} />
           <Payments byPlan={stats.by_plan} last={stats.last_payments} />
+          <h2 className="mt-14 text-sm tracking-[0.4em]" style={{ color: GOLD }}>RIPROVE GRATUITE</h2>
+          <p className="mt-1 text-xs text-white/40">Prove rigenerate senza credito e motivo indicato dall&apos;utente</p>
+          <FreeRetries />
           <h2 className="mt-14 text-sm tracking-[0.4em]" style={{ color: GOLD }}>PRODOTTI HOT</h2>
           <p className="mt-1 text-xs text-white/40">I prodotti più analizzati dagli utenti, per categoria</p>
           <div className="mt-6 grid grid-cols-1 lg:grid-cols-2 gap-4">

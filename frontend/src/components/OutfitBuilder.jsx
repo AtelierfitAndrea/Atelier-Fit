@@ -4,6 +4,8 @@ import { LinkSimple, Plus, Trash, ShoppingBag, FloppyDisk, ShareNetwork, X } fro
 import { api, fileUrl } from "@/lib/api";
 import { useAvatar } from "@/lib/avatar";
 import IncludedNote from "@/components/IncludedNote";
+import HemCard from "@/components/HemCard";
+import FreeRetry from "@/components/FreeRetry";
 
 
 function priceFmt(n, cur = "EUR") {
@@ -250,12 +252,12 @@ export default function OutfitBuilder() {
         </div>
       )}
 
-      {result && <OutfitResult result={result} onSave={saveOutfit} onShare={shareOutfit} onClose={() => setResult(null)} />}
+      {result && <OutfitResult result={result} onSave={saveOutfit} onShare={shareOutfit} onClose={() => setResult(null)} onRetry={(d) => setResult((r) => ({ ...r, ...d }))} />}
     </section>
   );
 }
 
-function OutfitResult({ result, onSave, onShare, onClose }) {
+function OutfitResult({ result, onSave, onShare, onClose, onRetry }) {
   const total = result.total_price ?? result.items.reduce((s, it) => s + (Number(it.price) || 0), 0);
   return (
     <section className="grid grid-cols-1 lg:grid-cols-12 gap-6 fade-up" data-testid="outfit-result" translate="no">
@@ -264,6 +266,10 @@ function OutfitResult({ result, onSave, onShare, onClose }) {
           <X size={16} weight="bold" />
         </button>
         <img src={fileUrl(result.result_path)} alt="" className="w-full h-auto block" data-testid="outfit-result-image" />
+      </div>
+      <div className="lg:col-span-12 lg:order-last grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
+        <HemCard url={`/outfits/${result.id}/hem`} />
+        <FreeRetry kind="outfits" item={result} onDone={onRetry} />
       </div>
       <div className="lg:col-span-5 border hairline bg-white p-6 md:p-8 flex flex-col">
         <div className="label-caps text-brand">Il tuo outfit</div>

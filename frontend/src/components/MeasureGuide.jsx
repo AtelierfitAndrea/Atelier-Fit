@@ -11,7 +11,7 @@ export const GUIDES = {
   inseam_cm: { title: "Lunghezza gamba", text: "Dall'inguine fino alla caviglia, lungo l'interno gamba. In alternativa misura un pantalone che ti sta bene." },
 };
 
-const BODY = "M54 34 L54 40 L34 46 Q28 48 27 56 L22 120 L28 121 L36 64 L40 100 L37 128 L42 245 L56 245 L59 140 L61 140 L64 245 L78 245 L83 128 L80 100 L84 64 L92 121 L98 120 L93 56 Q92 48 86 46 L66 40 L66 34 Z";
+export const BODY = "M54 34 L54 40 L34 46 Q28 48 27 56 L22 120 L28 121 L36 64 L40 100 L37 128 L42 245 L56 245 L59 140 L61 140 L64 245 L78 245 L83 128 L80 100 L84 64 L92 121 L98 120 L93 56 Q92 48 86 46 L66 40 L66 34 Z";
 
 const TAPE = {
   height_cm: <path d="M108 9 L108 245" />,
