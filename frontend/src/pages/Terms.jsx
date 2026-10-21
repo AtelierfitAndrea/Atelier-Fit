@@ -47,6 +47,7 @@ const SECTIONS = [
   ]],
   ["12. Privacy", [
     "Il trattamento dei dati personali avviene nel rispetto del Regolamento (UE) 2016/679 (GDPR). Puoi chiedere in qualsiasi momento l'accesso, la rettifica o la cancellazione dei tuoi dati.",
+    "La tua email e la tua foto sono usate SOLO per il funzionamento del tuo account e per il calcolo della taglia: l'email identifica il tuo account (anche se cambi telefono) e collega il tuo abbonamento; la foto serve solo per la prova vestiti. È vietato l'invio di newsletter o pubblicità senza il tuo consenso esplicito. Zero spam, zero pubblicità, zero vendita a terzi.",
   ]],
   ["13. Modifiche ai Termini", [
     "Possiamo aggiornare questi Termini. In caso di modifiche ti chiederemo di accettare la nuova versione al successivo accesso. Se non la accetti puoi smettere di usare il Servizio e disdire l'abbonamento.",

@@ -22,7 +22,7 @@ function Notes() {
 }
 
 export default function AvatarBox({ manage = false }) {
-  const { avatar, setAvatar, profileName } = useAvatar();
+  const { avatar, setAvatar, profileName, refresh } = useAvatar();
   const [camOpen, setCamOpen] = useState(false);
   const [preview, setPreview] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -37,6 +37,7 @@ export default function AvatarBox({ manage = false }) {
       const fd = new FormData(); fd.append("photo", file);
       const { data } = await api.post("/profile/avatar", fd, { headers: { "Content-Type": "multipart/form-data" } });
       setAvatar(data.avatar);
+      refresh();
       toast.success("Avatar pronto per la prova vestiti");
     } catch (e) {
       toast.error(e?.response?.data?.detail || "Salvataggio non riuscito");

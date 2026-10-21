@@ -25,8 +25,8 @@ export default function PaywallModal() {
     try {
       const { data } = await api.post("/subscription/checkout", { option, origin_url: window.location.origin });
       window.location.href = data.checkout_url;
-    } catch {
-      toast.error("Checkout non disponibile, riprova");
+    } catch (e) {
+      toast.error(e?.response?.status === 409 ? e.response.data.detail : "Checkout non disponibile, riprova");
       setProcessing(null);
     }
   };

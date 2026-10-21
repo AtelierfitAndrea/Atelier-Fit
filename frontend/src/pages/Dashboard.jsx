@@ -7,6 +7,7 @@ import { ArrowRight, TShirt, Ruler, Sparkle } from "@phosphor-icons/react";
 import AccuracyBadge from "@/components/AccuracyBadge";
 import WeightModal from "@/components/WeightModal";
 import HoneymoonBanner from "@/components/HoneymoonBanner";
+import RefreshBanner from "@/components/RefreshBanner";
 import TryonCounter from "@/components/TryonCounter";
 import PricingCards from "@/components/PricingCards";
 import CalcolaTagliaBox from "@/components/CalcolaTagliaBox";
@@ -57,6 +58,7 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-14" data-testid="dashboard-root">
+      <RefreshBanner onWeight={() => setModalOpen(true)} />
       <div className="space-y-3">
       <HoneymoonBanner />
       {!perfect && <div className="flex items-center gap-3 border border-[#8B7355]/30 bg-[#FAF8F5] px-4 py-2.5" data-testid="accuracy-disclaimer">

@@ -242,6 +242,10 @@ async def startup():
     except Exception as e:
         logger.error(f"Storage init failed: {e}")
     await _migrate_plaintext_personal_data()
+    try:
+        await _backfill_account_fields()
+    except Exception as e:
+        logger.warning(f"account backfill failed: {e}")
 
 
 # ----- Auth routes -----
@@ -286,13 +290,16 @@ async def auth_session(request: Request, response: Response):
             {"$set": {"name": data.get("name", existing.get("name", "")), "picture": data.get("picture")}},
         )
     else:
+        # Email is the unique account key: same email on another device = same account, avatar and plan.
         user_id = f"user_{uuid.uuid4().hex[:12]}"
+        now = datetime.now(timezone.utc)
         await db.users.insert_one({
             "user_id": user_id,
             "email": email,
             "name": data.get("name", ""),
             "picture": data.get("picture"),
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": now.isoformat(),
+            **_free_month_fields(now),
         })
     session_token = data["session_token"]
     expires_at = datetime.now(timezone.utc) + timedelta(days=7)
@@ -315,6 +322,48 @@ async def auth_session(request: Request, response: Response):
     )
     user_doc = await db.users.find_one({"user_id": user_id}, {"_id": 0})
     return {"user": user_doc, "session_token": session_token}
+
+
+def _free_month_fields(created: datetime) -> dict:
+    return {"free_month_start": created.isoformat(), "free_month_end": (created + timedelta(days=30)).isoformat()}
+
+
+async def _backfill_account_fields():
+    async for u in db.users.find({"free_month_start": {"$exists": False}}, {"_id": 0, "user_id": 1, "created_at": 1}):
+        created = _parse_dt(u.get("created_at")) or datetime.now(timezone.utc)
+        await db.users.update_one({"user_id": u["user_id"]}, {"$set": _free_month_fields(created)})
+    await db.users.create_index("email", unique=True, partialFilterExpression={"email": {"$type": "string"}})
+
+
+class ConfirmEmailIn(BaseModel):
+    email: str
+
+
+@api_router.post("/profile/confirm-email")
+async def confirm_email(body: ConfirmEmailIn, user: User = Depends(get_account_user)):
+    if body.email.strip().lower() != (user.email or "").lower():
+        raise HTTPException(status_code=400, detail="Usa la stessa email con cui hai effettuato l'accesso")
+    now = datetime.now(timezone.utc).isoformat()
+    await db.users.update_one({"user_id": user.user_id}, {"$set": {"email_confirmed_at": now}})
+    return {"email": user.email, "email_confirmed_at": now}
+
+
+async def _stripe_customer_for(user: User) -> Optional[str]:
+    # One Stripe customer per email: payments follow the account on every device.
+    doc = await db.users.find_one({"user_id": user.account_id}, {"_id": 0, "stripe_customer_id": 1, "email": 1, "name": 1}) or {}
+    if doc.get("stripe_customer_id"):
+        return doc["stripe_customer_id"]
+    email = doc.get("email") or user.email
+    if not email:
+        return None
+    try:
+        found = await run_in_threadpool(lambda: stripe.Customer.list(email=email, limit=1).data)
+        cust = found[0] if found else await run_in_threadpool(lambda: stripe.Customer.create(email=email, name=doc.get("name") or None, metadata={"user_id": user.account_id}))
+    except Exception as e:
+        logger.warning(f"stripe customer for {email} failed: {e}")
+        return None
+    await db.users.update_one({"user_id": user.account_id}, {"$set": {"stripe_customer_id": cust.id}})
+    return cust.id
 
 
 TERMS_VERSION = "1.0-2026-06"
@@ -588,10 +637,34 @@ def _clean_jpeg(raw: bytes) -> bytes:
 # ----- Il Mio Avatar: one full-body photo for measurements + try-ons -----
 @api_router.get("/profile/avatar")
 async def get_avatar(user: User = Depends(get_current_user)):
-    doc = await db.users.find_one({"user_id": user.user_id}, {"_id": 0, "avatar_path": 1, "avatar_at": 1, "is_family_profile": 1, "name": 1, "reminder_snoozed_until": 1, "measures_updated_at": 1}) or {}
+    doc = await db.users.find_one({"user_id": user.user_id}, {"_id": 0, "avatar_path": 1, "avatar_at": 1, "is_family_profile": 1, "name": 1, "reminder_snoozed_until": 1, "measures_updated_at": 1, "refresh_snoozed_until": 1}) or {}
     return {"path": doc.get("avatar_path"), "created_at": doc.get("avatar_at"),
             "profile_name": doc.get("name") if doc.get("is_family_profile") else None,
-            "reminder_due": await _reminder_due(user.user_id, doc), "reminder_young": _is_young(await _get_measurements(user.user_id))}
+            "reminder_due": await _reminder_due(user.user_id, doc), "reminder_young": _is_young(await _get_measurements(user.user_id)),
+            "refresh_due": await _refresh_due(user.user_id, doc)}
+
+
+REFRESH_DAYS = 60
+
+
+async def _refresh_due(user_id: str, doc: dict) -> bool:
+    # Separate 60-day banner: refresh weight and Avatar photo (measures popup keeps its 90/180-day logic).
+    now = datetime.now(timezone.utc)
+    snoozed = _parse_dt(doc.get("refresh_snoozed_until"))
+    if snoozed and snoozed > now:
+        return False
+    avatar_at = _parse_dt(doc.get("avatar_at"))
+    last_w = await db.weight_history.find_one({"user_id": user_id}, {"_id": 0, "recorded_at": 1}, sort=[("recorded_at", -1)])
+    w_at = _parse_dt((last_w or {}).get("recorded_at"))
+    old = lambda d: d is not None and now - d > timedelta(days=REFRESH_DAYS)  # noqa: E731
+    return old(avatar_at) or old(w_at)
+
+
+@api_router.post("/profile/refresh/snooze")
+async def snooze_refresh(user: User = Depends(get_current_user)):
+    until = (datetime.now(timezone.utc) + timedelta(days=7)).isoformat()
+    await db.users.update_one({"user_id": user.user_id}, {"$set": {"refresh_snoozed_until": until}})
+    return {"snoozed_until": until}
 
 
 async def _reminder_due(user_id: str, doc: dict) -> bool:
@@ -780,9 +853,9 @@ async def get_subscription_status(user_id: str) -> dict:
     user_doc = await db.users.find_one({"user_id": user_id}, {"_id": 0}) or {}
     created_at = _parse_dt(user_doc.get("created_at")) or datetime.now(timezone.utc)
     now = datetime.now(timezone.utc)
-    days_since_signup = (now - created_at).days
-    honeymoon_active = days_since_signup < HONEYMOON_DAYS
-    days_left_honeymoon = max(0, HONEYMOON_DAYS - days_since_signup)
+    free_end = _parse_dt(user_doc.get("free_month_end")) or created_at + timedelta(days=HONEYMOON_DAYS)
+    honeymoon_active = now < free_end
+    days_left_honeymoon = int(-(-(free_end - now).total_seconds() // 86400)) if honeymoon_active else 0
 
     plan = user_doc.get("plan", "FREE")
     exp = _parse_dt(user_doc.get("plan_expires_at"))
@@ -861,14 +934,21 @@ async def api_subscription_checkout(req: CheckoutRequest, request: Request, user
     if not prices:
         raise HTTPException(status_code=500, detail="Prezzo non configurato")
     price = prices[0]
+    if req.option in ("single", "family"):
+        st = await get_subscription_status(user.account_id)
+        exp = _parse_dt(st.get("plan_expires_at"))
+        rank = {"FREE": 0, "SINGLE": 1, "FAMILY": 2}
+        if exp and exp - datetime.now(timezone.utc) > timedelta(days=3) and rank.get(st["plan"], 0) >= rank[req.option.upper()]:
+            raise HTTPException(status_code=409, detail=f"Hai già un abbonamento {st['plan'].capitalize()} attivo fino al {exp.strftime('%d/%m/%Y')}: non serve pagare di nuovo.")
+    customer_id = await _stripe_customer_for(user)
     origin = req.origin_url.rstrip("/")
     kwargs = dict(
         line_items=[{"price": price.id, "quantity": 1}],
         mode="payment",
         success_url=f"{origin}/payment/success?session_id={{CHECKOUT_SESSION_ID}}",
         cancel_url=f"{origin}/payment/cancel",
-        customer_email=user.email or None,
-        metadata={"user_id": user.account_id, "option": req.option},
+        **({"customer": customer_id} if customer_id else {"customer_email": user.email or None}),
+        metadata={"user_id": user.account_id, "option": req.option, "email": user.email or ""},
     )
     try:
         session = await run_in_threadpool(lambda: stripe.checkout.Session.create(**kwargs, managed_payments={"enabled": True}))
