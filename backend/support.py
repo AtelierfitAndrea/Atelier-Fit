@@ -51,7 +51,8 @@ Rispondi nella lingua del cliente se non scrive in italiano.
 {KNOWLEDGE_BASE}
 
 Devi restituire SOLO un JSON valido:
-{{"relevant": true|false, "category": "maglie|giacche|pantaloni|scarpe|outfit|foto|misure|privacy|altro", "reply": "testo della mail"}}
+{{"relevant": true|false, "brand": true|false, "category": "maglie|giacche|pantaloni|scarpe|outfit|foto|misure|privacy|altro", "reply": "testo della mail"}}
+- brand = true se chi scrive è un brand, negozio, azienda, agenzia o influencer che propone collaborazione, partnership, vendita, integrazione, sponsorizzazione o pubblicità con My Atelier (in quel caso relevant = false e reply = "").
 - relevant = true se la richiesta riguarda l'uso di My Atelier: capi (maglie, giacche, pantaloni, scarpe, vestiti), foto/avatar, misure e taglie, privacy, outfit, prove virtuali.
 - relevant = false per fatture, pagamenti/rimborsi, partnership, pubblicità, spam, newsletter, richieste legali o qualsiasi altro tema: in quel caso reply = "".
 - La reply è testo semplice: NIENTE Markdown (niente asterischi, cancelletti o grassetti); per i percorsi usa il formato Profilo > Le tue misure.
@@ -60,6 +61,7 @@ Devi restituire SOLO un JSON valido:
 
 SKIP_SENDERS = re.compile(r"(no-?reply|mailer-daemon|postmaster|notifications?@|bounce)", re.I)
 MAX_AUTO_REPLIES_PER_TICKET = 5
+BRAND_REPLY = "Ciao! Grazie per averci contattato come brand 🙏 Abbiamo ricevuto la tua proposta. Ti risponderà personalmente Andrea, il fondatore, a brevissimo. Grazie!"
 
 
 def _now() -> str:
@@ -194,13 +196,41 @@ def create_support_router(db, get_account_user, require_owner, extract_json, eme
         who = {"user": "CLIENTE", "ai": "MY ATELIER", "admin": "MY ATELIER"}
         return "\n\n".join(f"[{who.get(m['author'], m['author'])}] {m['body']}" for m in msgs if not m.get("draft"))
 
+    async def notify_owner_brand(ticket: dict):
+        body = (f"Un brand ti ha scritto - rispondi tu personalmente\n\nDa: {ticket.get('name') or ''} <{ticket['email']}>\n"
+                f"Oggetto: {ticket.get('subject')}\n\n{await thread_text(ticket['id'])}\n\n"
+                "Rispondi dalla Stanza del Proprietario > Assistenza > BRAND DA CONTATTARE.")
+        msg = EmailMessage()
+        msg["From"] = formataddr(("My Atelier", _cfg("SUPPORT_EMAIL")))
+        msg["To"] = _cfg("SUPPORT_CC_EMAIL")
+        msg["Subject"] = "Un brand ti ha scritto - rispondi tu personalmente"
+        msg["Reply-To"] = ticket["email"]
+        msg.set_content(body)
+
+        def _send():
+            with smtplib.SMTP_SSL(_cfg("SUPPORT_SMTP_HOST"), int(_cfg("SUPPORT_SMTP_PORT")), timeout=30) as smtp:
+                smtp.login(_cfg("SUPPORT_EMAIL"), _cfg("SUPPORT_EMAIL_PASSWORD"))
+                smtp.send_message(msg)
+        try:
+            await run_in_threadpool(_send)
+            await db.support_tickets.update_one({"id": ticket["id"]}, {"$set": {"brand_notified_at": _now()}})
+        except Exception as e:
+            logger.error(f"support: brand notify failed for {ticket['id']}: {e}")
+
+    async def handle_brand(ticket: dict):
+        await db.support_tickets.update_one({"id": ticket["id"]}, {"$set": {"status": "brand", "brand": True, "category": "brand", "unread_admin": True}})
+        if not ticket.get("brand_replied") and (await settings())["auto_reply"]:
+            await deliver(ticket, BRAND_REPLY, "ai")
+            await db.support_tickets.update_one({"id": ticket["id"]}, {"$set": {"brand_replied": True}})
+        await notify_owner_brand(ticket)
+
     async def ai_answer(ticket: dict) -> dict:
         chat = LlmChat(api_key=emergent_key, session_id=f"support-{ticket['id']}-{uuid.uuid4().hex[:6]}", system_message=SYSTEM_PROMPT)
         chat.with_model("anthropic", "claude-sonnet-4-5-20250929")
         prompt = f"Nome cliente: {ticket.get('name') or 'non noto'}\nOggetto: {ticket.get('subject')}\n\nConversazione:\n{await thread_text(ticket['id'])}\n\nRispondi all'ultimo messaggio del CLIENTE."
         data = extract_json(await chat.send_message(UserMessage(text=prompt))) or {}
         reply = re.sub(r"\*\*|__|^#+\s*", "", str(data.get("reply") or ""), flags=re.M).strip()
-        return {"relevant": bool(data.get("relevant")), "category": str(data.get("category") or "altro")[:20], "reply": reply}
+        return {"relevant": bool(data.get("relevant")), "brand": bool(data.get("brand")), "category": str(data.get("category") or "altro")[:20], "reply": reply}
 
     async def deliver(ticket: dict, body: str, author: str, **extra) -> dict:
         last_in = await db.support_messages.find_one({"ticket_id": ticket["id"], "author": "user", "email_message_id": {"$ne": None}}, {"_id": 0}, sort=[("created_at", -1)])
@@ -217,11 +247,17 @@ def create_support_router(db, get_account_user, require_owner, extract_json, eme
         ticket = await db.support_tickets.find_one({"id": ticket_id}, {"_id": 0})
         if not ticket:
             return
+        if ticket.get("brand"):
+            await handle_brand(ticket)
+            return
         try:
             ans = await ai_answer(ticket)
         except Exception as e:
             logger.error(f"support: AI failed for {ticket_id}: {e}")
             await db.support_tickets.update_one({"id": ticket_id}, {"$set": {"status": "needs_human", "ai_error": str(e)[:200]}})
+            return
+        if ans["brand"]:
+            await handle_brand(ticket)
             return
         if not ticket.get("category"):
             await db.support_tickets.update_one({"id": ticket_id}, {"$set": {"category": ans["category"]}})
@@ -355,7 +391,7 @@ def create_support_router(db, get_account_user, require_owner, extract_json, eme
         message: str = Field(min_length=1, max_length=8000)
 
     class StatusIn(BaseModel):
-        status: str = Field(pattern="^(open|answered|needs_human|closed)$")
+        status: str = Field(pattern="^(open|answered|needs_human|brand|closed)$")
 
     class SettingsIn(BaseModel):
         auto_reply: bool
@@ -367,7 +403,7 @@ def create_support_router(db, get_account_user, require_owner, extract_json, eme
         for t in items:
             last = await db.support_messages.find_one({"ticket_id": t["id"]}, {"_id": 0, "body": 1, "author": 1}, sort=[("created_at", -1)])
             t["preview"] = (last or {}).get("body", "")[:140]
-        counts = {s: await db.support_tickets.count_documents({"status": s}) for s in ("open", "answered", "needs_human", "closed")}
+        counts = {s: await db.support_tickets.count_documents({"status": s}) for s in ("open", "answered", "needs_human", "brand", "closed")}
         return {"tickets": items, "counts": counts, "settings": await settings()}
 
     @r.get("/admin/support/tickets/{ticket_id}")
@@ -411,7 +447,7 @@ def create_support_router(db, get_account_user, require_owner, extract_json, eme
 
     @r.get("/admin/support/pending-count")
     async def admin_pending(_owner=Depends(require_owner)):
-        q = {"status": {"$ne": "closed"}, "$or": [{"status": "needs_human"}, {"unread_admin": True}]}
+        q = {"status": {"$ne": "closed"}, "$or": [{"status": {"$in": ["needs_human", "brand"]}}, {"unread_admin": True}]}
         return {"pending": await db.support_tickets.count_documents(q)}
 
     @r.get("/admin/support/faq-stats")

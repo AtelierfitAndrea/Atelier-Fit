@@ -5,7 +5,7 @@ import { api } from "@/lib/api";
 import { Switch } from "@/components/ui/switch";
 
 const GOLD = "#D4AF37";
-const STATUS = { open: "Aperta", answered: "Risposta", needs_human: "Da gestire", closed: "Chiusa" };
+const STATUS = { brand: "Brand da contattare", open: "Aperta", answered: "Risposta", needs_human: "Da gestire", closed: "Chiusa" };
 const AUTHOR = { user: "CLIENTE", ai: "AI", admin: "TU" };
 const fmt = (d) => (d ? new Date(d).toLocaleString("it-IT", { dateStyle: "short", timeStyle: "short" }) : "—");
 
@@ -14,7 +14,7 @@ function TicketRow({ t, active, onClick }) {
     <button onClick={onClick} className={`w-full text-left p-4 border-b border-white/10 hover:bg-white/5 ${active ? "bg-white/10" : ""}`} data-testid={`admin-support-row-${t.id}`}>
       <div className="flex items-center justify-between gap-2">
         <span className="text-sm truncate">{t.unread_admin && <span className="inline-block w-1.5 h-1.5 rounded-full mr-2 align-middle" style={{ background: GOLD }} />}{t.name || t.email}</span>
-        <span className="text-[10px] tracking-[0.2em] shrink-0" style={{ color: t.status === "needs_human" ? "#F87171" : GOLD }}>{(STATUS[t.status] || t.status).toUpperCase()}</span>
+        <span className="text-[10px] tracking-[0.2em] shrink-0" style={{ color: t.status === "needs_human" ? "#F87171" : t.status === "brand" ? "#0A0A0A" : GOLD, background: t.status === "brand" ? GOLD : "transparent", padding: t.status === "brand" ? "2px 6px" : 0 }}>{(STATUS[t.status] || t.status).toUpperCase()}</span>
       </div>
       <div className="text-xs text-white/70 mt-1 truncate">{t.subject}</div>
       <div className="text-[11px] text-white/40 mt-1 truncate">{t.source === "email" ? "Email" : "App"} · {t.category || "—"} · {fmt(t.updated_at)}</div>

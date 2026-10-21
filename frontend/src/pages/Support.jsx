@@ -5,7 +5,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import { api } from "@/lib/api";
 
 const CATS = [["maglie", "Maglie"], ["giacche", "Giacche"], ["pantaloni", "Pantaloni"], ["scarpe", "Scarpe"], ["outfit", "Outfit completo"], ["foto", "Foto"], ["misure", "Misure"], ["privacy", "Privacy"], ["altro", "Altro"]];
-const STATUS = { open: "In lavorazione", answered: "Risposta inviata", needs_human: "Presa in carico dal team", closed: "Chiusa" };
+const STATUS = { open: "In lavorazione", answered: "Risposta inviata", needs_human: "Presa in carico dal team", brand: "Ti risponderà Andrea, il fondatore", closed: "Chiusa" };
 const fmt = (d) => new Date(d).toLocaleString("it-IT", { dateStyle: "short", timeStyle: "short" });
 
 function Thread({ t, onSent }) {
