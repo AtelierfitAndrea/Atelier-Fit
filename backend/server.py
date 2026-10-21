@@ -1,3 +1,4 @@
+import asyncio
 from fastapi import FastAPI, APIRouter, HTTPException, Request, Response, UploadFile, File, Depends, Header, Query, Cookie
 from fastapi.responses import JSONResponse
 from starlette.concurrency import run_in_threadpool
@@ -20,6 +21,7 @@ import json as pyjson
 from cryptography.fernet import Fernet, InvalidToken
 from body_measure import brand_sizes, shoe_size
 import head_lock
+import receipt
 import hem as hem_mod
 import re
 import stripe
@@ -979,6 +981,7 @@ async def _apply_paid_session(session_id: str) -> None:
     now = datetime.now(timezone.utc)
     if option == "extra":
         await db.users.update_one({"user_id": uid}, {"$inc": {"extra_tryon_credits": 1}})
+        asyncio.create_task(_send_receipt(session_id))
         return
     doc = await db.users.find_one({"user_id": uid}, {"_id": 0, "plan": 1, "plan_expires_at": 1}) or {}
     plan = option.upper()
@@ -988,6 +991,28 @@ async def _apply_paid_session(session_id: str) -> None:
         "plan": plan, "plan_started_at": now.isoformat(),
         "plan_expires_at": (start + timedelta(days=PLAN_DAYS)).isoformat(), "stripe_last_session": session_id,
     }})
+    asyncio.create_task(_send_receipt(session_id))
+
+
+async def _send_receipt(session_id: str) -> None:
+    # Claimed once per payment; failures are logged on the transaction, never block the plan.
+    tx = await db.payment_transactions.find_one_and_update(
+        {"session_id": session_id, "receipt_status": {"$exists": False}}, {"$set": {"receipt_status": "sending"}})
+    if not tx:
+        return
+    u = await db.users.find_one({"user_id": tx["user_id"]}, {"_id": 0, "email": 1, "display_name": 1, "name": 1, "plan_expires_at": 1}) or {}
+    if not u.get("email"):
+        await db.payment_transactions.update_one({"session_id": session_id}, {"$set": {"receipt_status": "no_email"}})
+        return
+    exp = _parse_dt(u.get("plan_expires_at")) if tx["option"] != "extra" else None
+    msg = receipt.build(u.get("display_name") or (u.get("name") or "").split(" ")[0], tx["option"], float(tx.get("amount") or 0),
+                        tx.get("currency") or "eur", datetime.now(timezone.utc), exp, session_id)
+    try:
+        await run_in_threadpool(receipt.send, u["email"], msg)
+        await db.payment_transactions.update_one({"session_id": session_id}, {"$set": {"receipt_status": "sent", "receipt_sent_at": datetime.now(timezone.utc).isoformat()}})
+    except Exception as e:
+        logger.error(f"receipt send failed for {session_id}: {e}")
+        await db.payment_transactions.update_one({"session_id": session_id}, {"$set": {"receipt_status": "failed", "receipt_error": str(e)[:200]}})
 
 
 async def _mark_paid(session_id: str, s) -> None:
