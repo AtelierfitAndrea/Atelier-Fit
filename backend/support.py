@@ -15,11 +15,15 @@ from email.message import EmailMessage
 from email.utils import formataddr, make_msgid, parseaddr
 from typing import Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
+import json as pyjson
+
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
 
 from emergentintegrations.llm.chat import LlmChat, UserMessage
+
+import whatsapp
 
 logger = logging.getLogger("support")
 
@@ -197,14 +201,17 @@ def create_support_router(db, get_account_user, require_owner, extract_json, eme
         return "\n\n".join(f"[{who.get(m['author'], m['author'])}] {m['body']}" for m in msgs if not m.get("draft"))
 
     async def notify_owner_brand(ticket: dict):
-        body = (f"Un brand ti ha scritto - rispondi tu personalmente\n\nDa: {ticket.get('name') or ''} <{ticket['email']}>\n"
+        contact = f"+{ticket['phone']} (WhatsApp)" if ticket.get("channel") == "whatsapp" else ticket.get("email")
+        await whatsapp.notify_owner(f"Un brand ti ha scritto - rispondi tu personalmente\nDa: {ticket.get('name') or ''} {contact}\nOggetto: {ticket.get('subject')}")
+        body = (f"Un brand ti ha scritto - rispondi tu personalmente\n\nDa: {ticket.get('name') or ''} <{contact}>\n"
                 f"Oggetto: {ticket.get('subject')}\n\n{await thread_text(ticket['id'])}\n\n"
                 "Rispondi dalla Stanza del Proprietario > Assistenza > BRAND DA CONTATTARE.")
         msg = EmailMessage()
         msg["From"] = formataddr(("My Atelier", _cfg("SUPPORT_EMAIL")))
         msg["To"] = _cfg("SUPPORT_CC_EMAIL")
         msg["Subject"] = "Un brand ti ha scritto - rispondi tu personalmente"
-        msg["Reply-To"] = ticket["email"]
+        if ticket.get("email"):
+            msg["Reply-To"] = ticket["email"]
         msg.set_content(body)
 
         def _send():
@@ -217,6 +224,32 @@ def create_support_router(db, get_account_user, require_owner, extract_json, eme
         except Exception as e:
             logger.error(f"support: brand notify failed for {ticket['id']}: {e}")
 
+    async def handoff_call(ticket: dict):
+        # WhatsApp question outside the 10 FAQ: tell the customer Andrea will call and alert him (WhatsApp + email).
+        if not ticket.get("handoff_sent"):
+            await deliver(ticket, whatsapp.HANDOFF_TEXT, "ai")
+        await db.support_tickets.update_one({"id": ticket["id"]}, {"$set": {"status": "needs_human", "handoff_sent": True, "call_requested_at": _now(), "unread_admin": True}})
+        last = await db.support_messages.find_one({"ticket_id": ticket["id"], "author": "user"}, {"_id": 0, "body": 1}, sort=[("created_at", -1)])
+        q = (last or {}).get("body", "")[:600]
+        phone = ticket["phone"]
+        text = (f"📞 Richiesta di chiamata My Atelier\nCliente: {ticket.get('name') or 'senza nome'} (+{phone})\nDomanda: {q}\n"
+                f"Chiama: tel:+{phone} · WhatsApp: https://wa.me/{phone}")
+        await whatsapp.notify_owner(text)
+        msg = EmailMessage()
+        msg["From"] = formataddr(("My Atelier", _cfg("SUPPORT_EMAIL")))
+        msg["To"] = _cfg("SUPPORT_CC_EMAIL")
+        msg["Subject"] = f"Richiesta di chiamata WhatsApp: {ticket.get('name') or '+' + phone}"
+        msg.set_content(text + "\n\nConversazione nella Stanza del Proprietario > Assistenza.")
+
+        def _send():
+            with smtplib.SMTP_SSL(_cfg("SUPPORT_SMTP_HOST"), int(_cfg("SUPPORT_SMTP_PORT")), timeout=30) as smtp:
+                smtp.login(_cfg("SUPPORT_EMAIL"), _cfg("SUPPORT_EMAIL_PASSWORD"))
+                smtp.send_message(msg)
+        try:
+            await run_in_threadpool(_send)
+        except Exception as e:
+            logger.error(f"support: call email failed for {ticket['id']}: {e}")
+
     async def handle_brand(ticket: dict):
         await db.support_tickets.update_one({"id": ticket["id"]}, {"$set": {"status": "brand", "brand": True, "category": "brand", "unread_admin": True}})
         if not ticket.get("brand_replied") and (await settings())["auto_reply"]:
@@ -227,12 +260,21 @@ def create_support_router(db, get_account_user, require_owner, extract_json, eme
     async def ai_answer(ticket: dict) -> dict:
         chat = LlmChat(api_key=emergent_key, session_id=f"support-{ticket['id']}-{uuid.uuid4().hex[:6]}", system_message=SYSTEM_PROMPT)
         chat.with_model("anthropic", "claude-sonnet-4-5-20250929")
-        prompt = f"Nome cliente: {ticket.get('name') or 'non noto'}\nOggetto: {ticket.get('subject')}\n\nConversazione:\n{await thread_text(ticket['id'])}\n\nRispondi all'ultimo messaggio del CLIENTE."
+        channel = ("\nCanale: WhatsApp. Stesse regole e stessa knowledge base, ma reply breve (massimo 700 caratteri), tono cordiale, "
+                   "chiudi con \"Il team My Atelier\". Imposta relevant = false SOLO se la domanda esce dai temi delle 10 risposte (foto, misure, taglie, outfit, privacy, cancellazione foto, lunghezza capi, scarpe, risultato della prova): per esempio spedizioni, pagamenti, resi, ordini.\n") if ticket.get("channel") == "whatsapp" else ""
+        prompt = f"Nome cliente: {ticket.get('name') or 'non noto'}\nOggetto: {ticket.get('subject')}{channel}\n\nConversazione:\n{await thread_text(ticket['id'])}\n\nRispondi all'ultimo messaggio del CLIENTE."
         data = extract_json(await chat.send_message(UserMessage(text=prompt))) or {}
         reply = re.sub(r"\*\*|__|^#+\s*", "", str(data.get("reply") or ""), flags=re.M).strip()
         return {"relevant": bool(data.get("relevant")), "brand": bool(data.get("brand")), "category": str(data.get("category") or "altro")[:20], "reply": reply}
 
     async def deliver(ticket: dict, body: str, author: str, **extra) -> dict:
+        if ticket.get("channel") == "whatsapp":
+            try:
+                wid = await whatsapp.send_text(ticket["phone"], body)
+                return await add_message(ticket["id"], author, body, wa_message_id=wid, sent=True, **extra)
+            except Exception as e:
+                logger.error(f"support: whatsapp send failed for {ticket['id']}: {e}")
+                return await add_message(ticket["id"], author, body, sent=False, send_error=str(e)[:200], **extra)
         last_in = await db.support_messages.find_one({"ticket_id": ticket["id"], "author": "user", "email_message_id": {"$ne": None}}, {"_id": 0}, sort=[("created_at", -1)])
         subject = ticket.get("subject") or "La tua richiesta"
         subject = subject if subject.lower().startswith("re:") else f"Re: {subject}"
@@ -255,6 +297,8 @@ def create_support_router(db, get_account_user, require_owner, extract_json, eme
         except Exception as e:
             logger.error(f"support: AI failed for {ticket_id}: {e}")
             await db.support_tickets.update_one({"id": ticket_id}, {"$set": {"status": "needs_human", "ai_error": str(e)[:200]}})
+            if ticket.get("channel") == "whatsapp":
+                await handoff_call(ticket)
             return
         if ans["brand"]:
             await handle_brand(ticket)
@@ -263,6 +307,8 @@ def create_support_router(db, get_account_user, require_owner, extract_json, eme
             await db.support_tickets.update_one({"id": ticket_id}, {"$set": {"category": ans["category"]}})
         if not ans["relevant"] or not ans["reply"]:
             await db.support_tickets.update_one({"id": ticket_id}, {"$set": {"status": "needs_human"}})
+            if ticket.get("channel") == "whatsapp":
+                await handoff_call(ticket)
             return
         auto = (await settings())["auto_reply"] and ticket.get("auto_replies", 0) < MAX_AUTO_REPLIES_PER_TICKET
         if not auto:
@@ -465,6 +511,46 @@ def create_support_router(db, get_account_user, require_owner, extract_json, eme
     async def admin_sync(bg: BackgroundTasks, _owner=Depends(require_owner)):
         bg.add_task(poll_mailbox)
         return {"status": "started"}
+
+    @r.get("/whatsapp/webhook")
+    async def wa_verify(request: Request):
+        q = request.query_params
+        token = os.environ.get("WHATSAPP_VERIFY_TOKEN") or ""
+        if q.get("hub.mode") != "subscribe" or not token or not hmac.compare_digest(q.get("hub.verify_token") or "", token):
+            raise HTTPException(status_code=403, detail="verification failed")
+        return Response(content=q.get("hub.challenge") or "", media_type="text/plain")
+
+    async def wa_handle(items: list):
+        for it in items:
+            if not it["wamid"] or not it["from"] or await db.support_messages.find_one({"wa_message_id": it["wamid"]}):
+                continue
+            ticket = await db.support_tickets.find_one({"channel": "whatsapp", "phone": it["from"], "status": {"$ne": "closed"}}, {"_id": 0}, sort=[("updated_at", -1)])
+            if not ticket:
+                ticket = await new_ticket("", it["name"], f"WhatsApp · {it['text'][:60]}", "whatsapp")
+                await db.support_tickets.update_one({"id": ticket["id"]}, {"$set": {"channel": "whatsapp", "phone": it["from"]}})
+                ticket.update({"channel": "whatsapp", "phone": it["from"]})
+            await add_message(ticket["id"], "user", it["text"], wa_message_id=it["wamid"])
+            if not ticket.get("brand"):
+                await db.support_tickets.update_one({"id": ticket["id"]}, {"$set": {"status": "open"}})
+            await process(ticket["id"])
+
+    @r.post("/whatsapp/webhook")
+    async def wa_inbound(request: Request, bg: BackgroundTasks):
+        if not whatsapp.configured():
+            raise HTTPException(status_code=503, detail="WhatsApp non configurato")
+        raw = await request.body()
+        if not whatsapp.valid_signature(raw, request.headers.get("x-hub-signature-256")):
+            raise HTTPException(status_code=401, detail="invalid signature")
+        try:
+            payload = pyjson.loads(raw)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="invalid JSON")
+        bg.add_task(wa_handle, whatsapp.parse_messages(payload))
+        return {"ok": True}
+
+    @r.get("/admin/support/whatsapp-status")
+    async def wa_status(_owner=Depends(require_owner)):
+        return {"configured": whatsapp.configured(), "owner_number": os.environ.get("WHATSAPP_OWNER_NUMBER"), "webhook_path": "/api/whatsapp/webhook"}
 
     @r.post("/cron/support-poll")
     async def cron_poll(request: Request, bg: BackgroundTasks):

@@ -13,11 +13,11 @@ function TicketRow({ t, active, onClick }) {
   return (
     <button onClick={onClick} className={`w-full text-left p-4 border-b border-white/10 hover:bg-white/5 ${active ? "bg-white/10" : ""}`} data-testid={`admin-support-row-${t.id}`}>
       <div className="flex items-center justify-between gap-2">
-        <span className="text-sm truncate">{t.unread_admin && <span className="inline-block w-1.5 h-1.5 rounded-full mr-2 align-middle" style={{ background: GOLD }} />}{t.name || t.email}</span>
+        <span className="text-sm truncate">{t.unread_admin && <span className="inline-block w-1.5 h-1.5 rounded-full mr-2 align-middle" style={{ background: GOLD }} />}{t.name || t.email || `+${t.phone}`}</span>
         <span className="text-[10px] tracking-[0.2em] shrink-0" style={{ color: t.status === "needs_human" ? "#F87171" : t.status === "brand" ? "#0A0A0A" : GOLD, background: t.status === "brand" ? GOLD : "transparent", padding: t.status === "brand" ? "2px 6px" : 0 }}>{(STATUS[t.status] || t.status).toUpperCase()}</span>
       </div>
       <div className="text-xs text-white/70 mt-1 truncate">{t.subject}</div>
-      <div className="text-[11px] text-white/40 mt-1 truncate">{t.source === "email" ? "Email" : "App"} · {t.category || "—"} · {fmt(t.updated_at)}</div>
+      <div className="text-[11px] text-white/40 mt-1 truncate">{t.source === "email" ? "Email" : t.source === "whatsapp" ? "WhatsApp" : "App"}{t.call_requested_at ? " · 📞 CHIAMATA" : ""} · {t.category || "—"} · {fmt(t.updated_at)}</div>
     </button>
   );
 }
@@ -67,7 +67,8 @@ function Detail({ id, onChanged }) {
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <div className="text-lg">{t.subject}</div>
-          <div className="text-xs text-white/50 mt-1" data-testid="admin-support-detail-from">{t.name} &lt;{t.email}&gt; · {t.source === "email" ? "Email" : "App"}</div>
+          <div className="text-xs text-white/50 mt-1" data-testid="admin-support-detail-from">{t.name} &lt;{t.channel === "whatsapp" ? `+${t.phone}` : t.email}&gt; · {t.source === "email" ? "Email" : t.source === "whatsapp" ? "WhatsApp" : "App"}
+            {t.channel === "whatsapp" && <> · <a href={`tel:+${t.phone}`} className="underline" style={{ color: GOLD }} data-testid="admin-support-call-link">Chiama</a> · <a href={`https://wa.me/${t.phone}`} target="_blank" rel="noreferrer" className="underline" style={{ color: GOLD }}>WhatsApp</a></>}</div>
         </div>
         <select value={t.status} onChange={(e) => setStatus(e.target.value)} className="bg-black border text-xs px-3 py-2" style={{ borderColor: GOLD, color: GOLD }} data-testid="admin-support-status-select">
           {Object.entries(STATUS).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
@@ -77,10 +78,21 @@ function Detail({ id, onChanged }) {
       <div className="mt-6">
         <textarea value={reply} onChange={(e) => setReply(e.target.value)} rows={7} placeholder="Scrivi la risposta manuale…" className="w-full bg-transparent border p-3 text-sm outline-none" style={{ borderColor: `${GOLD}60` }} data-testid="admin-support-reply-input" />
         <div className="mt-3 flex gap-3 flex-wrap">
-          <button onClick={send} disabled={!!busy || !reply.trim()} className="text-xs tracking-[0.3em] px-5 py-3 disabled:opacity-40" style={{ background: GOLD, color: "#0A0A0A" }} data-testid="admin-support-send-btn">{busy === "send" ? "INVIO…" : "INVIA DA STUDIO@"}</button>
+          <button onClick={send} disabled={!!busy || !reply.trim()} className="text-xs tracking-[0.3em] px-5 py-3 disabled:opacity-40" style={{ background: GOLD, color: "#0A0A0A" }} data-testid="admin-support-send-btn">{busy === "send" ? "INVIO…" : t.channel === "whatsapp" ? "INVIA SU WHATSAPP" : "INVIA DA STUDIO@"}</button>
           <button onClick={draft} disabled={!!busy} className="text-xs tracking-[0.3em] px-5 py-3 border disabled:opacity-40" style={{ borderColor: GOLD, color: GOLD }} data-testid="admin-support-ai-draft-btn">{busy === "draft" ? "GENERO…" : "BOZZA AI"}</button>
         </div>
       </div>
+    </div>
+  );
+}
+
+function WaStatus() {
+  const [w, setW] = useState(null);
+  useEffect(() => { api.get("/admin/support/whatsapp-status").then(({ data }) => setW(data)).catch(() => {}); }, []);
+  if (!w) return null;
+  return (
+    <div className="text-xs mt-1" style={{ color: w.configured ? GOLD : "#F87171" }} data-testid="admin-whatsapp-status">
+      WhatsApp Business: {w.configured ? "collegato" : "in attesa delle chiavi Meta"} · notifiche chiamata a +{w.owner_number}
     </div>
   );
 }
@@ -146,6 +158,7 @@ export default function AdminSupport() {
             <div className="text-[11px] tracking-[0.4em] text-white/50">STANZA DEL PROPRIETARIO</div>
             <h1 className="tracking-[0.4em] text-2xl font-light mt-2" style={{ color: GOLD }}>ASSISTENZA</h1>
             <div className="text-xs text-white/40 mt-2" data-testid="admin-support-poll-info">studio@myatelierapp.it · ultimo controllo {fmt(s.last_poll_at)}{s.last_poll_error ? ` · errore: ${s.last_poll_error}` : ""}</div>
+            <WaStatus />
           </div>
           <div className="flex items-center gap-5 flex-wrap">
             <label className="flex items-center gap-3 text-xs tracking-[0.2em]" style={{ color: GOLD }}>
