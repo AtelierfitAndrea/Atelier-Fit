@@ -623,7 +623,7 @@ async def _read_photo(photo: UploadFile) -> bytes:
         Image.open(io.BytesIO(raw)).verify()
     except Exception:
         raise HTTPException(status_code=400, detail="Il file non è una foto valida")
-    return raw
+    return await run_in_threadpool(head_lock.downscale, raw, head_lock.PERSON_MAX_SIDE)
 
 
 def _clean_jpeg(raw: bytes) -> bytes:
@@ -1259,6 +1259,11 @@ async def upload(kind: str = Query(..., regex="^(person|garment)$"), file: Uploa
     path = f"{APP_NAME}/{kind}/{user.user_id}/{uuid.uuid4().hex}.{ext}"
     data = await file.read()
     content_type = file.content_type or f"image/{'jpeg' if ext == 'jpg' else ext}"
+    if kind == "person":
+        try:
+            data = await run_in_threadpool(head_lock.downscale, data, head_lock.PERSON_MAX_SIDE)
+        except Exception:
+            raise HTTPException(status_code=400, detail="Il file non è una foto valida")
     result = put_object(path, data, content_type)
     await db.files.insert_one({
         "id": str(uuid.uuid4()),
@@ -1382,8 +1387,10 @@ async def _render_single(user_id: str, person_path: str, garment_path: str, cate
     person_bytes, person_ct = get_object(person_path)
     garment_bytes, garment_ct = get_object(garment_path)
     canvas_bytes, lock = await run_in_threadpool(head_lock.prepare, person_bytes, head_lock.is_long(category_in, name or ""))
+    garment_bytes = await run_in_threadpool(head_lock.downscale, garment_bytes, head_lock.GARMENT_MAX_SIDE)
     person_b64 = base64.b64encode(canvas_bytes).decode('utf-8')
     garment_b64 = base64.b64encode(garment_bytes).decode('utf-8')
+    del person_bytes, garment_bytes, canvas_bytes
 
     measurements_desc = _measurements_desc(m_doc)
 
@@ -1437,7 +1444,9 @@ async def _render_single(user_id: str, person_path: str, garment_path: str, cate
     if not images:
         raise HTTPException(status_code=500, detail="No image was generated")
     img = images[0]
+    del msg, person_b64, garment_b64
     out_bytes = await run_in_threadpool(head_lock.finalize, base64.b64decode(img['data']), lock)
+    del images, img
     result_path = f"{APP_NAME}/tryon/{user_id}/{uuid.uuid4().hex}.png"
     put_object(result_path, out_bytes, "image/png")
     return result_path
@@ -1536,6 +1545,7 @@ async def copylook_extract(req: CopyLookExtractRequest, user: User = Depends(get
     if _path_owner(req.model_path) != user.user_id:
         raise HTTPException(status_code=403, detail="Accesso negato")
     img_bytes, _ = get_object(req.model_path)
+    img_bytes = await run_in_threadpool(head_lock.downscale, img_bytes, head_lock.PERSON_MAX_SIDE)
     prompt = (
         "This is a photo of a fashion model. Detect EVERY clothing item and shoes worn by the model "
         "(ignore jewellery, bags and accessories). Return ONLY JSON:\n"
@@ -1580,6 +1590,7 @@ async def _render_copylook(user_id: str, person_path: str, model_path: str, item
     sizes = [(i, recommend_size(m_doc, i["category"])) for i in items]
     person_bytes, _ = get_object(person_path)
     model_bytes, _ = get_object(model_path)
+    model_bytes = await run_in_threadpool(head_lock.downscale, model_bytes, head_lock.GARMENT_MAX_SIDE)
     garments_txt = "\n".join(f"• {i['name']} ({i['category']}) — size {s} for this person" for i, s in sizes)
     prompt = (
         "Create a photorealistic virtual try-on. IMAGE 1 is a real photo of a specific person — the ONLY person who may appear. "
@@ -1599,6 +1610,7 @@ async def _render_copylook(user_id: str, person_path: str, model_path: str, item
     chat.with_model("gemini", "gemini-3.1-flash-image-preview").with_params(modalities=["image", "text"])
     canvas_bytes, lock = await run_in_threadpool(head_lock.prepare, person_bytes, any(head_lock.is_long(i["category"], i["name"]) for i in items))
     msg = UserMessage(text=prompt, file_contents=[ImageContent(base64.b64encode(canvas_bytes).decode()), ImageContent(base64.b64encode(model_bytes).decode())])
+    del person_bytes, model_bytes, canvas_bytes
     try:
         _text, images = await chat.send_message_multimodal_response(msg)
     except Exception as e:
@@ -1606,8 +1618,11 @@ async def _render_copylook(user_id: str, person_path: str, model_path: str, item
         raise HTTPException(status_code=500, detail=f"Image generation failed: {str(e)}")
     if not images:
         raise HTTPException(status_code=500, detail="No image was generated")
+    del msg
     result_path = f"{APP_NAME}/tryon/{user_id}/{uuid.uuid4().hex}.png"
-    put_object(result_path, await run_in_threadpool(head_lock.finalize, base64.b64decode(images[0]['data']), lock), "image/png")
+    out_bytes = await run_in_threadpool(head_lock.finalize, base64.b64decode(images[0]['data']), lock)
+    del images
+    put_object(result_path, out_bytes, "image/png")
     return result_path
 
 
@@ -2248,13 +2263,16 @@ async def _compose_outfit(user: User, person_path: Optional[str], items: list, l
     person_bytes, _ = get_object(person_path)
     canvas_bytes, lock = await run_in_threadpool(head_lock.prepare, person_bytes, any(head_lock.is_long(g.get("category"), g.get("name") or "") for g in items))
     file_contents = [ImageContent(base64.b64encode(canvas_bytes).decode("utf-8"))]
+    del person_bytes, canvas_bytes
     layer_lines = []
     for idx, g in enumerate(items, start=2):
         try:
             g_bytes, _ = get_object(g["image_path"])
         except Exception:
             raise HTTPException(status_code=400, detail=f"Immagine del capo {g.get('name')} non disponibile")
+        g_bytes = await run_in_threadpool(head_lock.downscale, g_bytes, head_lock.GARMENT_MAX_SIDE)
         file_contents.append(ImageContent(base64.b64encode(g_bytes).decode("utf-8")))
+        del g_bytes
         layer_lines.append(f"IMAGE {idx} — {g.get('category','top')} — {g.get('brand') or ''} {g.get('name') or ''}")
 
     prompt = (
@@ -2296,7 +2314,9 @@ async def _compose_outfit(user: User, person_path: Optional[str], items: list, l
         raise HTTPException(status_code=500, detail=f"Generazione outfit non riuscita: {e}")
     if not images:
         raise HTTPException(status_code=500, detail="Nessuna immagine generata")
+    del file_contents
     out_bytes = await run_in_threadpool(head_lock.finalize, base64.b64decode(images[0]["data"]), lock)
+    del images
     result_path = f"{APP_NAME}/outfit/{user.user_id}/{uuid.uuid4().hex}.png"
     put_object(result_path, out_bytes, "image/png")
     return person_path, result_path

@@ -1,4 +1,5 @@
 """Head lock for try-ons: safe top margin, bottom canvas extension for long garments, original head pasted back."""
+import gc
 import io
 import os
 import re
@@ -12,6 +13,8 @@ TOP_PAD_MIN_PX = 50
 TOP_PAD_RATIO = 0.06
 BOTTOM_PAD_RATIO = 0.20
 HEAD_SAFE_ZONE = 0.15
+PERSON_MAX_SIDE = 1536
+GARMENT_MAX_SIDE = 1024
 LONG_WORDS = re.compile(r"\b(long|lungo|lunga|maxi|gown|abito|vestito|dress|trench|cappotto|coat|kaftan|caftano)\b", re.I)
 
 HEAD_LOCK_RULE = (
@@ -23,6 +26,29 @@ HEAD_LOCK_RULE = (
     "if the outfit is long, expand image height at bottom only — continue the floor/background naturally into the bottom band "
     "and let the garment hem and the feet extend there. Never zoom or shift the person upwards.\n"
 )
+
+
+def _open_small(data: bytes, max_side: int) -> Image.Image:
+    # JPEG draft decodes at reduced scale, so a 12MP photo never lands in RAM at full size.
+    im = Image.open(io.BytesIO(data))
+    im.draft("RGB", (max_side, max_side))
+    im = ImageOps.exif_transpose(im)
+    im.thumbnail((max_side, max_side), Image.LANCZOS)
+    return im
+
+
+def downscale(data: bytes, max_side: int) -> bytes:
+    with Image.open(io.BytesIO(data)) as probe:
+        if max(probe.size) <= max_side and (probe.format in ("JPEG", "PNG")):
+            return data
+    im = _open_small(data, max_side)
+    buf = io.BytesIO()
+    if im.mode in ("RGBA", "LA", "P"):
+        im.convert("RGBA").save(buf, "PNG")
+    else:
+        im.convert("RGB").save(buf, "JPEG", quality=90)
+    del im
+    return buf.getvalue()
 
 
 def is_long(category: str, name: str = "") -> bool:
@@ -49,7 +75,7 @@ def _bg_color(rows: np.ndarray) -> tuple:
 
 def prepare(person_bytes: bytes, long_garment: bool) -> tuple:
     """Returns (canvas_png_bytes, meta) with top safe margin and optional bottom extension."""
-    im = np.array(ImageOps.exif_transpose(Image.open(io.BytesIO(person_bytes))).convert("RGB"))
+    im = np.array(_open_small(person_bytes, PERSON_MAX_SIDE).convert("RGB"))
     h, w = im.shape[:2]
     top = max(TOP_PAD_MIN_PX, int(h * TOP_PAD_RATIO))
     bottom = int(h * BOTTOM_PAD_RATIO) if long_garment else 0
@@ -60,25 +86,28 @@ def prepare(person_bytes: bytes, long_garment: bool) -> tuple:
     # face_lock_mask = face + hair + 50px top padding; head_safe_zone = top 15% of the photo.
     # face_lock_mask = soft ellipse over face + hair (+ chin); the whole head sits below the top safe margin.
     # Without a detectable face, fall back to head_safe_zone = top 15% of the photo.
-    mask = np.zeros(canvas.shape[:2], np.float32)
+    mask = np.zeros(canvas.shape[:2], np.uint8)
     face = _face_box(im)
     if face:
         fx, fy, fw, fh = face
         y_top, y_bot = fy - fh * 0.75 + top, fy + fh * 1.12 + top
-        cv2.ellipse(mask, (int(fx + fw / 2), int((y_top + y_bot) / 2)), (int(fw * 0.95), int((y_bot - y_top) / 2)), 0, 0, 360, 1.0, -1)
+        cv2.ellipse(mask, (int(fx + fw / 2), int((y_top + y_bot) / 2)), (int(fw * 0.95), int((y_bot - y_top) / 2)), 0, 0, 360, 255, -1)
     else:
-        mask[: top + int(h * HEAD_SAFE_ZONE)] = 1.0
+        mask[: top + int(h * HEAD_SAFE_ZONE)] = 255
     mask = cv2.GaussianBlur(mask, (0, 0), max(4, h / 160))
     buf = io.BytesIO()
     Image.fromarray(canvas).save(buf, "PNG")
     face_c = (face[0], face[1] + top, face[2], face[3]) if face else None
+    del im
+    gc.collect()
     return buf.getvalue(), {"canvas": canvas, "mask": mask, "face": face_c}
 
 
 def finalize(result_bytes: bytes, meta: dict) -> bytes:
-    canvas, mask = meta["canvas"], meta["mask"].copy()
+    canvas, mask = meta["canvas"], meta["mask"]
     H, W = canvas.shape[:2]
-    res = np.array(Image.open(io.BytesIO(result_bytes)).convert("RGB"))
+    res = np.array(_open_small(result_bytes, max(H, W)).convert("RGB"))
+    del result_bytes
     rh, rw = res.shape[:2]
     if abs(rw / rh - W / H) > 0.04:
         # Model changed the aspect: fit the full HEIGHT (head and feet never cut), then trim or pad the sides only.
@@ -111,8 +140,14 @@ def finalize(result_bytes: bytes, meta: dict) -> bytes:
         (dx, dy), resp = cv2.phaseCorrelate(a, b)
         if resp > 0.05 and abs(dx) < W * 0.08 and abs(dy) < H * 0.08:
             res = cv2.warpAffine(res, np.float32([[1, 0, -dx], [0, 1, -dy]]), (W, H), borderMode=cv2.BORDER_REPLICATE)
-    m = mask[..., None]
-    out = (canvas.astype(np.float32) * m + res.astype(np.float32) * (1 - m)).clip(0, 255).astype(np.uint8)
+        del a, b
+    # Per-pixel blend on uint8 images with single-channel weights (no full-size float32 RGB copies).
+    w = mask.astype(np.float32) * (1 / 255)
+    out = cv2.blendLinear(canvas, res, w, 1 - w)
+    del w, res, canvas, mask
+    meta.clear()
     buf = io.BytesIO()
     Image.fromarray(out).save(buf, "PNG")
+    del out
+    gc.collect()
     return buf.getvalue()
