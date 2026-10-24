@@ -5,6 +5,7 @@ import { UserFocus, Scissors, ArrowRight, BookmarkSimple, Check } from "@phospho
 import { api, fileUrl } from "@/lib/api";
 import { useSubscription } from "@/lib/subscription";
 import TryOnProgress from "@/components/TryOnProgress";
+import { notifyTabReady } from "@/lib/tabNotify";
 
 const CAT_IT = { top: "Top", bottom: "Pantaloni/Gonna", dress: "Abito", outerwear: "Capospalla", shoes: "Scarpe" };
 
@@ -70,7 +71,7 @@ export default function CopyLook({ personPath, uploadFile }) {
     try {
       const chosen = items.filter((i) => sel[i.idx]).map(({ name, category, image_path }) => ({ name, category, image_path }));
       const { data } = await api.post("/copylook/apply", { model_path: model.path, items: chosen });
-      toast.success("Look copiato sul tuo Avatar"); refresh(); setPhase("idle");
+      toast.success("Look copiato sul tuo Avatar"); notifyTabReady(); refresh(); setPhase("idle");
       await new Promise((r) => setTimeout(r, 800));
       navigate(`/tryon/${data.id}`);
     } catch (e) {

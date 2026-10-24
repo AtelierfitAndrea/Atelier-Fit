@@ -7,6 +7,7 @@ import IncludedNote from "@/components/IncludedNote";
 import HemCard from "@/components/HemCard";
 import FreeRetry from "@/components/FreeRetry";
 import TryOnProgress from "@/components/TryOnProgress";
+import { notifyTabReady } from "@/lib/tabNotify";
 
 const SLOTS = [
   { k: "top", n: 1, l: "Maglia / Top" },
@@ -186,6 +187,7 @@ export default function OutfitGrid({ personPath, uploadFile, restoreItems, onIte
       setResult({ ...data, used: ready.map((s) => ({ slot: s, item: items[s.k] })) });
       refresh();
       onGenerated?.();
+      notifyTabReady();
       toast.success("Outfit pronto");
     } catch (e) {
       if (e?.response?.status === 402) openPaywall();

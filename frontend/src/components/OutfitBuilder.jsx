@@ -7,6 +7,7 @@ import IncludedNote from "@/components/IncludedNote";
 import HemCard from "@/components/HemCard";
 import FreeRetry from "@/components/FreeRetry";
 import TryOnProgress from "@/components/TryOnProgress";
+import { notifyTabReady } from "@/lib/tabNotify";
 
 
 function priceFmt(n, cur = "EUR") {
@@ -99,6 +100,7 @@ export default function OutfitBuilder() {
       });
       setResult(data);
       setSelected([]);
+      notifyTabReady();
       toast.success("Outfit pronto");
     } catch (e) {
       toast.error(e?.response?.data?.detail || "Generazione non riuscita");

@@ -289,3 +289,7 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 - components/TryOnProgress.jsx: barra nero/beige, rAF easing verso 95% (≈49% a 10s), step testuali 0-20/20-50/50-80/80-95/95-100, nota sotto la barra; 100% "Ecco il risultato!" mostrato ~800ms prima di navigare
 - Collegato a: prova singola (Studio), outfit grid, Copia Look, riprova gratuita, OutfitBuilder (armadio)
 - Tabelle taglie da screenshot condivise tra tutti i clienti per brand (prima la propria), affidabilità 98% senza chiedere; badge "già letta da uno screenshot di un altro cliente · Affidabilità 98%"
+
+## 2026-06 — Avatar sfocato in attesa + avviso scheda (DONE, screenshot + mock)
+- TryOnProgress: Avatar a tutto sfondo, blur 22px→0 e opacità che sale con la percentuale; pannello testi in vetro
+- lib/tabNotify.js notifyTabReady(): se la scheda è nascosta, il titolo lampeggia "Il tuo look è pronto · MyAtelier" finché l'utente torna (scelta utente: niente notifiche browser). Chiamato su successo in Studio, OutfitGrid, CopyLook, FreeRetry, OutfitBuilder

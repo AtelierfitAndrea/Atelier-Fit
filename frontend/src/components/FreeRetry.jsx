@@ -3,6 +3,7 @@ import { toast } from "sonner";
 import { ArrowCounterClockwise } from "@phosphor-icons/react";
 import { api } from "@/lib/api";
 import TryOnProgress from "@/components/TryOnProgress";
+import { notifyTabReady } from "@/lib/tabNotify";
 
 const REASONS = [["sfondo", "Sfondo cambiato"], ["viso", "Viso diverso"], ["capo", "Capo sbagliato"], ["altro", "Altro"]];
 const DAY = 24 * 3600 * 1000;
@@ -21,6 +22,7 @@ export default function FreeRetry({ kind, item, onDone }) {
     try {
       const { data } = await api.post(`/${kind}/${item.id}/retry`, { reason });
       toast.success("Nuova prova pronta, senza consumare credito");
+      notifyTabReady();
       setBusy(false);
       await new Promise((r) => setTimeout(r, 800));
       setOpen(false); onDone(data);

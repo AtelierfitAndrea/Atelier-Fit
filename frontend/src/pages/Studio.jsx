@@ -13,6 +13,7 @@ import OutfitGrid from "@/components/OutfitGrid";
 import IncludedNote from "@/components/IncludedNote";
 import CopyLook from "@/components/CopyLook";
 import TryOnProgress from "@/components/TryOnProgress";
+import { notifyTabReady } from "@/lib/tabNotify";
 import PendingOutfitModal from "@/components/PendingOutfitModal";
 import { usePendingDraft } from "@/lib/pendingOutfit";
 
@@ -83,6 +84,7 @@ export default function Studio() {
         chosen_size: chosenSize || null,
       });
       pending.markDone();
+      notifyTabReady();
       toast.success("Prova pronta");
       refreshSub();
       setGenerating(false);
