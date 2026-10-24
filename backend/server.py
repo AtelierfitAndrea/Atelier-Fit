@@ -1351,6 +1351,31 @@ async def files_delete(path: str, user: User = Depends(get_current_user)):
     return {"deleted": True}
 
 
+async def _hand_boxes(person_path: str, person_bytes: bytes) -> list:
+    # Hands are detected once per person photo (cached), then pasted back by head_lock when they stay in place.
+    cached = await db.hand_boxes.find_one({"path": person_path}, {"_id": 0, "boxes": 1})
+    if cached:
+        return cached["boxes"]
+    small = await run_in_threadpool(head_lock.downscale, person_bytes, head_lock.GARMENT_MAX_SIDE)
+    chat = LlmChat(api_key=EMERGENT_KEY, session_id=f"hands-{uuid.uuid4().hex[:8]}", system_message="You are a precise hand detector. Reply with JSON only.")
+    chat.with_model("gemini", "gemini-3.8-flash")
+    prompt = ("Detect every visible hand of the person in this photo (including a hand holding a phone, and hands in a mirror reflection of that person). "
+              "Return ONLY JSON: {\"hands\": [{\"box_2d\": [ymin, xmin, ymax, xmax]}]} normalised 0-1000, each box tightly containing the whole hand "
+              "(fingers to wrist). Return {\"hands\": []} if no hand is clearly visible.")
+    try:
+        reply = await chat.send_message(UserMessage(text=prompt, file_contents=[ImageContent(base64.b64encode(small).decode())]))
+        data = _extract_json(reply)
+    except Exception as e:
+        logger.warning(f"hand detection failed: {e}")
+        return []
+    if not isinstance(data, dict):
+        return []
+    boxes = [h["box_2d"] for h in (data.get("hands") or [])[:4]
+             if isinstance(h, dict) and isinstance(h.get("box_2d"), list) and len(h["box_2d"]) == 4]
+    await db.hand_boxes.update_one({"path": person_path}, {"$set": {"boxes": boxes, "created_at": datetime.now(timezone.utc).isoformat()}}, upsert=True)
+    return boxes
+
+
 HANDS_RULE = (
     "IDENTITY — STRICT:\n"
     "• Use IMAGE 1 as the EXACT source for identity. Exactly ONE person with ONE face: no duplicate, twin or second face, no face blending, no face swap.\n"
@@ -1394,7 +1419,7 @@ async def _render_single(user_id: str, person_path: str, garment_path: str, cate
     # Load both images
     person_bytes, person_ct = get_object(person_path)
     garment_bytes, garment_ct = get_object(garment_path)
-    canvas_bytes, lock = await run_in_threadpool(head_lock.prepare, person_bytes, head_lock.is_long(category_in, name or ""))
+    canvas_bytes, lock = await run_in_threadpool(head_lock.prepare, person_bytes, head_lock.is_long(category_in, name or ""), await _hand_boxes(person_path, person_bytes))
     garment_bytes = await run_in_threadpool(head_lock.downscale, garment_bytes, head_lock.GARMENT_MAX_SIDE)
     person_b64 = base64.b64encode(canvas_bytes).decode('utf-8')
     garment_b64 = base64.b64encode(garment_bytes).decode('utf-8')
@@ -1616,7 +1641,7 @@ async def _render_copylook(user_id: str, person_path: str, model_path: str, item
     chat = LlmChat(api_key=EMERGENT_KEY, session_id=f"copylook-apply-{user_id}-{uuid.uuid4().hex[:8]}",
                    system_message="You are a professional fashion virtual try-on generator. Re-dress the SAME person of IMAGE 1, never the model.")
     chat.with_model("gemini", "gemini-3.1-flash-image-preview").with_params(modalities=["image", "text"])
-    canvas_bytes, lock = await run_in_threadpool(head_lock.prepare, person_bytes, any(head_lock.is_long(i["category"], i["name"]) for i in items))
+    canvas_bytes, lock = await run_in_threadpool(head_lock.prepare, person_bytes, any(head_lock.is_long(i["category"], i["name"]) for i in items), await _hand_boxes(person_path, person_bytes))
     msg = UserMessage(text=prompt, file_contents=[ImageContent(base64.b64encode(canvas_bytes).decode()), ImageContent(base64.b64encode(model_bytes).decode())])
     del person_bytes, model_bytes, canvas_bytes
     try:
@@ -2304,7 +2329,7 @@ async def _compose_outfit(user: User, person_path: Optional[str], items: list, l
         raise HTTPException(status_code=400, detail="Crea prima il tuo Avatar nella Home")
     # Build the multi-image prompt
     person_bytes, _ = get_object(person_path)
-    canvas_bytes, lock = await run_in_threadpool(head_lock.prepare, person_bytes, any(head_lock.is_long(g.get("category"), g.get("name") or "") for g in items))
+    canvas_bytes, lock = await run_in_threadpool(head_lock.prepare, person_bytes, any(head_lock.is_long(g.get("category"), g.get("name") or "") for g in items), await _hand_boxes(person_path, person_bytes))
     file_contents = [ImageContent(base64.b64encode(canvas_bytes).decode("utf-8"))]
     del person_bytes, canvas_bytes
     layer_lines = []
@@ -2567,13 +2592,15 @@ RETRY_REASONS = {
     "sfondo": "\n\nRETRY — the previous result changed the background. CRITICAL: keep the background of IMAGE 1 pixel-identical (same wall, floor, light).",
     "viso": "\n\nRETRY — the previous result changed the face or showed a double face. CRITICAL: exactly ONE face, identical to the person of IMAGE 1 (same face, hair and skin), no blending.",
     "capo": "\n\nRETRY — the previous result showed the wrong garment. CRITICAL: reproduce the garment exactly (colour, pattern, cut, length, material).",
+    "mani_viso": "\n\nRETRY — the previous result had deformed hands or a strange/double face. CRITICAL: exactly ONE face identical to the person of IMAGE 1, "
+                 "no blending; natural hands with exactly 5 fingers each, in the SAME position and grip as IMAGE 1 (phone held as in IMAGE 1).",
     "altro": "\n\nRETRY — the previous result was not satisfying: be maximally faithful to IMAGE 1 and to the garment.",
 }
 RETRY_WINDOW_H = 24
 
 
 class RetryIn(BaseModel):
-    reason: str = Field(pattern="^(sfondo|viso|capo|altro)$")
+    reason: str = Field(pattern="^(sfondo|viso|capo|altro|mani_viso)$")
 
 
 def _retry_state(doc: dict) -> dict:

@@ -89,7 +89,48 @@ def _bg_color(rows: np.ndarray) -> tuple:
     return tuple(int(v) for v in np.median(side, axis=0))
 
 
-def prepare(person_bytes: bytes, long_garment: bool) -> tuple:
+HAND_MATCH_MIN = 0.5
+
+
+def _paste_hand(out: np.ndarray, canvas: np.ndarray, res: np.ndarray, box: tuple) -> bool:
+    """Put the ORIGINAL hand back if the generated one sits in the same place (template match with context)."""
+    H, W = out.shape[:2]
+    x0, y0, x1, y1 = max(0, box[0]), max(0, box[1]), min(W, box[2]), min(H, box[3])
+    bw, bh = x1 - x0, y1 - y0
+    if bw < 12 or bh < 12:
+        return False
+    cx0, cy0 = max(0, x0 - bw // 5), max(0, y0 - bh // 5)
+    cx1, cy1 = min(W, x1 + bw // 5), min(H, y1 + bh // 5)
+    tpl = cv2.cvtColor(canvas[cy0:cy1, cx0:cx1], cv2.COLOR_RGB2GRAY)
+    sx0, sy0 = max(0, cx0 - bw // 2), max(0, cy0 - bh // 2)
+    sx1, sy1 = min(W, cx1 + bw // 2), min(H, cy1 + bh // 2)
+    win = cv2.cvtColor(res[sy0:sy1, sx0:sx1], cv2.COLOR_RGB2GRAY)
+    if win.shape[0] < tpl.shape[0] or win.shape[1] < tpl.shape[1]:
+        return False
+    _mn, score, _ml, (mx, my) = cv2.minMaxLoc(cv2.matchTemplate(win, tpl, cv2.TM_CCOEFF_NORMED))
+    if score < HAND_MATCH_MIN:
+        logger.info("head_lock: hand moved or covered (match %.2f), keeping generated hand", score)
+        return False
+    dx, dy = sx0 + mx - cx0, sy0 + my - cy0
+    tx0, ty0, tx1, ty1 = x0 + dx, y0 + dy, x1 + dx, y1 + dy
+    if tx0 < 0 or ty0 < 0 or tx1 > W or ty1 > H:
+        return False
+    m = np.zeros((bh, bw), np.uint8)
+    cv2.ellipse(m, (bw // 2, bh // 2), (int(bw * 0.47), int(bh * 0.47)), 0, 0, 360, 255, -1)
+    m = cv2.GaussianBlur(m, (0, 0), max(2, min(bw, bh) * 0.12)).astype(np.float32) * (1 / 255)
+    # Seam check: if what surrounds the hand changed (e.g. new garment under it), a pasted patch would show edges.
+    src, dst = canvas[y0:y1, x0:x1].astype(np.int16), out[ty0:ty1, tx0:tx1].astype(np.int16)
+    ring = (m > 0.05) & (m < 0.5)
+    seam = float(np.abs(src - dst).mean(axis=2)[ring].mean()) if ring.any() else 0.0
+    if seam > 28:
+        logger.info("head_lock: surroundings of the hand changed (seam %.1f), keeping generated hand", seam)
+        return False
+    out[ty0:ty1, tx0:tx1] = cv2.blendLinear(canvas[y0:y1, x0:x1], out[ty0:ty1, tx0:tx1], m, 1 - m)
+    logger.info("head_lock: original hand restored (match %.2f, seam %.1f, shift %d,%d)", score, seam, dx, dy)
+    return True
+
+
+def prepare(person_bytes: bytes, long_garment: bool, hands: list = None) -> tuple:
     """Returns (canvas_png_bytes, meta) with top safe margin and optional bottom extension."""
     im = np.array(_open_small(person_bytes, PERSON_MAX_SIDE).convert("RGB"))
     h, w = im.shape[:2]
@@ -114,9 +155,15 @@ def prepare(person_bytes: bytes, long_garment: bool) -> tuple:
     buf = io.BytesIO()
     Image.fromarray(canvas).save(buf, "PNG")
     face_c = (face[0], face[1] + top, face[2], face[3]) if face else None
+    # Hand boxes (normalised 0-1000 [ymin, xmin, ymax, xmax] on the photo) -> canvas pixels.
+    hand_c = []
+    for b in hands or []:
+        y0, x0, y1, x1 = (max(0.0, min(1000.0, float(v))) / 1000 for v in b)
+        if x1 - x0 > 0.01 and y1 - y0 > 0.01:
+            hand_c.append((int(x0 * w), int(y0 * h) + top, int(x1 * w), int(y1 * h) + top))
     del im
     gc.collect()
-    return buf.getvalue(), {"canvas": canvas, "mask": mask, "face": face_c}
+    return buf.getvalue(), {"canvas": canvas, "mask": mask, "face": face_c, "hands": hand_c}
 
 
 def finalize(result_bytes: bytes, meta: dict) -> bytes:
@@ -153,6 +200,8 @@ def finalize(result_bytes: bytes, meta: dict) -> bytes:
             canvas = cv2.warpAffine(canvas, M, (W, H), flags=cv2.INTER_LANCZOS4, borderMode=cv2.BORDER_REPLICATE)
             mask = cv2.warpAffine(mask, M, (W, H), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT, borderValue=0)
             head_at = rf
+            meta["hands"] = [tuple(int(v) for v in (M[0, 0] * x0 + M[0, 2], M[1, 1] * y0 + M[1, 2], M[0, 0] * x1 + M[0, 2], M[1, 1] * y1 + M[1, 2]))
+                             for x0, y0, x1, y1 in meta.get("hands", [])]
     else:
         band = slice(0, int(H * 0.45))
         a = cv2.cvtColor(canvas[band], cv2.COLOR_RGB2GRAY).astype(np.float32)
@@ -178,6 +227,8 @@ def finalize(result_bytes: bytes, meta: dict) -> bytes:
     if aligned and of and _double_face(out):
         logger.warning("head_lock: double face after head paste, keeping model output")
         out = res
+    for box in meta.get("hands", []):
+        _paste_hand(out, canvas, res, box)
     del w, res, canvas, mask
     meta.clear()
     buf = io.BytesIO()

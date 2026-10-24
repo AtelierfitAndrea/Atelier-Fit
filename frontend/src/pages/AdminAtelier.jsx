@@ -95,7 +95,7 @@ function Payments({ byPlan, last }) {
   );
 }
 
-const REASON_IT = { sfondo: "Sfondo cambiato", viso: "Viso diverso", capo: "Capo sbagliato", altro: "Altro" };
+const REASON_IT = { mani_viso: "Mani o volto strani", sfondo: "Sfondo cambiato", viso: "Viso diverso", capo: "Capo sbagliato", altro: "Altro" };
 
 function FreeRetries() {
   const [d, setD] = useState(null);

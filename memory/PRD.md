@@ -305,3 +305,8 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 - HANDS_RULE (server.py) ora include IDENTITY STRICT (una sola persona/volto, volto identico, niente face blending/swap, sfondo originale) + mani 5 dita/telefono + negative prompt esteso; usato da prova singola, outfit, Copia Look e retry. Retry "viso" menziona il doppio volto
 - head_lock.finalize: se la testa generata non è allineata a quella originale (nessun volto rilevato + phaseCorrelate debole, o centri distanti >35% del volto) NON incolla la testa originale; se dopo l'incolla risultano 2 volti grandi → usa l'output del modello. Log "head_lock: ..."
 - Possibile next: hand-lock (incollare mani originali) se le mani restano imperfette
+
+## 2026-06 — Blocco mani originali + "Mani o volto strani" (DONE, test reale)
+- server._hand_boxes: Gemini 3.8 flash rileva le mani una volta per foto persona (cache db.hand_boxes) → head_lock.prepare(hands=...)
+- head_lock._paste_hand: template match con contesto (NCC ≥ 0.5, finestra ±50%) + controllo cucitura (seam ≤ 28) → incolla la mano originale con ellisse sfumata; altrimenti tiene la mano generata. Coordinate trasformate con la stessa M dell'allineamento testa
+- Retry reason "mani_viso" (RetryIn + RETRY_REASONS), stessa riprova gratuita (1 per prova, 24h). FreeRetry: pulsante diretto "Mani o volto strani" (report-hands-face-btn) sotto ogni risultato (TryOnDetail, OutfitGrid, OutfitBuilder); label in AdminAtelier
