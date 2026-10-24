@@ -3,6 +3,8 @@ import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { LinkSimple, Camera, Sparkle, CheckCircle, CloudArrowUp, ArrowRight } from "@phosphor-icons/react";
 import { api } from "@/lib/api";
+import { useProvalo } from "@/lib/provalo";
+import SizeFallbackDualChoice from "@/components/SizeFallbackDualChoice";
 
 export default function CalcolaTagliaBox() {
   const navigate = useNavigate();
@@ -12,18 +14,22 @@ export default function CalcolaTagliaBox() {
   const [needsFallback, setNeedsFallback] = useState(false);
   const [chartText, setChartText] = useState("");
   const [textLoading, setTextLoading] = useState(false);
-  const [importing, setImporting] = useState(false);
+  const [dualOpen, setDualOpen] = useState(false);
+  const [partial, setPartial] = useState(null);
+  const { provalo: goProvalo, importing } = useProvalo();
 
   const analyze = async () => {
     if (!url.trim()) { toast.error("Incolla prima il link del prodotto"); return; }
-    setWorking(true); setResult(null); setNeedsFallback(false);
+    setWorking(true); setResult(null); setNeedsFallback(false); setPartial(null);
     try {
       const { data } = await api.post("/product/analyze", { url });
       handleResult(data);
+      if (!data.ok) { setPartial(data); setDualOpen(true); }
     } catch (e) {
       if (e?.response?.data?.detail === "Completa le tue misure") { toast.error("Completa le tue misure"); navigate("/profile"); return; }
-      // Site blocked / unreadable: go straight to the screenshot box, no error for the user.
+      // Site blocked / unreadable: ask the dual choice (international average or screenshot), never block.
       setNeedsFallback(true);
+      setDualOpen(true);
     } finally { setWorking(false); }
   };
 
@@ -61,34 +67,7 @@ export default function CalcolaTagliaBox() {
     if (fromFallback) toast.error("Non siamo riusciti a leggere la tabella. Riprova con uno screenshot più nitido.");
   };
 
-  const provalo = async () => {
-    if (!result) return;
-    setImporting(true);
-    try {
-      let garment_path = null;
-      if (result.product_image_url) {
-        const { data } = await api.post("/product/import-image", {
-          image_url: result.product_image_url,
-          category: result.category,
-          name: result.product_name,
-        });
-        garment_path = data.path;
-      }
-      navigate("/studio", {
-        state: {
-          preset: {
-            garment_path,
-            name: [result.brand, result.product_name].filter(Boolean).join(" · "),
-            category: (result.category || "top").toLowerCase(),
-            chosen_size: result.recommended_size,
-          },
-        },
-      });
-    } catch (e) {
-      toast.error("Non siamo riusciti a importare la foto del prodotto. Caricala manualmente nello Studio.");
-      navigate("/studio");
-    } finally { setImporting(false); }
-  };
+  const provalo = () => goProvalo(result);
 
   return (
     <section className="border hairline bg-white p-6 md:p-8" data-testid="calcola-taglia-box" translate="no">
@@ -122,8 +101,12 @@ export default function CalcolaTagliaBox() {
         </button>
       </div>
 
+      <SizeFallbackDualChoice open={dualOpen} onOpenChange={setDualOpen} url={url} analysis={partial}
+        onResult={(d) => { setResult(d); setNeedsFallback(false); }} onScreenshot={uploadScreenshot} screenshotLoading={textLoading} />
+
       {needsFallback && (
         <FallbackBlock
+          onAverage={() => setDualOpen(true)}
           chartText={chartText}
           setChartText={setChartText}
           onAnalyzeText={analyzeText}
@@ -139,12 +122,15 @@ export default function CalcolaTagliaBox() {
   );
 }
 
-function FallbackBlock({ chartText, setChartText, onAnalyzeText, onScreenshot, loading }) {
+function FallbackBlock({ chartText, setChartText, onAnalyzeText, onScreenshot, loading, onAverage }) {
   return (
     <div className="mt-6 border hairline p-5 md:p-6 fade-up" data-testid="calcola-fallback">
       <div className="font-serif text-lg" data-testid="calcola-fallback-title">
         Non riusciamo a leggere la tabella da questo link - Carica screenshot tabella taglie
       </div>
+      <button type="button" onClick={onAverage} className="btn-ghost mt-3" data-testid="calcola-fallback-average-btn">
+        Usa media internazionale (consigliato)
+      </button>
       <label className={`mt-4 upload-zone p-5 flex items-center gap-3 cursor-pointer min-h-[120px] ${loading ? "opacity-60" : ""}`}>
         <CloudArrowUp size={24} weight="duotone" />
         <div>
@@ -179,7 +165,7 @@ function FallbackBlock({ chartText, setChartText, onAnalyzeText, onScreenshot, l
 }
 
 function GreenResult({ result, onProvalo, importing, onNewScreenshot }) {
-  const { recommended_size, explanation, brand, product_name, fit_notes, saved_chart } = result;
+  const { recommended_size, explanation, brand, product_name, fit_notes, saved_chart, source, details } = result;
   return (
     <div className="mt-6 fade-up" data-testid="calcola-result">
       {saved_chart && (
@@ -198,8 +184,11 @@ function GreenResult({ result, onProvalo, importing, onNewScreenshot }) {
             La tua taglia è <span className="text-6xl md:text-7xl font-bold" data-testid="calcola-result-size">{recommended_size}</span>
           </div>
           <p className="mt-3 text-emerald-900 text-lg leading-snug" data-testid="calcola-result-reason">
-            Motivo: {explanation}
+            {source === "international_average" ? explanation : <>Motivo: {explanation}</>}
           </p>
+          {source === "international_average" && details && (
+            <p className="mt-1 text-sm text-emerald-800" data-testid="calcola-result-details">{details}</p>
+          )}
           {fit_notes && (
             <div className="mt-3 inline-block bg-white border border-emerald-200 px-3 py-1 label-caps text-emerald-700">
               {fit_notes}

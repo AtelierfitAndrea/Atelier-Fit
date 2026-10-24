@@ -23,6 +23,7 @@ from body_measure import brand_sizes, shoe_size
 import head_lock
 import receipt
 import hem as hem_mod
+import size_fallback
 import re
 import stripe
 
@@ -1991,6 +1992,37 @@ async def product_analyze(req: AnalyzeUrlRequest, user: User = Depends(get_curre
         "source": "url",
         "result": result,
         "created_at": datetime.now(timezone.utc).isoformat(),
+    })
+    return result
+
+
+class SizeFallbackRequest(BaseModel):
+    url: Optional[str] = None
+    category: Optional[str] = None
+    product_name: Optional[str] = None
+    brand: Optional[str] = None
+    product_image_url: Optional[str] = None
+
+
+_KIND_CATEGORY = {"t-shirt": "top", "felpa": "top", "giacca": "outerwear", "abito": "dress", "pantaloni": "bottom", "cargo": "bottom", "sneakers": "shoes"}
+
+
+@api_router.post("/product/size-fallback")
+async def product_size_fallback(req: SizeFallbackRequest, user: User = Depends(get_current_user)):
+    # No brand chart: saved tape measures vs the international average (never above 93%).
+    m_doc = await _get_measurements(user.user_id)
+    if not _measures_complete(m_doc):
+        raise HTTPException(status_code=400, detail=INCOMPLETE_SIZE)
+    kind = size_fallback.garment_kind(req.category, " ".join(filter(None, [req.product_name, req.url])))
+    r = size_fallback.recommend(m_doc, kind)
+    result = {
+        "ok": True, "source": "international_average", "recommended_size": r["size"], "confidence": r["confidence"] / 100,
+        "explanation": r["explanation"], "details": r["details"], "category": _KIND_CATEGORY[kind], "garment_kind": r["kind_label"],
+        "brand": req.brand, "product_name": req.product_name, "product_image_url": req.product_image_url,
+    }
+    await db.product_analyses.insert_one({
+        "id": str(uuid.uuid4()), "user_id": user.user_id, "url": req.url, "source": "international_average",
+        "result": dict(result), "created_at": datetime.now(timezone.utc).isoformat(),
     })
     return result
 

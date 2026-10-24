@@ -1,8 +1,10 @@
 import { useState } from "react";
 import { toast } from "sonner";
-import { Link as LinkIcon, Sparkle, CloudArrowUp, CheckCircle, Warning } from "@phosphor-icons/react";
+import { Link as LinkIcon, Sparkle, CloudArrowUp, CheckCircle, Warning, ArrowRight } from "@phosphor-icons/react";
 import { api } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
+import { useProvalo } from "@/lib/provalo";
+import SizeFallbackDualChoice from "@/components/SizeFallbackDualChoice";
 
 export default function AnalyzeProduct() {
   const { t } = useI18n();
@@ -11,19 +13,21 @@ export default function AnalyzeProduct() {
   const [result, setResult] = useState(null);
   const [needsScreenshot, setNeedsScreenshot] = useState(false);
   const [screenshotLoading, setScreenshotLoading] = useState(false);
+  const [dualOpen, setDualOpen] = useState(false);
+  const [partial, setPartial] = useState(null);
 
   const analyze = async () => {
     if (!/^https?:\/\//.test(url.trim())) { toast.error("Incolla un link valido"); return; }
-    setLoading(true); setResult(null); setNeedsScreenshot(false);
+    setLoading(true); setResult(null); setNeedsScreenshot(false); setPartial(null);
     try {
       const { data } = await api.post("/product/analyze", { url });
-      if (data.needs_screenshot) {
-        setNeedsScreenshot(true);
-        toast.message(data.reason || "Serve lo screenshot della tabella taglie");
-      } else if (data.ok) {
+      if (data.ok) {
         setResult(data);
       } else {
+        // No readable chart: never block, ask the dual choice right away.
         setNeedsScreenshot(true);
+        setPartial(data);
+        setDualOpen(true);
       }
     } catch (e) {
       toast.error(e?.response?.data?.detail || "Analisi non riuscita");
@@ -91,8 +95,11 @@ export default function AnalyzeProduct() {
             loading={screenshotLoading}
             label={t("analyze.screenshotLabel")}
             hint={t("analyze.screenshotHint")}
+            onAverage={() => setDualOpen(true)}
           />
         )}
+        <SizeFallbackDualChoice open={dualOpen} onOpenChange={setDualOpen} url={url} analysis={partial}
+          onResult={(d) => { setResult(d); setNeedsScreenshot(false); }} onScreenshot={onScreenshot} screenshotLoading={screenshotLoading} />
       </section>
 
       {result?.ok && <Result result={result} />}
@@ -100,13 +107,16 @@ export default function AnalyzeProduct() {
   );
 }
 
-function ScreenshotFallback({ onPick, loading, label, hint }) {
+function ScreenshotFallback({ onPick, loading, label, hint, onAverage }) {
   return (
     <div className="mt-6 border-t hairline pt-6">
       <div className="label-caps mb-3 text-[#B91C1C] flex items-center gap-2">
         <Warning size={14} weight="fill" /> {label}
       </div>
       <p className="text-sm text-neutral-600 mb-4">{hint}</p>
+      <button type="button" onClick={onAverage} className="btn-ghost mb-4" data-testid="analyze-fallback-average-btn">
+        Usa media internazionale (consigliato)
+      </button>
       <label
         className="upload-zone p-6 flex items-center gap-4 cursor-pointer"
         data-testid="analyze-screenshot-dropzone"
@@ -130,8 +140,9 @@ function ScreenshotFallback({ onPick, loading, label, hint }) {
 }
 
 function Result({ result }) {
-  const { recommended_size, explanation, brand, product_name, category, confidence, size_chart, fit_notes } = result;
+  const { recommended_size, explanation, brand, product_name, category, confidence, size_chart, fit_notes, source, details } = result;
   const conf = typeof confidence === "number" ? Math.round(confidence * 100) : null;
+  const { provalo, importing } = useProvalo();
   return (
     <section className="grid grid-cols-1 lg:grid-cols-12 gap-6 fade-up" data-testid="analyze-result">
       <div className="lg:col-span-5 bg-[#0A0A0A] text-white p-8 md:p-10 flex flex-col justify-between">
@@ -156,6 +167,12 @@ function Result({ result }) {
         <p className="font-serif text-2xl md:text-3xl leading-snug mt-3" data-testid="analyze-result-explanation">
           {explanation}
         </p>
+        {source === "international_average" && details && (
+          <p className="mt-2 text-sm text-neutral-600" data-testid="analyze-result-details">{details}</p>
+        )}
+        <button onClick={() => provalo(result)} disabled={importing} className="btn-primary mt-6" data-testid="analyze-provalo-cta">
+          <Sparkle size={14} weight="bold" /> {importing ? "Preparo lo Studio..." : "Provalo su di te"} <ArrowRight size={14} weight="bold" />
+        </button>
         {fit_notes && (
           <div className="mt-5 inline-block border hairline px-3 py-1 label-caps text-[#8C7355]" translate="no">
             {fit_notes}

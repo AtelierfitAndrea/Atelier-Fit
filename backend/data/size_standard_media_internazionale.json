@@ -1,0 +1,41 @@
+{
+  "versione": "2026-06",
+  "unita": "cm",
+  "note": "Misure del CORPO (non del capo). Ogni intervallo è la media dei limiti min/max delle 5 fonti, arrotondata al cm e resa contigua tra taglie. 'lunghezza' = lunghezza dietro del capo per t-shirt/felpa, cavallo interno per pantaloni/cargo.",
+  "uomo": {
+    "S":   {"petto": [88, 95],   "vita": [76, 81],   "fianchi": [90, 96],   "lunghezza": {"t-shirt": 70, "felpa": 69, "pantaloni": 80, "cargo": 80}},
+    "M":   {"petto": [95, 101],  "vita": [81, 88],   "fianchi": [96, 102],  "lunghezza": {"t-shirt": 72, "felpa": 72, "pantaloni": 81, "cargo": 81}},
+    "L":   {"petto": [101, 108], "vita": [88, 95],   "fianchi": [102, 109], "lunghezza": {"t-shirt": 74, "felpa": 75, "pantaloni": 82, "cargo": 82}},
+    "XL":  {"petto": [108, 115], "vita": [95, 103],  "fianchi": [109, 116], "lunghezza": {"t-shirt": 76, "felpa": 78, "pantaloni": 82, "cargo": 83}},
+    "XXL": {"petto": [115, 122], "vita": [103, 111], "fianchi": [116, 124], "lunghezza": {"t-shirt": 78, "felpa": 81, "pantaloni": 83, "cargo": 83}}
+  },
+  "donna": {
+    "S":   {"petto": [82, 87],   "vita": [65, 71],   "fianchi": [89, 95],   "lunghezza": {"t-shirt": 62, "felpa": 63, "pantaloni": 78, "cargo": 78}},
+    "M":   {"petto": [87, 93],   "vita": [71, 77],   "fianchi": [95, 101],  "lunghezza": {"t-shirt": 64, "felpa": 65, "pantaloni": 79, "cargo": 79}},
+    "L":   {"petto": [93, 99],   "vita": [77, 84],   "fianchi": [101, 107], "lunghezza": {"t-shirt": 66, "felpa": 67, "pantaloni": 80, "cargo": 80}},
+    "XL":  {"petto": [99, 106],  "vita": [84, 92],   "fianchi": [107, 114], "lunghezza": {"t-shirt": 68, "felpa": 69, "pantaloni": 80, "cargo": 80}},
+    "XXL": {"petto": [106, 113], "vita": [92, 100],  "fianchi": [114, 121], "lunghezza": {"t-shirt": 70, "felpa": 71, "pantaloni": 81, "cargo": 81}}
+  },
+  "sneakers": {
+    "nota": "Lunghezza del piede (EN 13402 / Mondopoint) -> taglia EU (Paris point = 2/3 cm). Uguale per uomo e donna.",
+    "piede_cm_max_per_eu": {"36": 23.0, "37": 23.7, "38": 24.3, "39": 25.0, "40": 25.7, "41": 26.3, "42": 27.0, "43": 27.7, "44": 28.3, "45": 29.0, "46": 29.7, "47": 30.3}
+  },
+  "capi": {
+    "t-shirt":   {"misure": {"petto": 0.75, "vita": 0.25}},
+    "felpa":     {"misure": {"petto": 0.8, "vita": 0.2}},
+    "giacca":    {"misure": {"petto": 0.8, "vita": 0.2}},
+    "abito":     {"misure": {"petto": 0.4, "vita": 0.3, "fianchi": 0.3}},
+    "pantaloni": {"misure": {"vita": 0.6, "fianchi": 0.4}},
+    "cargo":     {"misure": {"vita": 0.5, "fianchi": 0.5}}
+  },
+  "fonti": [
+    {"nome": "Wikipedia — EN 13402 (body dimensions, letter codes S–XXL)", "url": "https://en.wikipedia.org/wiki/EN_13402"},
+    {"nome": "Wikipedia — Clothing sizes / US standard clothing size (ASTM D5585, misses 00–20)", "url": "https://en.wikipedia.org/wiki/U.S._standard_clothing_size"},
+    {"nome": "ASTM D5585-11 — derived alpha chart (Sister Silk)", "url": "https://www.sistersilk.com/pages/about-size"},
+    {"nome": "ASOS — Men hoodies & sweatshirts size chart", "url": "https://www.asos.com/us/discover/size-charts/men/hoodies-sweatshirts/"},
+    {"nome": "Diadora — International size chart (chest/waist/hips)", "url": "https://www.diadora.com/en/us/sizechart"},
+    {"nome": "Spyder / Zumiez — Men cargo pants size chart (waist/hip/inseam)", "url": "https://www.spyder.com/products/mens-convertible-cargo-pant-smoke-grey"},
+    {"nome": "s.Oliver — Size table women", "url": "https://www.soliver.eu/fitting-guide/size-table-women/"},
+    {"nome": "Giesswein — EU shoe size to foot length", "url": "https://en.giesswein.com/pages/sizing-chart"}
+  ]
+}
