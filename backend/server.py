@@ -2497,6 +2497,45 @@ class GarmentFromScreenshotRequest(BaseModel):
     url: str
     slot: str
     name: Optional[str] = None
+    model_path: Optional[str] = None  # Copia Look: groups the saved garments into one "look completo"
+
+
+async def _add_to_model_look(user_id: str, model_path: str, garment_id: str) -> str:
+    now = datetime.now(timezone.utc).isoformat()
+    await db.model_looks.update_one(
+        {"user_id": user_id, "model_path": model_path},
+        {"$addToSet": {"garment_ids": garment_id}, "$set": {"updated_at": now},
+         "$setOnInsert": {"id": str(uuid.uuid4()), "created_at": now}},
+        upsert=True,
+    )
+    return (await db.model_looks.find_one({"user_id": user_id, "model_path": model_path}, {"_id": 0, "id": 1}))["id"]
+
+
+@api_router.get("/wardrobe/looks")
+async def wardrobe_list_looks(user: User = Depends(get_current_user)):
+    looks = await db.model_looks.find({"user_id": user.user_id}, {"_id": 0}).sort("updated_at", -1).to_list(200)
+    ids = list({g for lk in looks for g in lk.get("garment_ids", [])})
+    by_id = {g["id"]: g for g in await db.garments.find({"id": {"$in": ids}, "user_id": user.user_id}, {"_id": 0}).to_list(2000)}
+    out = []
+    for lk in looks:
+        garments = [by_id[g] for g in lk.get("garment_ids", []) if g in by_id]
+        if not garments:
+            continue
+        priced = [g for g in garments if g.get("price") is not None]
+        out.append({
+            "id": lk["id"], "model_path": lk["model_path"], "created_at": lk["created_at"], "updated_at": lk.get("updated_at"),
+            "garments": garments, "priced_count": len(priced),
+            "total": round(sum(float(g["price"]) for g in priced), 2) if priced else None,
+            "currency": (priced[0].get("currency") if priced else None) or "EUR",
+        })
+    return out
+
+
+@api_router.delete("/wardrobe/looks/{look_id}")
+async def wardrobe_delete_look(look_id: str, user: User = Depends(get_current_user)):
+    # Removes only the grouping: the single garments stay in the wardrobe.
+    res = await db.model_looks.delete_one({"id": look_id, "user_id": user.user_id})
+    return {"deleted": res.deleted_count}
 
 
 @api_router.post("/wardrobe/garments/from-screenshot")
@@ -2525,7 +2564,10 @@ async def wardrobe_save_from_screenshot(req: GarmentFromScreenshotRequest, user:
         "brand": meta.get("brand") or ("Amazon" if "amazon." in _host(url) else _host(url) or "Shop"),
         "category": category,
     }
-    return await _save_garment(user.user_id, url, meta, req.image_path)
+    garment = await _save_garment(user.user_id, url, meta, req.image_path)
+    if req.model_path and _path_owner(req.model_path) == user.user_id:
+        garment["look_id"] = await _add_to_model_look(user.user_id, req.model_path, garment["id"])
+    return garment
 
 
 @api_router.get("/outfits")

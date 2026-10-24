@@ -315,3 +315,8 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 - CopyLook ModelLinks: un campo link per ogni capo isolato (riusa SaveLinkRow/OutfitTotal esportati da OutfitGrid con prefix "copylook"), totale "Totale look modello" ("—" se nessun prezzo)
 - from-screenshot accetta slot "dress" e name opzionale (nome del capo isolato se il sito non dà metadati)
 - Nota: "Salva nell'armadio" della card e il link possono creare due voci dello stesso capo
+
+## 2026-06 — Look completi nell'armadio (DONE, curl + screenshot)
+- db.model_looks {id, user_id, model_path, garment_ids[], created_at, updated_at}: creato/aggiornato in automatico quando si salva un link capo in Copia Look (from-screenshot con model_path)
+- GET /api/wardrobe/looks (capi risolti, total/priced_count/currency, capi eliminati esclusi), DELETE /api/wardrobe/looks/{id} (solo raggruppamento, i capi restano)
+- Frontend: components/ModelLooks.jsx in /wardrobe ("Look completi": foto modello, capi con link acquisto, totale o "—", Rimuovi look); link "Vedi il look completo nell'armadio" in Copia Look

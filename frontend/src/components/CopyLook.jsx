@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import { toast } from "sonner";
 import { UserFocus, Scissors, ArrowRight, BookmarkSimple, Check } from "@phosphor-icons/react";
 import { api, fileUrl } from "@/lib/api";
@@ -118,7 +118,7 @@ export default function CopyLook({ personPath, uploadFile }) {
               </div>
             )}
             <TryOnProgress active={phase === "applying"} className="mt-5" testid="copylook-progress" />
-            {items.some((it) => it.image_path) && <ModelLinks items={items} linked={linked} setLinked={setLinked} />}
+            {items.some((it) => it.image_path) && <ModelLinks items={items} linked={linked} setLinked={setLinked} modelPath={model?.path} />}
           </div>
         </div>
       )}
@@ -127,7 +127,7 @@ export default function CopyLook({ personPath, uploadFile }) {
 }
 
 // "Salva link outfit modello": one link per isolated garment, saved to the wardrobe with brand and price (like the outfit grid).
-function ModelLinks({ items, linked, setLinked }) {
+function ModelLinks({ items, linked, setLinked, modelPath }) {
   const rows = items.filter((it) => it.image_path).map((it) => ({
     slot: { k: `m${it.idx}`, api: API_SLOT[it.category] || "top", l: it.name, name: it.name },
     item: { path: it.image_path, preview: fileUrl(it.image_path) },
@@ -136,13 +136,17 @@ function ModelLinks({ items, linked, setLinked }) {
     <div className="mt-8 border-t hairline pt-6 space-y-5" data-testid="copylook-links">
       <div>
         <div className="label-caps">Salva link outfit modello</div>
-        <p className="text-xs text-neutral-500 mt-1">Incolla il link di ogni capo: lo salviamo nel tuo armadio con brand e prezzo.</p>
+        <p className="text-xs text-neutral-500 mt-1">Incolla il link di ogni capo: lo salviamo nel tuo armadio con brand e prezzo, raggruppato in un unico look completo con la foto del modello.</p>
       </div>
       {rows.map(({ slot, item }) => (
         <SaveLinkRow key={slot.k} slot={slot} item={item} prefix="copylook" saved={linked[slot.k] || null}
+          extra={modelPath ? { model_path: modelPath } : undefined}
           onSaved={(g) => setLinked((m) => ({ ...m, [slot.k]: g }))} />
       ))}
       <OutfitTotal used={rows} saved={linked} prefix="copylook" title="Totale look modello" />
+      {Object.values(linked).some((g) => g.look_id) && (
+        <Link to="/wardrobe" className="text-sm underline hover:text-[#8C7355]" data-testid="copylook-look-link">Vedi il look completo nell'armadio</Link>
+      )}
     </div>
   );
 }

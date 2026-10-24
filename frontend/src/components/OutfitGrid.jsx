@@ -64,7 +64,7 @@ export function priceFmt(n, cur = "EUR") {
   catch { return `${n} ${cur}`; }
 }
 
-export function SaveLinkRow({ slot, item, saved, onSaved, prefix = "grid" }) {
+export function SaveLinkRow({ slot, item, saved, onSaved, prefix = "grid", extra }) {
   const [url, setUrl] = useState("");
   const [saving, setSaving] = useState(false);
   const save = async (e) => {
@@ -72,7 +72,7 @@ export function SaveLinkRow({ slot, item, saved, onSaved, prefix = "grid" }) {
     if (!url.trim()) return;
     setSaving(true);
     try {
-      const { data } = await api.post("/wardrobe/garments/from-screenshot", { image_path: item.path, url: url.trim(), slot: slot.api || slot.k, name: slot.name });
+      const { data } = await api.post("/wardrobe/garments/from-screenshot", { image_path: item.path, url: url.trim(), slot: slot.api || slot.k, name: slot.name, ...extra });
       onSaved(data);
       toast.success(`${slot.l} salvato nell'armadio`);
     } catch (err) {

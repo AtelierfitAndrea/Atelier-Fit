@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { api, fileUrl } from "@/lib/api";
 import { TShirt } from "@phosphor-icons/react";
 import OutfitBuilder from "@/components/OutfitBuilder";
+import ModelLooks from "@/components/ModelLooks";
 
 const FILTERS = ["all", "top", "bottom", "dress", "outerwear", "shoes"];
 
@@ -23,6 +24,8 @@ export default function Wardrobe() {
   return (
     <div className="space-y-10" data-testid="wardrobe-root">
       <OutfitBuilder />
+
+      <ModelLooks />
 
       <header className="flex items-end justify-between flex-wrap gap-6">
         <div>
