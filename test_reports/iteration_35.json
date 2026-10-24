@@ -1,0 +1,30 @@
+{
+  "summary": "Frontend-only test of the Studio pending-outfit draft (localStorage 'myatelier_pending_outfit') using the owner session pending_test_tok, 3 Playwright runs. PASS: grid slot upload saves {avatarPath, selectedItems[{id:'top', image:'vfit/garment/...', link:null, brand:null}], single:null, profileId:null, timestamp} (413 bytes, no base64). Single garment saves garment_path/category 'dress'/name/chosen_size 'M' (uppercased). On reload the modal appears with the correct title and the count '2 capi selezionati'. Riprendi restores the grid slot image, the single preview, the dress category, name and size, and both generate buttons are enabled. Scarta removes the key, and the next reload shows no modal and an empty state. An expired key (6 min) written while Studio was unmounted shows no modal and is removed. Clearing a slot while other data remains updates storage correctly. Grid generation removes the key right after success. FAIL (2 bugs, same root cause in usePendingDraft): (1) clearing the last remaining item does not remove the key, so the stale draft comes back as a modal on reload; (2) after a successful generation (markDone) the pagehide/visibilitychange flush listener is still attached and writes the draft back, so reloading or switching tabs after generating shows 'outfit in sospeso' again. The same flush also overwrites any stored timestamp with Date.now() when the page is left, which is why an expiry test that edits the timestamp while Studio is mounted fails.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "usePendingDraft (/app/frontend/src/lib/pendingOutfit.js)", "issue": "After a successful generation (grid or single) the key is cleared by markDone, but the flush listener registered by the last [sig, ready] effect is still active. pagehide or visibilitychange then calls savePending(stateRef.current) and writes the draft back. Repro: upload into the top slot, click grid-generate-btn, wait for grid-result-image (key is null), reload: the pending-outfit-modal appears again. The same happens on a tab switch.", "selector": "[data-testid=pending-outfit-modal]", "priority": "HIGH"},
+      {"component": "usePendingDraft (/app/frontend/src/lib/pendingOutfit.js)", "issue": "Removing the last remaining item (grid-slot-top-clear with no single garment) does not clear localStorage. The state goes back to the initial empty signature, so the `sig === doneSig.current` early return skips savePending, which is the code that would call clearPending. The stale key stays and the modal shows on reload.", "selector": "[data-testid=grid-slot-top-clear]", "priority": "MEDIUM"}
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [
+    "In usePendingDraft, make flush/save no-ops when sigRef.current === doneSig.current (or keep a dirty/timer-pending ref and flush only if a debounced save is still pending). Also make markDone and close cancel pending timers and listeners. This stops the draft being rewritten after generation or discard.",
+    "Clear the key when the state becomes empty: replace the `sig === doneSig.current` early return with a check that still calls savePending/clearPending when there was a saved draft (or compare against the last saved signature instead of the initial one).",
+    "Optional: the flush rewrites timestamp=Date.now() on every pagehide or tab switch even when nothing changed. Confirm this TTL refresh is intended; with the fix above it only happens while there are unsaved changes."
+  ],
+  "critical_code_review_comments": [
+    "pendingOutfit.js: the flush handler and the debounce timer don't check whether the draft is already done. That is the root cause of both bugs.",
+    "On Riprendi, close() sets doneSig to the pre-restore empty signature. The restore then changes sig and triggers a re-save with a fresh timestamp. This works but extends the TTL silently.",
+    "Restore uses fileUrl(path) and the restored images load fine (naturalWidth 800)."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (skipped as requested)", "frontend": "80% (8/10 checks)"},
+  "seed_data_creation": "Uploaded test garments to vfit/garment/user_389c87aaadc6/* and ran 1 grid AI generation for the owner.",
+  "retest_needed": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Use cookie session_token=pending_test_tok (owner). Upload with set_input_files on [data-testid=grid-slot-top-input] or '[data-testid=upload-garment] input[type=file]'. To test expiry, write the expired key on /termini and then navigate to /studio; editing it while Studio is mounted gets overwritten by the pagehide flush. Retest: (a) clearing the last slot removes the key; (b) after grid generation, reload shows no modal.",
+  "rca of the issue": "usePendingDraft registers visibilitychange/pagehide listeners inside the effect keyed on [sig, ready]. markDone only clears storage and updates doneSig; sig does not change, so the effect is not torn down and the listener keeps calling savePending on page leave. Separately, the early return `sig === doneSig.current` treats returning to the initial empty state as 'nothing to do', so clearPending is never reached."
+}

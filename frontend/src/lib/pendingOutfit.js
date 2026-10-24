@@ -31,7 +31,7 @@ export const usePendingDraft = (state, skip, onRestore) => {
   const [ready, setReady] = useState(false);
   const sig = JSON.stringify({ items: state.selectedItems, single: state.single });
   const sigRef = useRef(sig);
-  const doneSig = useRef(sig);
+  const savedSig = useRef(sig);
   const stateRef = useRef(state);
   sigRef.current = sig;
   stateRef.current = state;
@@ -42,16 +42,23 @@ export const usePendingDraft = (state, skip, onRestore) => {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (!ready || sig === doneSig.current) return undefined;
-    const t = setTimeout(() => savePending(stateRef.current), 500);
+    // savedSig = what localStorage currently reflects; only real changes are written (empty state clears the key).
+    if (!ready || sig === savedSig.current) return undefined;
+    const save = () => {
+      clearTimeout(t);
+      if (sigRef.current === savedSig.current) return;
+      savedSig.current = sigRef.current;
+      savePending(stateRef.current);
+    };
+    const t = setTimeout(save, 500);
     // Flush immediately if the user leaves the tab/app before the debounce fires.
-    const flush = (e) => { if (e.type === "pagehide" || document.visibilityState === "hidden") { clearTimeout(t); savePending(stateRef.current); } };
+    const flush = (e) => { if (e.type === "pagehide" || document.visibilityState === "hidden") save(); };
     document.addEventListener("visibilitychange", flush);
     window.addEventListener("pagehide", flush);
     return () => { clearTimeout(t); document.removeEventListener("visibilitychange", flush); window.removeEventListener("pagehide", flush); };
   }, [sig, ready]);
 
-  const close = () => { setDraft(null); doneSig.current = sigRef.current; setReady(true); };
+  const close = () => { setDraft(null); savedSig.current = sigRef.current; setReady(true); };
   return {
     draft,
     resume: () => {
@@ -62,6 +69,6 @@ export const usePendingDraft = (state, skip, onRestore) => {
       close();
     },
     discard: () => { clearPending(); close(); },
-    markDone: () => { clearPending(); doneSig.current = sigRef.current; },
+    markDone: () => { clearPending(); savedSig.current = sigRef.current; },
   };
 };
