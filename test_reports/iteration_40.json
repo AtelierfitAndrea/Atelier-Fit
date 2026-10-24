@@ -1,0 +1,34 @@
+{
+  "summary": "Tested the one-link-per-look redesign of 'Salva link outfit modello' in Copia Look, the tracking-param cleanup (gclid/Cj0KCQ, &amp;, googleadservices unwrap), Zalando price/brand scraping and the manual price fallback. Backend: 10/10 pytest pass. Frontend: on /studio the link block shows exactly 1 input and 1 save button. Saving the Zalando ad link shows 'Totale Look Modello · OppoSuits', 89,95 €, and a clean href ending '?ssku=OP222A042-F110058000&lang=it'. On /wardrobe the look card shows the model photo, the title 'SHINY SNAKE - Completo - gold-coloured' and 89,95 €, and every model-look-buy-* link is the same clean URL. Manual price: entering 49,90 updates model-look-total to '49,90 €', hides the input, shows the 'Prezzo salvato' toast and is still there after a reload. All test looks and garments were deleted, including the main agent's look from /tmp/lookid.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/wardrobe/looks/from-link", "issue": "Saving again for the same model_path with a different link replaces garment_ids, but the garments from the first save stay in the wardrobe as unlinked duplicates (orphans)."},
+      {"endpoint": "_clean_url (_TRACKING_PARAMS)", "issue": "Also removes the generic params 'tag', 'ref' and 'ref_'. These can be real product params on some shops (for example a 'tag' filter). Consider a narrower list or removing them only for known hosts."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/wardrobe Look completi", "issues": ["The model photo (about 470KB original) loads slowly, so the left half of the card is blank for a few seconds. Consider a thumbnail or a placeholder.", "The LookPrice Salva button has no loading/disabled state, so a slow PUT (seen at over 1.5s) gives no feedback and can be submitted twice."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_model_look_link.py", "/app/test_reports/pytest/pytest_model_look_link.xml"],
+  "action_items": [
+    "Optional: when a look is saved again for the same model_path, delete or merge the garments from the previous save",
+    "Optional: add a saving/disabled state to the LookPrice submit button",
+    "Optional: narrow the 'tag|ref' tracking-param removal"
+  ],
+  "critical_code_review_comments": [
+    "server.py is 2923 lines; it should be split into routers (wardrobe/looks, product analyzer, url utils)",
+    "wardrobe_delete_look returns 200 {deleted:0} for a missing or foreign id instead of 404 (inconsistent with the PUT price endpoint)",
+    "A look saved again with a link that has no price correctly resets price to null (needs_price true), but this also discards an earlier manual price"
+  ],
+  "updated_files": ["/app/backend/tests/test_model_look_link.py"],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "seed_data_creation": "None kept. A temporary foreign-user look (id TEST_*) was inserted directly into mongo model_looks for the 404 test and deleted afterwards.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Owner token pending_test_tok (Bearer or cookie session_token). Regression: REACT_APP_BACKEND_URL=... pytest backend/tests/test_model_look_link.py. The Zalando page scrape works (OppoSuits / 89.95 via curl_cffi). copylook-apply-btn was not clicked (paid). The wardrobe was left empty of test looks and garments."
+}

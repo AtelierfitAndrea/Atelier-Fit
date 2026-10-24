@@ -320,3 +320,9 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 - db.model_looks {id, user_id, model_path, garment_ids[], created_at, updated_at}: creato/aggiornato in automatico quando si salva un link capo in Copia Look (from-screenshot con model_path)
 - GET /api/wardrobe/looks (capi risolti, total/priced_count/currency, capi eliminati esclusi), DELETE /api/wardrobe/looks/{id} (solo raggruppamento, i capi restano)
 - Frontend: components/ModelLooks.jsx in /wardrobe ("Look completi": foto modello, capi con link acquisto, totale o "—", Rimuovi look); link "Vedi il look completo nell'armadio" in Copia Look
+
+## 2026-06 — Fix "Salva link outfit modello": 1 link per look + gclid + Zalando (DONE, iteration_40)
+- CopyLook ModelLinks: un solo campo link → POST /api/wardrobe/looks/from-link {model_path, url, items[]}: look "Totale Look Modello" (brand, title, price, url) + capi isolati con lo stesso link; ri-salvataggio sostituisce i capi precedenti
+- _clean_url: decodifica &amp;, sblocca redirect googleadservices/google/doubleclick (adurl/url/q), rimuove gclid/gclsrc/gad_*/gbraid/wbraid/utm_*/fbclid/msclkid/wmc/opc/mpp/otid… e valori Cj0KCQ; usato in analyze, from-url, from-screenshot, looks/from-link
+- _fetch_page: fallback curl_cffi (impersonate chrome) per Zalando/Akamai (403 → 200); _structured_meta (JSON-LD, meta price, trackingCurrentAmount) prima dell'LLM → Zalando OppoSuits 89,95 €
+- Prezzo a mano se il sito blocca: PUT /api/wardrobe/looks/{id}/price (LookPrice in CopyLook e armadio)

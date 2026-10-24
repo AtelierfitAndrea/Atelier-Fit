@@ -7,19 +7,22 @@ import { priceFmt } from "@/components/OutfitGrid";
 // Manual price when the shop blocks automatic reading.
 export function LookPrice({ lookId, onSaved }) {
   const [v, setV] = useState("");
+  const [busy, setBusy] = useState(false);
   const save = async (e) => {
     e.preventDefault();
     const price = parseFloat(v.replace(",", "."));
     if (!(price > 0)) { toast.error("Inserisci un prezzo valido"); return; }
+    setBusy(true);
     try { await api.put(`/wardrobe/looks/${lookId}/price`, { price }); onSaved(price); toast.success("Prezzo salvato"); }
     catch { toast.error("Non riuscito, riprova"); }
+    finally { setBusy(false); }
   };
   return (
     <form onSubmit={save} className="flex items-center gap-2" data-testid={`look-price-form-${lookId}`}>
       <span className="text-xs text-neutral-500">Il sito non mostra il prezzo:</span>
       <input value={v} onChange={(e) => setV(e.target.value)} inputMode="decimal" placeholder="Prezzo €"
         className="w-24 border hairline px-2 py-1 text-sm outline-none focus:border-[#0A0A0A]" data-testid={`look-price-input-${lookId}`} />
-      <button type="submit" className="border hairline px-3 py-1 label-caps" data-testid={`look-price-save-${lookId}`}>Salva</button>
+      <button type="submit" disabled={busy} className="border hairline px-3 py-1 label-caps disabled:opacity-40" data-testid={`look-price-save-${lookId}`}>{busy ? "…" : "Salva"}</button>
     </form>
   );
 }

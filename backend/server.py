@@ -1756,7 +1756,7 @@ _PAGE_CHAR_LIMIT = 18000
 
 _TRACKING_PARAMS = re.compile(
     r"^(utm_.*|gclid|gclsrc|gbraid|wbraid|dclid|gad_source|gad_campaignid|fbclid|msclkid|yclid|ttclid|srsltid|_gl|mc_cid|mc_eid|"
-    r"wmc|opc|mpp|otid|campaign.*|ref_?|tag|affiliate.*|cmp.*)$", re.I)
+    r"wmc|opc|mpp|otid|campaign.*|affiliate.*|cmp.*)$", re.I)
 
 
 def _clean_url(url: str) -> str:
@@ -2619,6 +2619,9 @@ async def wardrobe_look_from_link(req: LookFromLinkRequest, user: User = Depends
             logger.warning(f"look meta failed: {e}")
     host = _host(url)
     brand = meta.get("brand") or ("Amazon" if "amazon." in host else re.sub(r"^www\d?\.", "", host) or "Shop")
+    prev = await db.model_looks.find_one({"user_id": user.user_id, "model_path": req.model_path}, {"_id": 0, "garment_ids": 1})
+    if prev and prev.get("garment_ids"):  # re-save replaces the look: drop the garments of the previous save
+        await db.garments.delete_many({"id": {"$in": prev["garment_ids"]}, "user_id": user.user_id})
     garments = [await _save_garment(user.user_id, url, {"product_name": (i.name or "").strip()[:80] or "Capo", "brand": brand,
                                                          "category": _LOOK_CAT.get((i.category or "").lower(), "top")}, i.image_path)
                 for i in req.items]
