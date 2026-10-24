@@ -1,0 +1,32 @@
+{
+  "summary": "Tested 'Salva link outfit modello' in Copia Look on /studio (owner session pending_test_tok). Backend: POST /api/wardrobe/garments/from-screenshot accepts dress/jacket/top/bottom/shoes and maps them to the correct categories (dress->dress, jacket->outerwear). Bad slot or URL -> 400, another user's path -> 403, no auth -> 401. Each save also appears in GET /api/wardrobe/garments with source_url set (10/10 pass). UI: uploading model_look.jpg isolated 2 garments (corset top, long skirt). The copylook-links block sits below the apply button with one row per garment (copylook-save-m0/m1 with image, input and button). Salva stays disabled while the input is empty. Pasting https://www.zalando.it/ shows a toast and 'Salvato · zalando.it — prezzo non disponibile'. copylook-total shows 'Totale look modello' and copylook-buy-m0 links to the pasted URL. The garment showed up in the wardrobe as category top with source_url set. copylook-apply-btn was NOT clicked. Code check: OutfitGrid still uses SaveLinkRow/OutfitTotal with the default prefix 'grid' (grid-save-{slot}-input/btn, grid-total). All test garments were deleted.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/wardrobe/garments/from-screenshot", "issue": "When the link has no product metadata, the garment name falls back to the generic slot label ('Maglia', 'Abito', 'Giacca') instead of the AI-isolated garment name (e.g. 'Top a corsetto beige e nero in pizzo'). Suggestion: accept an optional name and send it from ModelLinks."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Copia Look – Totale look modello", "issues": ["When no saved garment has a price, the total shows '0,00 €' (same behaviour as the grid total). Consider showing '—' or hiding the amount when priced.length === 0."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_copylook_links.py", "/app/test_reports/pytest/pytest_copylook_links.xml"],
+  "action_items": [
+    "Optional: pass the isolated item name to from-screenshot so the wardrobe entry keeps the descriptive name when the shop page has no metadata",
+    "Optional: avoid showing 0,00 € when no prices are available",
+    "Optional: the per-card 'Salva nell'armadio' and the link row can both save the same garment, which creates duplicate wardrobe entries"
+  ],
+  "critical_code_review_comments": [
+    "ModelLinks/API_SLOT mapping is correct (outerwear->jacket, dress->dress); unknown categories fall back to 'top'",
+    "SaveLinkRow/OutfitTotal reuse with a prefix is clean; the grid testids are unchanged"
+  ],
+  "updated_files": ["/app/backend/tests/test_copylook_links.py"],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "seed_data_creation": "None persistent; test garments were deleted",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Run test_copylook_links.py with REACT_APP_BACKEND_URL set (token defaults to pending_test_tok). It cleans up after itself. The model_look.jpg extract returns 2 items (top, bottom). The UI row for the bottom (m1) was not clicked; the backend covers the bottom slot."
+}

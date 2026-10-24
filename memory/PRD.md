@@ -310,3 +310,8 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 - server._hand_boxes: Gemini 3.8 flash rileva le mani una volta per foto persona (cache db.hand_boxes) → head_lock.prepare(hands=...)
 - head_lock._paste_hand: template match con contesto (NCC ≥ 0.5, finestra ±50%) + controllo cucitura (seam ≤ 28) → incolla la mano originale con ellisse sfumata; altrimenti tiene la mano generata. Coordinate trasformate con la stessa M dell'allineamento testa
 - Retry reason "mani_viso" (RetryIn + RETRY_REASONS), stessa riprova gratuita (1 per prova, 24h). FreeRetry: pulsante diretto "Mani o volto strani" (report-hands-face-btn) sotto ogni risultato (TryOnDetail, OutfitGrid, OutfitBuilder); label in AdminAtelier
+
+## 2026-06 — Copia Look: "Salva link outfit modello" (DONE, iteration_39)
+- CopyLook ModelLinks: un campo link per ogni capo isolato (riusa SaveLinkRow/OutfitTotal esportati da OutfitGrid con prefix "copylook"), totale "Totale look modello" ("—" se nessun prezzo)
+- from-screenshot accetta slot "dress" e name opzionale (nome del capo isolato se il sito non dà metadati)
+- Nota: "Salva nell'armadio" della card e il link possono creare due voci dello stesso capo

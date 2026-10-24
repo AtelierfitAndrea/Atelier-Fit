@@ -72,7 +72,7 @@ export function SaveLinkRow({ slot, item, saved, onSaved, prefix = "grid" }) {
     if (!url.trim()) return;
     setSaving(true);
     try {
-      const { data } = await api.post("/wardrobe/garments/from-screenshot", { image_path: item.path, url: url.trim(), slot: slot.api || slot.k });
+      const { data } = await api.post("/wardrobe/garments/from-screenshot", { image_path: item.path, url: url.trim(), slot: slot.api || slot.k, name: slot.name });
       onSaved(data);
       toast.success(`${slot.l} salvato nell'armadio`);
     } catch (err) {
@@ -118,7 +118,7 @@ export function OutfitTotal({ used, saved, prefix = "grid", title = "Totale outf
     <div className="border-t hairline pt-5" data-testid={`${prefix}-total`}>
       <div className="flex items-baseline justify-between">
         <div className="label-caps">{title}</div>
-        <div className="font-serif text-2xl" data-testid={`${prefix}-total-price`}>{priceFmt(total, currency)}</div>
+        <div className="font-serif text-2xl" data-testid={`${prefix}-total-price`}>{priced.length ? priceFmt(total, currency) : "—"}</div>
       </div>
       {priced.length < rows.length && (
         <div className="text-xs text-neutral-500 mt-1">Alcuni capi hanno prezzo non disponibile</div>

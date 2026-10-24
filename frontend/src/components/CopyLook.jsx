@@ -129,7 +129,7 @@ export default function CopyLook({ personPath, uploadFile }) {
 // "Salva link outfit modello": one link per isolated garment, saved to the wardrobe with brand and price (like the outfit grid).
 function ModelLinks({ items, linked, setLinked }) {
   const rows = items.filter((it) => it.image_path).map((it) => ({
-    slot: { k: `m${it.idx}`, api: API_SLOT[it.category] || "top", l: it.name },
+    slot: { k: `m${it.idx}`, api: API_SLOT[it.category] || "top", l: it.name, name: it.name },
     item: { path: it.image_path, preview: fileUrl(it.image_path) },
   }));
   return (

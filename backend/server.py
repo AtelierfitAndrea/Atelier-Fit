@@ -2496,6 +2496,7 @@ class GarmentFromScreenshotRequest(BaseModel):
     image_path: str
     url: str
     slot: str
+    name: Optional[str] = None
 
 
 @api_router.post("/wardrobe/garments/from-screenshot")
@@ -2520,7 +2521,7 @@ async def wardrobe_save_from_screenshot(req: GarmentFromScreenshotRequest, user:
     category, label = slots[req.slot]
     meta = {
         **meta,
-        "product_name": meta.get("product_name") or label.split(" / ")[0],
+        "product_name": meta.get("product_name") or (req.name or "").strip()[:80] or label.split(" / ")[0],
         "brand": meta.get("brand") or ("Amazon" if "amazon." in _host(url) else _host(url) or "Shop"),
         "category": category,
     }
