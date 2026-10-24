@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { CloudArrowUp, X, Check, ArrowRight } from "@phosphor-icons/react";
 import { api, fileUrl } from "@/lib/api";
@@ -136,9 +136,16 @@ function OutfitTotal({ used, saved }) {
   );
 }
 
-export default function OutfitGrid({ personPath, uploadFile }) {
+export default function OutfitGrid({ personPath, uploadFile, restoreItems, onItemsChange, onGenerated }) {
   const { status, openPaywall, refresh } = useSubscription();
   const [items, setItems] = useState({});
+
+  useEffect(() => {
+    if (restoreItems?.length) setItems(Object.fromEntries(restoreItems.map((i) => [i.id, { preview: fileUrl(i.image), path: i.image }])));
+  }, [restoreItems]);
+  useEffect(() => {
+    onItemsChange?.(SLOTS.filter((s) => items[s.k]?.path).map((s) => ({ id: s.k, image: items[s.k].path, link: null, brand: null })));
+  }, [items]); // eslint-disable-line react-hooks/exhaustive-deps
   const [generating, setGenerating] = useState(false);
   const [result, setResult] = useState(null);
   const [savedBySlot, setSavedBySlot] = useState({});
@@ -177,6 +184,7 @@ export default function OutfitGrid({ personPath, uploadFile }) {
       });
       setResult({ ...data, used: ready.map((s) => ({ slot: s, item: items[s.k] })) });
       refresh();
+      onGenerated?.();
       toast.success("Outfit pronto");
     } catch (e) {
       if (e?.response?.status === 402) openPaywall();

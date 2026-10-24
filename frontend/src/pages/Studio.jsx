@@ -12,6 +12,8 @@ import AccountPersonalBox from "@/components/AccountPersonalBox";
 import OutfitGrid from "@/components/OutfitGrid";
 import IncludedNote from "@/components/IncludedNote";
 import CopyLook from "@/components/CopyLook";
+import PendingOutfitModal from "@/components/PendingOutfitModal";
+import { usePendingDraft } from "@/lib/pendingOutfit";
 
 const CATEGORIES = [
   { k: "top", l: "Top" },
@@ -34,6 +36,19 @@ export default function Studio() {
   const [chosenSize, setChosenSize] = useState(preset?.chosen_size || "");
   const [generating, setGenerating] = useState(false);
   const navigate = useNavigate();
+  const [gridItems, setGridItems] = useState([]);
+  const [restoreItems, setRestoreItems] = useState(null);
+  const single = garmentPath ? { garment_path: garmentPath, category, name, chosen_size: chosenSize } : null;
+  const pending = usePendingDraft({ avatarPath: personPath, selectedItems: gridItems, single }, !!preset, (d) => {
+    if (d.single?.garment_path) {
+      setGarmentPath(d.single.garment_path);
+      setGarmentPreview(fileUrl(d.single.garment_path));
+      setCategory(d.single.category || "top");
+      setName(d.single.name || "");
+      setChosenSize(d.single.chosen_size || "");
+    }
+    setRestoreItems(d.selectedItems || []);
+  });
 
   // Load the user's saved base photo once, so future try-ons don't ask for it.
   useEffect(() => {
@@ -66,6 +81,7 @@ export default function Studio() {
         garment_name: name || null,
         chosen_size: chosenSize || null,
       });
+      pending.markDone();
       toast.success("Prova pronta");
       refreshSub();
       navigate(`/tryon/${data.id}`);
@@ -178,7 +194,9 @@ export default function Studio() {
 
       <CopyLook personPath={personPath} uploadFile={uploadFile} />
 
-      <OutfitGrid personPath={personPath} uploadFile={uploadFile} />
+      <OutfitGrid personPath={personPath} uploadFile={uploadFile} restoreItems={restoreItems}
+        onItemsChange={setGridItems} onGenerated={pending.markDone} />
+      <PendingOutfitModal draft={pending.draft} onResume={pending.resume} onDiscard={pending.discard} />
 
       <div className="space-y-3">
         <PrivacyBox testid="privacy-box-bottom" />
