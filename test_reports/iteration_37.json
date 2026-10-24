@@ -1,0 +1,24 @@
+{
+  "summary": "Tested size fallback (international average). Backend: 14/14 pytest pass (API: 401 without auth, response shape, confidence<=0.93, explanation format, category mapping cargo/pantaloni->bottom, felpa/hoodie/default->top, sneakers->shoes 'NN EU'; unit: 98/84 t-shirt M 93, 101.5 felpa L 88-90, 95.5 t-shirt M <=90, huge XXL 70-87, sweep never >93). Frontend: /dashboard CalcolaTagliaBox with Zara link -> size-fallback-dialog with exact title/subtitle/2 buttons; primary bg rgb(10,10,10) black, secondary grey; Escape closes and leaves inline calcola-fallback-average-btn which reopens dialog; average -> dialog closes, calcola-result shows L + 'media internazionale - Affidabilità 89%' + details; Provalo -> /studio chosen-size-input 'L'. /analyze with dolcegabbana link -> same dialog -> analyze-result L, Affidabilità 89%, Provalo -> /studio chosen size L.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/analyze result card", "issues": ["Category shown as raw English lowercase 'top' in an Italian UI (could show garment_kind e.g. 'Felpa'/'T-shirt')"]},
+      {"screen": "/dashboard CalcolaTagliaBox", "issues": ["Help text 'Niente metro, niente misure' / CTA 'Calcola con il mio Avatar' contradicts the fallback which uses saved tape measures"]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_size_fallback.py", "/app/test_reports/pytest/pytest_size_fallback.xml"],
+  "action_items": ["Optional: localize category label on /analyze result (use garment_kind)", "Optional: align CalcolaTagliaBox help copy with tape-measure fallback"],
+  "critical_code_review_comments": [
+    "size_fallback.recommend: if foot_cm missing for sneakers, float(m['foot_cm']) raises KeyError -> 500; currently guarded only if REQUIRED_MEASURES includes foot_cm",
+    "Each fallback call inserts a product_analyses doc (fine, but no dedupe)"
+  ],
+  "updated_files": ["/app/backend/tests/test_size_fallback.py"],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "seed_data_creation": "None; used owner token pending_test_tok",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Owner measures: chest 96, waist 91, foot 25.5 -> top L 89%, shoes 40 EU 93%. Zara and dolcegabbana links trigger the dialog. Screenshot upload through the dialog (LLM) was NOT exercised."
+}

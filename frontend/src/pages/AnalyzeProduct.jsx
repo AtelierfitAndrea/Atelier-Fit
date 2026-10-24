@@ -157,7 +157,7 @@ function Result({ result }) {
           </div>
         </div>
         <div className="flex items-center justify-between text-sm text-white/70">
-          {category && <span translate="no">{category}</span>}
+          {(result.garment_kind || category) && <span translate="no">{result.garment_kind || category}</span>}
           {conf !== null && <span translate="no">Affidabilità {conf}%</span>}
         </div>
       </div>

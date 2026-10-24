@@ -279,3 +279,8 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 - Solo riferimenti (Avatar resta cifrato sul server, capi già caricati); debounce 500ms + flush su cambio app/chiusura
 - /studio: modal "Hai un outfit in sospeso, vuoi riprendere?" (Riprendi/Scarta), scadenza 5 min, chiave cancellata dopo generazione riuscita (outfit e prova singola)
 - File: lib/pendingOutfit.js, components/PendingOutfitModal.jsx, Studio.jsx, OutfitGrid.jsx. Fix memoria 1536px invariato
+
+## 2026-06 — Size logic: media internazionale + doppia scelta (DONE, iteration_37)
+- Fase 1: backend/data/size_standard_media_internazionale.json (uomo/donna S–XXL petto/vita/fianchi + lunghezze t-shirt/felpa/pantaloni/cargo, sneakers piede→EU, pesi per capo, fonti)
+- backend/size_fallback.py + POST /api/product/size-fallback: misure metro salvate vs media; taglia = parte del corpo più grande; affidabilità max 93%, al limite 88–90%, mai 98%
+- Frontend: components/SizeFallbackDualChoice.jsx (popup "Non ho trovato la tabella di questo brand." con Media internazionale / Screenshot), usato in CalcolaTagliaBox e /analyze; lib/provalo.js (Provalo su di te → /studio)
