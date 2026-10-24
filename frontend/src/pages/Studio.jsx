@@ -12,6 +12,7 @@ import AccountPersonalBox from "@/components/AccountPersonalBox";
 import OutfitGrid from "@/components/OutfitGrid";
 import IncludedNote from "@/components/IncludedNote";
 import CopyLook from "@/components/CopyLook";
+import TryOnProgress from "@/components/TryOnProgress";
 import PendingOutfitModal from "@/components/PendingOutfitModal";
 import { usePendingDraft } from "@/lib/pendingOutfit";
 
@@ -181,16 +182,7 @@ export default function Studio() {
         </div>
       </section>
 
-      {generating && (
-        <div className="border hairline p-10 text-center bg-white" data-testid="generating-indicator">
-          <div className="label-caps">Atelier at work</div>
-          <h3 className="font-serif text-2xl mt-2">Fitting your garment…</h3>
-          <p className="text-neutral-500 mt-3 text-sm">This takes about 20–40 seconds.</p>
-          <div className="mt-6 h-1 w-full bg-neutral-100 overflow-hidden">
-            <div className="h-full w-1/3 bg-[#0A0A0A] animate-pulse" />
-          </div>
-        </div>
-      )}
+      <TryOnProgress active={generating} testid="generating-indicator" />
 
       <CopyLook personPath={personPath} uploadFile={uploadFile} />
 

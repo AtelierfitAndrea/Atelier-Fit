@@ -6,6 +6,7 @@ import { useSubscription } from "@/lib/subscription";
 import IncludedNote from "@/components/IncludedNote";
 import HemCard from "@/components/HemCard";
 import FreeRetry from "@/components/FreeRetry";
+import TryOnProgress from "@/components/TryOnProgress";
 
 const SLOTS = [
   { k: "top", n: 1, l: "Maglia / Top" },
@@ -217,11 +218,7 @@ export default function OutfitGrid({ personPath, uploadFile, restoreItems, onIte
         </p>
       )}
 
-      {generating && (
-        <div className="mt-6 max-w-xl h-1 bg-neutral-100 overflow-hidden" data-testid="grid-generating">
-          <div className="h-full w-1/3 bg-[#0A0A0A] animate-pulse" />
-        </div>
-      )}
+      <TryOnProgress active={generating} className="mt-6 max-w-xl" testid="grid-generating" />
 
       {result && (
         <div className="mt-10 grid grid-cols-1 lg:grid-cols-2 gap-8" data-testid="grid-result">

@@ -170,7 +170,9 @@ function GreenResult({ result, onProvalo, importing, onNewScreenshot }) {
     <div className="mt-6 fade-up" data-testid="calcola-result">
       {saved_chart && (
         <div className="mb-3 flex flex-wrap items-center gap-3 border hairline px-4 py-3" data-testid="calcola-saved-chart">
-          <span className="text-sm" data-testid="calcola-saved-chart-text">Tabella {saved_chart.brand} salvata dal tuo screenshot</span>
+          <span className="text-sm" data-testid="calcola-saved-chart-text">
+            Tabella {saved_chart.brand} {saved_chart.shared ? "già letta da uno screenshot di un altro cliente" : "salvata dal tuo screenshot"} · Affidabilità 98%
+          </span>
           <button type="button" onClick={onNewScreenshot} className="btn-ghost ml-auto" data-testid="calcola-new-screenshot-btn">Usa uno screenshot nuovo</button>
         </div>
       )}

@@ -6,6 +6,7 @@ import { useAvatar } from "@/lib/avatar";
 import IncludedNote from "@/components/IncludedNote";
 import HemCard from "@/components/HemCard";
 import FreeRetry from "@/components/FreeRetry";
+import TryOnProgress from "@/components/TryOnProgress";
 
 
 function priceFmt(n, cur = "EUR") {
@@ -241,16 +242,7 @@ export default function OutfitBuilder() {
         </div>
       )}
 
-      {generating && !result && (
-        <div className="border hairline p-10 text-center bg-white" data-testid="outfit-generating">
-          <div className="label-caps text-brand">Puzzle multi-brand</div>
-          <h3 className="font-serif text-2xl mt-2">Sto vestendo te con questi {selected.length || "…"} capi</h3>
-          <p className="text-neutral-500 mt-2 text-sm">Richiede ~30 secondi. Niente modelli stock, solo tu.</p>
-          <div className="mt-5 h-1 w-full bg-neutral-100 overflow-hidden">
-            <div className="h-full w-1/3 bg-brand animate-pulse" />
-          </div>
-        </div>
-      )}
+      <TryOnProgress active={generating && !result} testid="outfit-generating" />
 
       {result && <OutfitResult result={result} onSave={saveOutfit} onShare={shareOutfit} onClose={() => setResult(null)} onRetry={(d) => setResult((r) => ({ ...r, ...d }))} />}
     </section>

@@ -1946,15 +1946,19 @@ async def _analyze_with_saved_chart(user: User, url: str, m_doc: dict, category:
     if not hk or hk in _MARKETPLACES:
         return None
     group = _CAT_GROUP.get((category or "").lower()) or _group_from_url(url)
-    q = {"account_id": user.account_id, "$or": [{"brand_key": hk}, {"host_keys": hk}], "group": group}
-    saved = await db.saved_size_charts.find_one(q, {"_id": 0}, sort=[("saved_at", -1)])
+    # Charts read from screenshots are shared: the user's own first, otherwise any customer's for this brand.
+    q = {"$or": [{"brand_key": hk}, {"host_keys": hk}], "group": group}
+    saved = await db.saved_size_charts.find_one({**q, "account_id": user.account_id}, {"_id": 0}, sort=[("saved_at", -1)]) \
+        or await db.saved_size_charts.find_one(q, {"_id": 0}, sort=[("saved_at", -1)])
     if not saved:
         return None
     text = (f"URL: {url}\nBRAND: {saved['brand']}\nNOTE VESTIBILITÀ: {saved.get('fit_notes') or 'n/d'}\n\n"
             f"TABELLA TAGLIE SALVATA DAL CLIENTE (JSON):\n{pyjson.dumps(saved['size_chart'], ensure_ascii=False)}")
     result = await _call_llm_for_analysis(text, None, m_doc, hint_url=url)
     if result.get("ok"):
-        result["saved_chart"] = {"brand": saved["brand"], "group": saved["group"], "saved_at": saved["saved_at"]}
+        result["confidence"] = 0.98
+        result["saved_chart"] = {"brand": saved["brand"], "group": saved["group"], "saved_at": saved["saved_at"],
+                                 "shared": saved.get("account_id") != user.account_id}
     return result
 
 

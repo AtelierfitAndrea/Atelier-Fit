@@ -2,6 +2,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { ArrowCounterClockwise } from "@phosphor-icons/react";
 import { api } from "@/lib/api";
+import TryOnProgress from "@/components/TryOnProgress";
 
 const REASONS = [["sfondo", "Sfondo cambiato"], ["viso", "Viso diverso"], ["capo", "Capo sbagliato"], ["altro", "Altro"]];
 const DAY = 24 * 3600 * 1000;
@@ -44,6 +45,7 @@ export default function FreeRetry({ kind, item, onDone }) {
         <button onClick={go} disabled={!reason || busy} className="btn-primary disabled:opacity-40" data-testid="free-retry-confirm">{busy ? "Rigenero gratis…" : "Rigenera senza credito"}</button>
         <button onClick={() => setOpen(false)} disabled={busy} className="btn-ghost" data-testid="free-retry-cancel">Annulla</button>
       </div>
+      <TryOnProgress active={busy} className="mt-4" testid="free-retry-progress" />
     </div>
   );
 }

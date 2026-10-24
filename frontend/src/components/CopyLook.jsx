@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { UserFocus, Scissors, ArrowRight, BookmarkSimple, Check } from "@phosphor-icons/react";
 import { api, fileUrl } from "@/lib/api";
 import { useSubscription } from "@/lib/subscription";
+import TryOnProgress from "@/components/TryOnProgress";
 
 const CAT_IT = { top: "Top", bottom: "Pantaloni/Gonna", dress: "Abito", outerwear: "Capospalla", shoes: "Scarpe" };
 
@@ -110,6 +111,7 @@ export default function CopyLook({ personPath, uploadFile }) {
                 <span className="text-xs text-neutral-500">Usa 1 prova · 20–40 secondi</span>
               </div>
             )}
+            <TryOnProgress active={phase === "applying"} className="mt-5" testid="copylook-progress" />
           </div>
         </div>
       )}
