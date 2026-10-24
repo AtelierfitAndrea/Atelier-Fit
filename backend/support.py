@@ -38,6 +38,11 @@ FAQ = [
     ('Il vestito mi sembra lungo o corto', "L'AI adatta la lunghezza del capo alla tua altezza inserita in Profilo; se sei sotto 1,65 m ti consigliamo di valutare un orlo."),
     ('Con le scarpe porto numeri diversi nei vari brand', 'Ogni brand calza in modo diverso (Zara, Nike, Adidas hanno vestibilità diverse). Inserisci la lunghezza del piede in cm in Profilo: calcoliamo il numero esatto per ogni brand.'),
     ('Il risultato non mi piace', 'Puoi riprovare cambiando foto, luce o aggiornando le misure per un risultato più realistico. Il piano Free include 5 prove al mese; con i piani Single o Family le prove sono illimitate.'),
+    ('Come faccio un ordine?', 'My Atelier non vende direttamente i capi: ti aiuta a scegliere la taglia giusta e a provarli virtualmente. Quando hai deciso, acquisti il capo sul sito del brand (Zara, Shein, Amazon e gli altri) dal link del prodotto, con la taglia consigliata da My Atelier.'),
+    ('Spedizioni', 'Le spedizioni sono gestite dal brand o dal negozio da cui acquisti: tempi, costi e tracciamento li trovi nella conferma d\'ordine e nell\'area clienti di quel sito.'),
+    ('Resi e cambi', 'Resi e cambi si fanno con il brand o il negozio da cui hai acquistato, secondo le sue condizioni (di solito dall\'area ordini del sito). Con la taglia consigliata da My Atelier i resi per taglia sbagliata si riducono molto.'),
+    ('Appuntamenti in atelier', 'Per fissare un appuntamento con l\'atelier contattaci al nostro numero aziendale +39 3522260286, anche per chiamate.'),
+    ('Voglio parlare con una persona', 'Per assistenza diretta puoi contattarci al nostro numero aziendale +39 3522260286 anche per chiamate.'),
 ]
 
 KNOWLEDGE_BASE = (
@@ -57,8 +62,8 @@ Rispondi nella lingua del cliente se non scrive in italiano.
 Devi restituire SOLO un JSON valido:
 {{"relevant": true|false, "brand": true|false, "category": "maglie|giacche|pantaloni|scarpe|outfit|foto|misure|privacy|altro", "reply": "testo della mail"}}
 - brand = true se chi scrive è un brand, negozio, azienda, agenzia o influencer che propone collaborazione, partnership, vendita, integrazione, sponsorizzazione o pubblicità con My Atelier (in quel caso relevant = false e reply = "").
-- relevant = true se la richiesta riguarda l'uso di My Atelier: capi (maglie, giacche, pantaloni, scarpe, vestiti), foto/avatar, misure e taglie, privacy, outfit, prove virtuali.
-- relevant = false per fatture, pagamenti/rimborsi, partnership, pubblicità, spam, newsletter, richieste legali o qualsiasi altro tema: in quel caso reply = "".
+- relevant = true se la richiesta riguarda l'uso di My Atelier: capi (maglie, giacche, pantaloni, scarpe, vestiti), foto/avatar, misure e taglie, privacy, outfit, prove virtuali, ordini, spedizioni, resi e cambi (sempre gestiti dal brand dove si acquista), appuntamenti in atelier.
+- relevant = false per fatture, pagamenti/rimborsi dell'abbonamento, partnership, pubblicità, spam, newsletter, richieste legali, richiesta di parlare con un operatore o qualsiasi altro tema non coperto: in quel caso reply = "".
 - La reply è testo semplice: NIENTE Markdown (niente asterischi, cancelletti o grassetti); per i percorsi usa il formato Profilo > Le tue misure.
 - La reply: saluto con il nome se noto, soluzione chiara in pochi paragrafi o punti, chiusura "Un caro saluto,\\nIl team My Atelier". Niente oggetto, niente firma extra.
 """
@@ -202,7 +207,6 @@ def create_support_router(db, get_account_user, require_owner, extract_json, eme
 
     async def notify_owner_brand(ticket: dict):
         contact = f"+{ticket['phone']} (WhatsApp)" if ticket.get("channel") == "whatsapp" else ticket.get("email")
-        await whatsapp.notify_owner(f"Un brand ti ha scritto - rispondi tu personalmente\nDa: {ticket.get('name') or ''} {contact}\nOggetto: {ticket.get('subject')}")
         body = (f"Un brand ti ha scritto - rispondi tu personalmente\n\nDa: {ticket.get('name') or ''} <{contact}>\n"
                 f"Oggetto: {ticket.get('subject')}\n\n{await thread_text(ticket['id'])}\n\n"
                 "Rispondi dalla Stanza del Proprietario > Assistenza > BRAND DA CONTATTARE.")
@@ -225,16 +229,18 @@ def create_support_router(db, get_account_user, require_owner, extract_json, eme
             logger.error(f"support: brand notify failed for {ticket['id']}: {e}")
 
     async def handoff_call(ticket: dict):
-        # WhatsApp question outside the 10 FAQ: tell the customer Andrea will call and alert him (WhatsApp + email).
-        if not ticket.get("handoff_sent"):
+        # Outside the FAQ or operator requested: give the company number once, owner gets an email alert for WhatsApp.
+        if not ticket.get("handoff_sent") and (await settings())["auto_reply"]:
             await deliver(ticket, whatsapp.HANDOFF_TEXT, "ai")
-        await db.support_tickets.update_one({"id": ticket["id"]}, {"$set": {"status": "needs_human", "handoff_sent": True, "call_requested_at": _now(), "unread_admin": True}})
+            await db.support_tickets.update_one({"id": ticket["id"]}, {"$set": {"handoff_sent": True}})
+        await db.support_tickets.update_one({"id": ticket["id"]}, {"$set": {"status": "needs_human", "call_requested_at": _now(), "unread_admin": True}})
+        if ticket.get("channel") != "whatsapp":
+            return
         last = await db.support_messages.find_one({"ticket_id": ticket["id"], "author": "user"}, {"_id": 0, "body": 1}, sort=[("created_at", -1)])
         q = (last or {}).get("body", "")[:600]
         phone = ticket["phone"]
         text = (f"📞 Richiesta di chiamata My Atelier\nCliente: {ticket.get('name') or 'senza nome'} (+{phone})\nDomanda: {q}\n"
                 f"Chiama: tel:+{phone} · WhatsApp: https://wa.me/{phone}")
-        await whatsapp.notify_owner(text)
         msg = EmailMessage()
         msg["From"] = formataddr(("My Atelier", _cfg("SUPPORT_EMAIL")))
         msg["To"] = _cfg("SUPPORT_CC_EMAIL")
@@ -261,7 +267,7 @@ def create_support_router(db, get_account_user, require_owner, extract_json, eme
         chat = LlmChat(api_key=emergent_key, session_id=f"support-{ticket['id']}-{uuid.uuid4().hex[:6]}", system_message=SYSTEM_PROMPT)
         chat.with_model("anthropic", "claude-sonnet-4-5-20250929")
         channel = ("\nCanale: WhatsApp. Stesse regole e stessa knowledge base, ma reply breve (massimo 700 caratteri), tono cordiale, "
-                   "chiudi con \"Il team My Atelier\". Imposta relevant = false SOLO se la domanda esce dai temi delle 10 risposte (foto, misure, taglie, outfit, privacy, cancellazione foto, lunghezza capi, scarpe, risultato della prova): per esempio spedizioni, pagamenti, resi, ordini.\n") if ticket.get("channel") == "whatsapp" else ""
+                   "chiudi con \"Il team My Atelier\". Imposta relevant = false se la domanda esce dai temi della knowledge base o se il cliente chiede un operatore o una persona: per esempio pagamenti, fatture, rimborsi dell'abbonamento.\n") if ticket.get("channel") == "whatsapp" else ""
         prompt = f"Nome cliente: {ticket.get('name') or 'non noto'}\nOggetto: {ticket.get('subject')}{channel}\n\nConversazione:\n{await thread_text(ticket['id'])}\n\nRispondi all'ultimo messaggio del CLIENTE."
         data = extract_json(await chat.send_message(UserMessage(text=prompt))) or {}
         reply = re.sub(r"\*\*|__|^#+\s*", "", str(data.get("reply") or ""), flags=re.M).strip()
@@ -297,8 +303,7 @@ def create_support_router(db, get_account_user, require_owner, extract_json, eme
         except Exception as e:
             logger.error(f"support: AI failed for {ticket_id}: {e}")
             await db.support_tickets.update_one({"id": ticket_id}, {"$set": {"status": "needs_human", "ai_error": str(e)[:200]}})
-            if ticket.get("channel") == "whatsapp":
-                await handoff_call(ticket)
+            await handoff_call(ticket)
             return
         if ans["brand"]:
             await handle_brand(ticket)
@@ -306,9 +311,7 @@ def create_support_router(db, get_account_user, require_owner, extract_json, eme
         if not ticket.get("category"):
             await db.support_tickets.update_one({"id": ticket_id}, {"$set": {"category": ans["category"]}})
         if not ans["relevant"] or not ans["reply"]:
-            await db.support_tickets.update_one({"id": ticket_id}, {"$set": {"status": "needs_human"}})
-            if ticket.get("channel") == "whatsapp":
-                await handoff_call(ticket)
+            await handoff_call(ticket)
             return
         auto = (await settings())["auto_reply"] and ticket.get("auto_replies", 0) < MAX_AUTO_REPLIES_PER_TICKET
         if not auto:
@@ -550,7 +553,7 @@ def create_support_router(db, get_account_user, require_owner, extract_json, eme
 
     @r.get("/admin/support/whatsapp-status")
     async def wa_status(_owner=Depends(require_owner)):
-        return {"configured": whatsapp.configured(), "owner_number": os.environ.get("WHATSAPP_OWNER_NUMBER"), "webhook_path": "/api/whatsapp/webhook"}
+        return {"configured": whatsapp.configured(), "business_number": "+39 3522260286", "webhook_path": "/api/whatsapp/webhook"}
 
     @r.post("/cron/support-poll")
     async def cron_poll(request: Request, bg: BackgroundTasks):

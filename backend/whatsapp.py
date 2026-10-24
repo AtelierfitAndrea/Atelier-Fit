@@ -9,7 +9,7 @@ import httpx
 
 logger = logging.getLogger("whatsapp")
 
-HANDOFF_TEXT = "Ti passo subito il titolare Andrea, resta qui che ti contatta a breve"
+HANDOFF_TEXT = "Per assistenza diretta puoi contattarci al nostro numero aziendale +39 3522260286 anche per chiamate"
 
 
 def configured() -> bool:
@@ -37,26 +37,6 @@ async def _post(payload: dict) -> str:
 
 async def send_text(to: str, body: str) -> str:
     return await _post({"to": to, "type": "text", "text": {"body": body[:4000], "preview_url": False}})
-
-
-async def notify_owner(text: str) -> None:
-    """Free text to Andrea's personal number; outside the 24h window falls back to the approved template if set."""
-    owner = os.environ.get("WHATSAPP_OWNER_NUMBER")
-    if not owner or not configured():
-        return
-    try:
-        await send_text(owner, text)
-    except Exception as e:
-        tpl = os.environ.get("WHATSAPP_NOTIFY_TEMPLATE")
-        if not tpl:
-            logger.warning(f"whatsapp owner notify failed (no template): {e}")
-            return
-        try:
-            await _post({"to": owner, "type": "template", "template": {
-                "name": tpl, "language": {"code": os.environ.get("WHATSAPP_TEMPLATE_LANGUAGE", "it")},
-                "components": [{"type": "body", "parameters": [{"type": "text", "text": text[:900]}]}]}})
-        except Exception as e2:
-            logger.error(f"whatsapp owner template failed: {e2}")
 
 
 def parse_messages(payload: dict) -> list:

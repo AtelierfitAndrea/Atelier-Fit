@@ -92,7 +92,7 @@ function WaStatus() {
   if (!w) return null;
   return (
     <div className="text-xs mt-1" style={{ color: w.configured ? GOLD : "#F87171" }} data-testid="admin-whatsapp-status">
-      WhatsApp Business: {w.configured ? "collegato" : "in attesa delle chiavi Meta"} · notifiche chiamata a +{w.owner_number}
+      WhatsApp Business: {w.configured ? "collegato" : "in attesa delle chiavi Meta"} · numero aziendale {w.business_number}
     </div>
   );
 }

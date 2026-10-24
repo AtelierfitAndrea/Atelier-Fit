@@ -17,6 +17,7 @@ import AnalyzeProduct from "@/pages/AnalyzeProduct";
 import AppShell from "@/components/AppShell";
 import Terms from "@/pages/Terms";
 import ComingSoon, { LAUNCH_AT } from "@/components/ComingSoon";
+import WhatsAppButton from "@/components/WhatsAppButton";
 import AdminAtelier from "@/pages/AdminAtelier";
 import AdminSupport from "@/pages/AdminSupport";
 import Support from "@/pages/Support";
@@ -83,6 +84,7 @@ export default function App() {
             <PaywallModal />
             <Toaster position="top-center" theme="light" />
             <SessionRevokedNotice />
+            <WhatsAppButton />
           </BrowserRouter>
           </AvatarProvider>
         </SubscriptionProvider>
