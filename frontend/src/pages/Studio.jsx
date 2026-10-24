@@ -85,6 +85,8 @@ export default function Studio() {
       pending.markDone();
       toast.success("Prova pronta");
       refreshSub();
+      setGenerating(false);
+      await new Promise((r) => setTimeout(r, 800));
       navigate(`/tryon/${data.id}`);
     } catch (e) {
       if (e?.response?.status === 402) { openPaywall(); }

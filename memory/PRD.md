@@ -284,3 +284,8 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 - Fase 1: backend/data/size_standard_media_internazionale.json (uomo/donna S–XXL petto/vita/fianchi + lunghezze t-shirt/felpa/pantaloni/cargo, sneakers piede→EU, pesi per capo, fonti)
 - backend/size_fallback.py + POST /api/product/size-fallback: misure metro salvate vs media; taglia = parte del corpo più grande; affidabilità max 93%, al limite 88–90%, mai 98%
 - Frontend: components/SizeFallbackDualChoice.jsx (popup "Non ho trovato la tabella di questo brand." con Media internazionale / Screenshot), usato in CalcolaTagliaBox e /analyze; lib/provalo.js (Provalo su di te → /studio)
+
+## 2026-06 — Attesa try-on percepita + tabelle condivise (DONE, iteration_38)
+- components/TryOnProgress.jsx: barra nero/beige, rAF easing verso 95% (≈49% a 10s), step testuali 0-20/20-50/50-80/80-95/95-100, nota sotto la barra; 100% "Ecco il risultato!" mostrato ~800ms prima di navigare
+- Collegato a: prova singola (Studio), outfit grid, Copia Look, riprova gratuita, OutfitBuilder (armadio)
+- Tabelle taglie da screenshot condivise tra tutti i clienti per brand (prima la propria), affidabilità 98% senza chiedere; badge "già letta da uno screenshot di un altro cliente · Affidabilità 98%"

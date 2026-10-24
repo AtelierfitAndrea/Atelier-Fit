@@ -21,6 +21,8 @@ export default function FreeRetry({ kind, item, onDone }) {
     try {
       const { data } = await api.post(`/${kind}/${item.id}/retry`, { reason });
       toast.success("Nuova prova pronta, senza consumare credito");
+      setBusy(false);
+      await new Promise((r) => setTimeout(r, 800));
       setOpen(false); onDone(data);
     } catch (e) { toast.error(e?.response?.data?.detail || "Riprova non riuscita"); }
     finally { setBusy(false); }

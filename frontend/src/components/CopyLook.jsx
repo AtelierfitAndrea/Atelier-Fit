@@ -70,7 +70,9 @@ export default function CopyLook({ personPath, uploadFile }) {
     try {
       const chosen = items.filter((i) => sel[i.idx]).map(({ name, category, image_path }) => ({ name, category, image_path }));
       const { data } = await api.post("/copylook/apply", { model_path: model.path, items: chosen });
-      toast.success("Look copiato sul tuo Avatar"); refresh(); navigate(`/tryon/${data.id}`);
+      toast.success("Look copiato sul tuo Avatar"); refresh(); setPhase("idle");
+      await new Promise((r) => setTimeout(r, 800));
+      navigate(`/tryon/${data.id}`);
     } catch (e) {
       if (e?.response?.status === 402) openPaywall(); else toast.error(e?.response?.data?.detail || "Generazione non riuscita");
     } finally { setPhase("idle"); }

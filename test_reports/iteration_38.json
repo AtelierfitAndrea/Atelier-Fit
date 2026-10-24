@@ -1,0 +1,23 @@
+{
+  "summary": "Tested TryOnProgress + shared size charts. Backend 2/2 pytest pass: POST /api/product/analyze (Zara felpa) -> ok true, confidence 0.98, saved_chart {brand Zara, group sopra, shared true}, recommended M; 401 without auth. Frontend: /dashboard CalcolaTagliaBox -> calcola-result + calcola-saved-chart-text 'Tabella Zara già letta da uno screenshot di un altro cliente · Affidabilità 98%', size M, NO size-fallback-dialog. /studio single try-on (1 real generation, garment2.jpg): generating-indicator appeared; percent monotonic 0->13(2s)->24(4s)->34(6s)->42(8s)->49(10s)->57(12.7s), steps switched at 20/50 exactly per spec; note text exact; track rgb(239,233,225) beige, fill rgb(10,10,10); response in 13.2s -> navigated to /tryon/{id}, result image loads. Outfit grid: grid-slot-top-input upload + grid-generate-btn -> grid-generating shown with 7%(1s),19%(3s),33%(6s),49%(10s), correct step/note; generation request was intercepted & aborted via Playwright route (no second paid generation), block disappears after failure. Static review: CopyLook (phase==='applying'), FreeRetry (busy), OutfitBuilder (generating && !result) all render TryOnProgress with the requested testids.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/studio single try-on", "issues": ["On success the page navigates immediately to /tryon/{id}, so the 100% / 'Ecco il risultato!' state is never seen (TryOnProgress unmounts). Optional: await ~600-900ms before navigate if the final state should be visible. Same likely for any flow that unmounts on success."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_shared_size_chart.py", "/app/test_reports/pytest/pytest_shared_chart.xml"],
+  "action_items": ["Optional: delay navigation after single try-on success so the 100% 'Ecco il risultato!' state is visible"],
+  "critical_code_review_comments": [
+    "Shared chart lookup also shares other customers' fit_notes text verbatim into the LLM prompt; ensure fit_notes never contains personal info",
+    "_remember_chart brand_key from LLM brand (e.g. 'Zara Home' -> 'zarahome') may differ from host key; lookup uses brand_key OR host_keys so OK, but shared charts may be poisoned by a single bad screenshot from any customer (no validation/voting) and always get 98% confidence"
+  ],
+  "updated_files": ["/app/backend/tests/test_shared_size_chart.py"],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "seed_data_creation": "None created; used seeded zara chart (account other_customer_test). One real try-on created: /tryon/e2a1190d-df90-4f6c-86ef-e1f02ecc0561",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Use page.route on **/api/outfit/generate-from-uploads (hold then abort) to test grid progress without paid generation. Single try-on took ~13s on this run."
+}
