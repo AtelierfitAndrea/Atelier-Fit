@@ -6,9 +6,9 @@ import { api, fileUrl } from "@/lib/api";
 import { useSubscription } from "@/lib/subscription";
 import TryOnProgress from "@/components/TryOnProgress";
 import { notifyTabReady } from "@/lib/tabNotify";
-import { SaveLinkRow, OutfitTotal } from "@/components/OutfitGrid";
+import { priceFmt } from "@/components/OutfitGrid";
+import { LookPrice } from "@/components/ModelLooks";
 
-const API_SLOT = { top: "top", bottom: "bottom", dress: "dress", outerwear: "jacket", shoes: "shoes" };
 const CAT_IT = { top: "Top", bottom: "Pantaloni/Gonna", dress: "Abito", outerwear: "Capospalla", shoes: "Scarpe" };
 
 function ItemCard({ item, selected, onToggle, onSave, saved }) {
@@ -126,26 +126,50 @@ export default function CopyLook({ personPath, uploadFile }) {
   );
 }
 
-// "Salva link outfit modello": one link per isolated garment, saved to the wardrobe with brand and price (like the outfit grid).
+// "Salva link outfit modello": ONE link for the whole look; the isolated garments inherit it, saved as "Totale Look Modello".
 function ModelLinks({ items, linked, setLinked, modelPath }) {
-  const rows = items.filter((it) => it.image_path).map((it) => ({
-    slot: { k: `m${it.idx}`, api: API_SLOT[it.category] || "top", l: it.name, name: it.name },
-    item: { path: it.image_path, preview: fileUrl(it.image_path) },
-  }));
+  const [url, setUrl] = useState("");
+  const [saving, setSaving] = useState(false);
+  const look = linked.look;
+  const save = async (e) => {
+    e.preventDefault();
+    if (!url.trim() || !modelPath) return;
+    setSaving(true);
+    try {
+      const chosen = items.filter((it) => it.image_path).map(({ image_path, name, category }) => ({ image_path, name, category }));
+      const { data } = await api.post("/wardrobe/looks/from-link", { model_path: modelPath, url: url.trim(), items: chosen });
+      setLinked({ look: data });
+      toast.success(`Look salvato nell'armadio con ${data.garments.length} capi`);
+    } catch (err) { toast.error(err?.response?.data?.detail || "Salvataggio non riuscito"); }
+    finally { setSaving(false); }
+  };
   return (
-    <div className="mt-8 border-t hairline pt-6 space-y-5" data-testid="copylook-links">
+    <div className="mt-8 border-t hairline pt-6 space-y-4" data-testid="copylook-links">
       <div>
         <div className="label-caps">Salva link outfit modello</div>
-        <p className="text-xs text-neutral-500 mt-1">Incolla il link di ogni capo: lo salviamo nel tuo armadio con brand e prezzo, raggruppato in un unico look completo con la foto del modello.</p>
+        <p className="text-xs text-neutral-500 mt-1">Incolla il link del look (es. Zalando): lo salviamo come "Totale Look Modello" con la foto del modello, e tutti i capi isolati usano lo stesso link.</p>
       </div>
-      {rows.map(({ slot, item }) => (
-        <SaveLinkRow key={slot.k} slot={slot} item={item} prefix="copylook" saved={linked[slot.k] || null}
-          extra={modelPath ? { model_path: modelPath } : undefined}
-          onSaved={(g) => setLinked((m) => ({ ...m, [slot.k]: g }))} />
-      ))}
-      <OutfitTotal used={rows} saved={linked} prefix="copylook" title="Totale look modello" />
-      {Object.values(linked).some((g) => g.look_id) && (
-        <Link to="/wardrobe" className="text-sm underline hover:text-[#8C7355]" data-testid="copylook-look-link">Vedi il look completo nell'armadio</Link>
+      {!look ? (
+        <form onSubmit={save} className="flex items-center gap-3">
+          <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="Incolla link del look per salvare in armadio"
+            className="flex-1 border hairline px-3 py-2 text-sm outline-none focus:border-[#0A0A0A]" data-testid="copylook-look-input" />
+          <button type="submit" disabled={saving || !url.trim()} className="border hairline px-4 py-2 label-caps disabled:opacity-40" data-testid="copylook-look-save-btn">
+            {saving ? "Leggo il link…" : "Salva"}
+          </button>
+        </form>
+      ) : (
+        <div className="border hairline p-4 space-y-2" data-testid="copylook-look-saved">
+          <div className="flex items-baseline justify-between gap-3">
+            <div className="label-caps">Totale Look Modello · {look.brand}</div>
+            <div className="font-serif text-2xl" data-testid="copylook-look-total">{look.price != null ? priceFmt(look.price, look.currency) : "—"}</div>
+          </div>
+          <div className="text-sm truncate">{look.title} · {look.garments.length} capi con lo stesso link</div>
+          {look.price == null && <LookPrice lookId={look.id} onSaved={(price) => setLinked({ look: { ...look, price } })} />}
+          <div className="flex gap-4 text-sm">
+            <a href={look.url} target="_blank" rel="noopener noreferrer" className="underline hover:text-[#8C7355]" data-testid="copylook-look-buy">Acquista</a>
+            <Link to="/wardrobe" className="underline hover:text-[#8C7355]" data-testid="copylook-look-link">Vedi il look completo nell'armadio</Link>
+          </div>
+        </div>
       )}
     </div>
   );

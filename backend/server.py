@@ -1754,6 +1754,29 @@ _UA = (
 _PAGE_CHAR_LIMIT = 18000
 
 
+_TRACKING_PARAMS = re.compile(
+    r"^(utm_.*|gclid|gclsrc|gbraid|wbraid|dclid|gad_source|gad_campaignid|fbclid|msclkid|yclid|ttclid|srsltid|_gl|mc_cid|mc_eid|"
+    r"wmc|opc|mpp|otid|campaign.*|ref_?|tag|affiliate.*|cmp.*)$", re.I)
+
+
+def _clean_url(url: str) -> str:
+    """Final destination URL without ads/tracking parameters (Google Ads redirects, gclid Cj0KCQ…, utm_*, Zalando wmc/opc/mpp)."""
+    import html as htmllib
+    from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
+    url = htmllib.unescape((url or "").strip())
+    for _ in range(3):  # unwrap googleadservices / google.com/url / doubleclick redirects
+        parts = urlsplit(url)
+        q = dict(parse_qsl(parts.query, keep_blank_values=True))
+        if re.search(r"(googleadservices|doubleclick|google)\.[a-z.]+$", parts.netloc) and (q.get("adurl") or q.get("url") or q.get("q")):
+            url = q.get("adurl") or q.get("url") or q.get("q")
+            continue
+        break
+    parts = urlsplit(url)
+    keep = [(k, v) for k, v in parse_qsl(parts.query, keep_blank_values=True)
+            if not _TRACKING_PARAMS.match(k) and not v.startswith("Cj0KCQ")]
+    return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(keep), ""))
+
+
 async def _fetch_page(url: str) -> Optional[str]:
     headers = {
         "User-Agent": _UA,
@@ -1763,12 +1786,60 @@ async def _fetch_page(url: str) -> Optional[str]:
     try:
         async with httpx.AsyncClient(follow_redirects=True, timeout=15, headers=headers) as c:
             r = await c.get(url)
-            if r.status_code >= 400:
-                return None
-            return r.text
+            if r.status_code < 400:
+                return r.text
     except Exception as e:
         logger.warning(f"fetch failed: {e}")
+    # Bot walls (Zalando/Akamai, Cloudflare) reject plain clients: retry with a real browser TLS fingerprint.
+    try:
+        from curl_cffi.requests import AsyncSession
+        async with AsyncSession(impersonate="chrome", timeout=20) as s:
+            r = await s.get(url, headers={"Accept-Language": headers["Accept-Language"]}, allow_redirects=True)
+            return r.text if r.status_code < 400 else None
+    except Exception as e:
+        logger.warning(f"browser fetch failed: {e}")
         return None
+
+
+def _structured_meta(html: str) -> dict:
+    """Brand/name/price from JSON-LD, product meta tags or embedded price JSON (no LLM, exact numbers)."""
+    out = {}
+    for block in re.findall(r'<script[^>]*application/ld\+json[^>]*>(.*?)</script>', html, re.S | re.I):
+        try:
+            data = pyjson.loads(block.strip())
+        except Exception:
+            continue
+        for node in (data if isinstance(data, list) else data.get("@graph", [data])):
+            if not isinstance(node, dict) or node.get("@type") not in ("Product", "ProductGroup"):
+                continue
+            b = node.get("brand")
+            out.setdefault("brand", b.get("name") if isinstance(b, dict) else b)
+            out.setdefault("product_name", node.get("name"))
+            offers = node.get("offers") or (node.get("hasVariant") or [{}])[0].get("offers") or {}
+            offers = offers[0] if isinstance(offers, list) and offers else offers
+            if isinstance(offers, dict):
+                p = offers.get("price") or offers.get("lowPrice")
+                if p is not None:
+                    out.setdefault("price", _parse_price(str(p)))
+                    out.setdefault("currency", offers.get("priceCurrency"))
+    if out.get("price") is None:
+        m = (re.search(r'(?:product|og):price:amount"\s+content="([\d.,]+)"', html)
+             or re.search(r'"trackingCurrentAmount"\s*:\s*([\d.]+)', html))
+        if m:
+            out["price"] = _parse_price(m.group(1))
+            c = re.search(r'(?:product|og):price:currency"\s+content="([A-Z]{3})"', html) or re.search(r'"currency(?:Code)?"\s*:\s*"([A-Z]{3})"', html)
+            out["currency"] = c.group(1) if c else "EUR"
+    if not out.get("brand"):
+        m = re.search(r'"brand"\s*:\s*\{[^{}]*"name"\s*:\s*"([^"]+)"', html)
+        if m:
+            out["brand"] = m.group(1)
+    return {k: v for k, v in out.items() if v not in (None, "")}
+
+
+async def _product_meta(html: str, url: str) -> dict:
+    exact = _structured_meta(html)
+    llm = await _extract_product_meta(_condense_html(html)[0], url) if not (exact.get("price") and exact.get("brand") and exact.get("product_name")) else {}
+    return {**llm, **exact}
 
 
 def _condense_html(html: str) -> tuple:
@@ -1996,7 +2067,7 @@ async def _analyze_with_saved_chart(user: User, url: str, m_doc: dict, category:
 
 @api_router.post("/product/analyze")
 async def product_analyze(req: AnalyzeUrlRequest, user: User = Depends(get_current_user)):
-    url = (req.url or "").strip()
+    url = _clean_url(req.url)
     if not re.match(r"^https?://", url):
         raise HTTPException(status_code=400, detail="URL non valido")
     m_doc = await _get_measurements(user.user_id)
@@ -2233,7 +2304,7 @@ async def _save_garment(user_id: str, url: str, meta: dict, image_path: Optional
 
 @api_router.post("/wardrobe/garments/from-url")
 async def wardrobe_save_from_url(req: SaveGarmentFromUrlRequest, user: User = Depends(get_current_user)):
-    url = (req.url or "").strip()
+    url = _clean_url(req.url)
     if not re.match(r"^https?://", url):
         raise HTTPException(status_code=400, detail="URL non valido")
     was_short = _host(url) in _AMZ_SHORT_HOSTS
@@ -2251,7 +2322,7 @@ async def wardrobe_save_from_url(req: SaveGarmentFromUrlRequest, user: User = De
         condensed, image_url = _condense_html(html)
         if is_amazon:
             image_url = image_url or _amazon_image(html)
-        meta = await _extract_product_meta(condensed, url)
+        meta = await _product_meta(html, url)
 
     image_path = None
     if image_url:
@@ -2511,6 +2582,68 @@ async def _add_to_model_look(user_id: str, model_path: str, garment_id: str) -> 
     return (await db.model_looks.find_one({"user_id": user_id, "model_path": model_path}, {"_id": 0, "id": 1}))["id"]
 
 
+class LookFromLinkItem(BaseModel):
+    image_path: str
+    name: Optional[str] = None
+    category: Optional[str] = None
+
+
+class LookFromLinkRequest(BaseModel):
+    model_path: str
+    url: str
+    items: List[LookFromLinkItem]
+
+
+_LOOK_CAT = {"top": "top", "bottom": "bottom", "dress": "dress", "outerwear": "outerwear", "shoes": "shoes"}
+
+
+@api_router.post("/wardrobe/looks/from-link")
+async def wardrobe_look_from_link(req: LookFromLinkRequest, user: User = Depends(get_current_user)):
+    # One link for the whole model look: the look gets brand/price, every isolated garment inherits the same link.
+    paths = [req.model_path] + [i.image_path for i in req.items]
+    if any(_path_owner(p) != user.user_id for p in paths):
+        raise HTTPException(status_code=403, detail="Accesso negato")
+    if not req.items:
+        raise HTTPException(status_code=400, detail="Nessun capo da salvare")
+    url = _clean_url(req.url)
+    if not re.match(r"^https?://", url):
+        raise HTTPException(status_code=400, detail="URL non valido")
+    if _host(url) in _AMZ_SHORT_HOSTS:
+        url = await _resolve_short_url(url)
+    meta = {}
+    html = await _fetch_page(url)
+    if html:
+        try:
+            meta = await _product_meta(html, url)
+        except Exception as e:
+            logger.warning(f"look meta failed: {e}")
+    host = _host(url)
+    brand = meta.get("brand") or ("Amazon" if "amazon." in host else re.sub(r"^www\d?\.", "", host) or "Shop")
+    garments = [await _save_garment(user.user_id, url, {"product_name": (i.name or "").strip()[:80] or "Capo", "brand": brand,
+                                                         "category": _LOOK_CAT.get((i.category or "").lower(), "top")}, i.image_path)
+                for i in req.items]
+    now = datetime.now(timezone.utc).isoformat()
+    look = {"user_id": user.user_id, "model_path": req.model_path, "url": url, "brand": brand,
+            "title": meta.get("product_name") or "Totale Look Modello", "price": meta.get("price"),
+            "currency": meta.get("currency") or "EUR", "garment_ids": [g["id"] for g in garments], "updated_at": now}
+    await db.model_looks.update_one({"user_id": user.user_id, "model_path": req.model_path},
+                                    {"$set": look, "$setOnInsert": {"id": str(uuid.uuid4()), "created_at": now}}, upsert=True)
+    doc = await db.model_looks.find_one({"user_id": user.user_id, "model_path": req.model_path}, {"_id": 0})
+    return {**doc, "garments": garments, "needs_price": doc.get("price") is None}
+
+
+class LookPriceRequest(BaseModel):
+    price: float = Field(gt=0, lt=100000)
+
+
+@api_router.put("/wardrobe/looks/{look_id}/price")
+async def wardrobe_look_price(look_id: str, req: LookPriceRequest, user: User = Depends(get_current_user)):
+    res = await db.model_looks.update_one({"id": look_id, "user_id": user.user_id}, {"$set": {"price": round(req.price, 2), "price_manual": True}})
+    if not res.matched_count:
+        raise HTTPException(status_code=404, detail="Look non trovato")
+    return {"id": look_id, "price": round(req.price, 2)}
+
+
 @api_router.get("/wardrobe/looks")
 async def wardrobe_list_looks(user: User = Depends(get_current_user)):
     looks = await db.model_looks.find({"user_id": user.user_id}, {"_id": 0}).sort("updated_at", -1).to_list(200)
@@ -2522,11 +2655,13 @@ async def wardrobe_list_looks(user: User = Depends(get_current_user)):
         if not garments:
             continue
         priced = [g for g in garments if g.get("price") is not None]
+        lk_price = lk.get("price")
         out.append({
             "id": lk["id"], "model_path": lk["model_path"], "created_at": lk["created_at"], "updated_at": lk.get("updated_at"),
-            "garments": garments, "priced_count": len(priced),
-            "total": round(sum(float(g["price"]) for g in priced), 2) if priced else None,
-            "currency": (priced[0].get("currency") if priced else None) or "EUR",
+            "url": lk.get("url"), "brand": lk.get("brand"), "title": lk.get("title") or "Totale Look Modello",
+            "garments": garments, "priced_count": len(garments) if lk_price is not None else len(priced),
+            "total": lk_price if lk_price is not None else (round(sum(float(g["price"]) for g in priced), 2) if priced else None),
+            "currency": lk.get("currency") or (priced[0].get("currency") if priced else None) or "EUR",
         })
     return out
 
@@ -2545,7 +2680,7 @@ async def wardrobe_save_from_screenshot(req: GarmentFromScreenshotRequest, user:
         raise HTTPException(status_code=400, detail="Tipo di capo non valido")
     if _path_owner(req.image_path) != user.user_id:
         raise HTTPException(status_code=403, detail="Accesso negato")
-    url = (req.url or "").strip()
+    url = _clean_url(req.url)
     if not re.match(r"^https?://", url):
         raise HTTPException(status_code=400, detail="URL non valido")
     if _host(url) in _AMZ_SHORT_HOSTS:
@@ -2554,7 +2689,7 @@ async def wardrobe_save_from_screenshot(req: GarmentFromScreenshotRequest, user:
     try:
         html = await _fetch_page(url)
         if html:
-            meta = await _extract_product_meta(_condense_html(html)[0], url)
+            meta = await _product_meta(html, url)
     except Exception as e:
         logger.warning(f"screenshot garment meta failed: {e}")
     category, label = slots[req.slot]
