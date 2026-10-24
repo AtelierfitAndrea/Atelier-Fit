@@ -300,3 +300,8 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 - FAQ +5: ordini, spedizioni, resi e cambi (gestiti dal brand), appuntamenti atelier, parlare con una persona. Fuori FAQ / operatore → "Per assistenza diretta puoi contattarci al nostro numero aziendale +39 3522260286 anche per chiamate" (tutti i canali, una volta per ticket)
 - Rimosso il numero personale: niente più notifiche WhatsApp al titolare (resta l'email di avviso). WHATSAPP_OWNER_NUMBER non più usato
 - Frontend: components/WhatsAppButton.jsx verde fisso in basso a destra su tutte le pagine (anche Coming Soon), wa.me/393522260286?text=Ciao My Atelier (REACT_APP_WHATSAPP_NUMBER)
+
+## 2026-06 — Regole identità/mani + anti doppio volto (DONE, test reale + sintetico)
+- HANDS_RULE (server.py) ora include IDENTITY STRICT (una sola persona/volto, volto identico, niente face blending/swap, sfondo originale) + mani 5 dita/telefono + negative prompt esteso; usato da prova singola, outfit, Copia Look e retry. Retry "viso" menziona il doppio volto
+- head_lock.finalize: se la testa generata non è allineata a quella originale (nessun volto rilevato + phaseCorrelate debole, o centri distanti >35% del volto) NON incolla la testa originale; se dopo l'incolla risultano 2 volti grandi → usa l'output del modello. Log "head_lock: ..."
+- Possibile next: hand-lock (incollare mani originali) se le mani restano imperfette

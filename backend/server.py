@@ -1352,10 +1352,17 @@ async def files_delete(path: str, user: User = Depends(get_current_user)):
 
 
 HANDS_RULE = (
+    "IDENTITY — STRICT:\n"
+    "• Use IMAGE 1 as the EXACT source for identity. Exactly ONE person with ONE face: no duplicate, twin or second face, no face blending, no face swap.\n"
+    "• Preserve the original facial features 100% identical to IMAGE 1: do not modify the face, do not generate a new face, keep the original face geometry.\n"
+    "• Body proportions come from IMAGE 1 for sizing, but the person wears EXACTLY the garment(s) provided.\n"
+    "• Keep the original background of IMAGE 1 with no distortion. Photorealistic, high resolution, natural skin texture.\n"
     "HANDS — STRICT:\n"
+    "• Natural hands with exactly 5 fingers each, relaxed; if the person holds a phone, it is held correctly as in IMAGE 1.\n"
     "• Hands, fingers and wrists must be CLEAN natural skin: absolutely NO tattoos, ink, drawings or markings on the hands.\n"
     "• Do NOT propagate, copy or extend neck/arm/body tattoos onto the hands — tattoos stay ONLY where they are in IMAGE 1, never on hands.\n"
-    "• NEGATIVE PROMPT: tattoos on hands, ink on fingers, tattoos on wrists, hand tattoos, finger tattoos.\n"
+    "• NEGATIVE PROMPT: double face, duplicated face, twin face, blurry face, distorted face, extra hands, extra fingers, 6 fingers, "
+    "deformed hands, mutated hands, warped hands, AI artifacts, face swap, tattoos on hands, ink on fingers, tattoos on wrists, hand tattoos, finger tattoos.\n"
 )
 
 
@@ -2558,7 +2565,7 @@ async def product_analyze_screenshot(
 # ----- Lunghezza abito reale + Riprova gratuita -----
 RETRY_REASONS = {
     "sfondo": "\n\nRETRY — the previous result changed the background. CRITICAL: keep the background of IMAGE 1 pixel-identical (same wall, floor, light).",
-    "viso": "\n\nRETRY — the previous result changed the face. CRITICAL: the face, hair and skin must be exactly the person of IMAGE 1.",
+    "viso": "\n\nRETRY — the previous result changed the face or showed a double face. CRITICAL: exactly ONE face, identical to the person of IMAGE 1 (same face, hair and skin), no blending.",
     "capo": "\n\nRETRY — the previous result showed the wrong garment. CRITICAL: reproduce the garment exactly (colour, pattern, cut, length, material).",
     "altro": "\n\nRETRY — the previous result was not satisfying: be maximally faithful to IMAGE 1 and to the garment.",
 }

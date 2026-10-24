@@ -1,5 +1,6 @@
 """Head lock for try-ons: safe top margin, bottom canvas extension for long garments, original head pasted back."""
 import gc
+import logging
 import io
 import os
 import re
@@ -13,6 +14,7 @@ TOP_PAD_MIN_PX = 50
 TOP_PAD_RATIO = 0.06
 BOTTOM_PAD_RATIO = 0.20
 HEAD_SAFE_ZONE = 0.15
+logger = logging.getLogger(__name__)
 PERSON_MAX_SIDE = 1536
 GARMENT_MAX_SIDE = 1024
 LONG_WORDS = re.compile(r"\b(long|lungo|lunga|maxi|gown|abito|vestito|dress|trench|cappotto|coat|kaftan|caftano)\b", re.I)
@@ -55,16 +57,30 @@ def is_long(category: str, name: str = "") -> bool:
     return (category or "").lower() == "dress" or bool(LONG_WORDS.search(name or ""))
 
 
-def _face_box(rgb: np.ndarray):
+def _faces(rgb: np.ndarray) -> list:
     h, w = rgb.shape[:2]
     scale = 640 / max(h, w)
     small = cv2.resize(rgb, (int(w * scale), int(h * scale)))
     det = cv2.FaceDetectorYN.create(_FACE_MODEL, "", (small.shape[1], small.shape[0]), 0.6)
     _ok, faces = det.detect(cv2.cvtColor(small, cv2.COLOR_RGB2BGR))
-    if faces is None or not len(faces):
-        return None
-    x, y, fw, fh = max(faces, key=lambda f: f[2] * f[3])[:4] / scale
-    return int(x), int(y), int(fw), int(fh)
+    if faces is None:
+        return []
+    boxes = [tuple(int(v) for v in f[:4] / scale) for f in faces]
+    return sorted(boxes, key=lambda b: b[2] * b[3], reverse=True)
+
+
+def _face_box(rgb: np.ndarray):
+    f = _faces(rgb)
+    return f[0] if f else None
+
+
+def _centre(b) -> tuple:
+    return b[0] + b[2] / 2, b[1] + b[3] / 2
+
+
+def _double_face(rgb: np.ndarray) -> bool:
+    f = _faces(rgb)
+    return len(f) > 1 and f[1][2] > 0.5 * f[0][2]
 
 
 def _bg_color(rows: np.ndarray) -> tuple:
@@ -123,7 +139,10 @@ def finalize(result_bytes: bytes, meta: dict) -> bytes:
         res = cv2.resize(res, (W, H), interpolation=cv2.INTER_LANCZOS4)
     # If the model zoomed/shifted the person, scale+move the result so its face lands exactly on the original face.
     rf, of = _face_box(res), meta.get("face")
+    head_at = of  # where the ORIGINAL head will be pasted
+    aligned = not of  # no detected face: only the top safe-zone band is restored
     if rf and of and 0.6 < of[2] / rf[2] < 1.6:
+        aligned = True
         sc = of[2] / rf[2]
         ocx, ocy = of[0] + of[2] / 2, of[1] + of[3] / 2
         rcx, rcy = rf[0] + rf[2] / 2, rf[1] + rf[3] / 2
@@ -133,6 +152,7 @@ def finalize(result_bytes: bytes, meta: dict) -> bytes:
             M = np.float32([[k, 0, rcx - k * ocx], [0, k, rcy - k * ocy]])
             canvas = cv2.warpAffine(canvas, M, (W, H), flags=cv2.INTER_LANCZOS4, borderMode=cv2.BORDER_REPLICATE)
             mask = cv2.warpAffine(mask, M, (W, H), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT, borderValue=0)
+            head_at = rf
     else:
         band = slice(0, int(H * 0.45))
         a = cv2.cvtColor(canvas[band], cv2.COLOR_RGB2GRAY).astype(np.float32)
@@ -140,10 +160,24 @@ def finalize(result_bytes: bytes, meta: dict) -> bytes:
         (dx, dy), resp = cv2.phaseCorrelate(a, b)
         if resp > 0.05 and abs(dx) < W * 0.08 and abs(dy) < H * 0.08:
             res = cv2.warpAffine(res, np.float32([[1, 0, -dx], [0, 1, -dy]]), (W, H), borderMode=cv2.BORDER_REPLICATE)
+            aligned = True
         del a, b
+        if of and aligned:
+            # Verify the generated head really sits under the pasted one, otherwise the blend shows two faces.
+            rf2 = _face_box(res)
+            if rf2:
+                (cx, cy), (ox, oy) = _centre(rf2), _centre(of)
+                aligned = abs(cx - ox) < 0.35 * of[2] and abs(cy - oy) < 0.35 * of[3]
+    if not aligned:
+        # Pasting the original head onto a misplaced generated one would create a double face: keep the model output.
+        logger.warning("head_lock: generated head not aligned with original %s, skipping head paste", head_at)
+        mask = np.zeros_like(mask)
     # Per-pixel blend on uint8 images with single-channel weights (no full-size float32 RGB copies).
     w = mask.astype(np.float32) * (1 / 255)
     out = cv2.blendLinear(canvas, res, w, 1 - w)
+    if aligned and of and _double_face(out):
+        logger.warning("head_lock: double face after head paste, keeping model output")
+        out = res
     del w, res, canvas, mask
     meta.clear()
     buf = io.BytesIO()
