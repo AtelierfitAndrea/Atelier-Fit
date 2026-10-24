@@ -273,3 +273,9 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 - Applicato a upload person, _read_photo, _render_single, _compose_outfit, _render_copylook, copylook extract, retry (riusano gli stessi render)
 - Foto già salvate: ridotte al volo, originali intatti (scelta utente)
 - Misure: prepare+finalize 12MP da ~830MB a ~50MB; worker preview picco ~357MB try-on/outfit, ~410MB copylook extract
+
+## 2026-06 — Outfit in sospeso (ripristino dopo chiusura scheda) (DONE, iteration_35 + 36)
+- localStorage `myatelier_pending_outfit`: {avatarPath, selectedItems[{id, image, link, brand}], single{garment_path, category, name, chosen_size}, profileId, timestamp}
+- Solo riferimenti (Avatar resta cifrato sul server, capi già caricati); debounce 500ms + flush su cambio app/chiusura
+- /studio: modal "Hai un outfit in sospeso, vuoi riprendere?" (Riprendi/Scarta), scadenza 5 min, chiave cancellata dopo generazione riuscita (outfit e prova singola)
+- File: lib/pendingOutfit.js, components/PendingOutfitModal.jsx, Studio.jsx, OutfitGrid.jsx. Fix memoria 1536px invariato

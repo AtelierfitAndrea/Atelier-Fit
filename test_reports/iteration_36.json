@@ -1,0 +1,16 @@
+{
+  "summary": "Frontend-only retest of the Studio pending-outfit draft fixes in usePendingDraft (savedSig) using the owner session pending_test_tok, 2 Playwright runs with 1 AI generation. All checks PASS. Bug 1 (HIGH) fixed: after grid generation the key is null right after grid-result-image appears and stays null after a dispatched visibilitychange (hidden), opening and closing another tab, and a pagehide event. Reload shows no modal. Bug 2 (MEDIUM) fixed: upload top slot, key exists, grid-slot-top-clear, key removed after 1.2s, reload shows no modal. Timestamp is unchanged after visibilitychange hidden and after pagehide when nothing changed. Regression: the draft saves references only (avatarPath vfit/avatar/..bin, garment vfit/garment/..jpg). Single garment saves category dress, name and size 'M' (uppercased). The modal on reload shows '2 capi selezionati'. Riprendi restores the slot image (naturalWidth 800), the single preview, dress active, name and size. Scarta removes the key, the key stays null after hide/pagehide, and reload shows no modal. A 6-minute-old timestamp edited on /termini shows no modal and the key is removed. A 6-minute-old timestamp edited while Studio is mounted, then reloaded, also shows no modal and the key is removed (this failed in iteration_35 and now passes).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "pendingOutfit.js: close() on Riprendi sets savedSig to the pre-restore (empty) signature. The restore then changes sig and re-saves with a fresh timestamp, so the 5-min TTL silently restarts on resume. This is acceptable but worth knowing."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (skipped as requested)", "frontend": "100% (13/13 checks)"},
+  "seed_data_creation": "Uploaded test garments to vfit/garment/user_389c87aaadc6/* and ran 1 grid AI generation for the owner. Cleared the localStorage key at the end.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Cookie session_token=pending_test_tok (owner, expires 2026-10-27). To simulate a tab hide, override document.visibilityState via Object.defineProperty and dispatch 'visibilitychange'. Upload via [data-testid=grid-slot-top-input] or '[data-testid=upload-garment] input[type=file]'."
+}
