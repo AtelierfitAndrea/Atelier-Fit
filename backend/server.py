@@ -2500,7 +2500,8 @@ class GarmentFromScreenshotRequest(BaseModel):
 
 @api_router.post("/wardrobe/garments/from-screenshot")
 async def wardrobe_save_from_screenshot(req: GarmentFromScreenshotRequest, user: User = Depends(get_current_user)):
-    if req.slot not in _GRID_SLOTS:
+    slots = {**_GRID_SLOTS, "dress": ("dress", "Abito")}  # dress: garments isolated in Copia Look
+    if req.slot not in slots:
         raise HTTPException(status_code=400, detail="Tipo di capo non valido")
     if _path_owner(req.image_path) != user.user_id:
         raise HTTPException(status_code=403, detail="Accesso negato")
@@ -2516,7 +2517,7 @@ async def wardrobe_save_from_screenshot(req: GarmentFromScreenshotRequest, user:
             meta = await _extract_product_meta(_condense_html(html)[0], url)
     except Exception as e:
         logger.warning(f"screenshot garment meta failed: {e}")
-    category, label = _GRID_SLOTS[req.slot]
+    category, label = slots[req.slot]
     meta = {
         **meta,
         "product_name": meta.get("product_name") or label.split(" / ")[0],

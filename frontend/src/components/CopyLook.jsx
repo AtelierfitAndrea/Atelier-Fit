@@ -6,7 +6,9 @@ import { api, fileUrl } from "@/lib/api";
 import { useSubscription } from "@/lib/subscription";
 import TryOnProgress from "@/components/TryOnProgress";
 import { notifyTabReady } from "@/lib/tabNotify";
+import { SaveLinkRow, OutfitTotal } from "@/components/OutfitGrid";
 
+const API_SLOT = { top: "top", bottom: "bottom", dress: "dress", outerwear: "jacket", shoes: "shoes" };
 const CAT_IT = { top: "Top", bottom: "Pantaloni/Gonna", dress: "Abito", outerwear: "Capospalla", shoes: "Scarpe" };
 
 function ItemCard({ item, selected, onToggle, onSave, saved }) {
@@ -42,10 +44,11 @@ export default function CopyLook({ personPath, uploadFile }) {
   const [sel, setSel] = useState({});
   const [saved, setSaved] = useState({});
   const [phase, setPhase] = useState("idle");
+  const [linked, setLinked] = useState({});
 
   const onFile = async (f) => {
     if (status?.is_blocked) { openPaywall(); return; }
-    setModel({ preview: URL.createObjectURL(f) }); setItems([]); setSaved({}); setPhase("extracting");
+    setModel({ preview: URL.createObjectURL(f) }); setItems([]); setSaved({}); setLinked({}); setPhase("extracting");
     try {
       const path = await uploadFile(f, "garment");
       setModel({ preview: URL.createObjectURL(f), path });
@@ -115,9 +118,31 @@ export default function CopyLook({ personPath, uploadFile }) {
               </div>
             )}
             <TryOnProgress active={phase === "applying"} className="mt-5" testid="copylook-progress" />
+            {items.some((it) => it.image_path) && <ModelLinks items={items} linked={linked} setLinked={setLinked} />}
           </div>
         </div>
       )}
     </section>
+  );
+}
+
+// "Salva link outfit modello": one link per isolated garment, saved to the wardrobe with brand and price (like the outfit grid).
+function ModelLinks({ items, linked, setLinked }) {
+  const rows = items.filter((it) => it.image_path).map((it) => ({
+    slot: { k: `m${it.idx}`, api: API_SLOT[it.category] || "top", l: it.name },
+    item: { path: it.image_path, preview: fileUrl(it.image_path) },
+  }));
+  return (
+    <div className="mt-8 border-t hairline pt-6 space-y-5" data-testid="copylook-links">
+      <div>
+        <div className="label-caps">Salva link outfit modello</div>
+        <p className="text-xs text-neutral-500 mt-1">Incolla il link di ogni capo: lo salviamo nel tuo armadio con brand e prezzo.</p>
+      </div>
+      {rows.map(({ slot, item }) => (
+        <SaveLinkRow key={slot.k} slot={slot} item={item} prefix="copylook" saved={linked[slot.k] || null}
+          onSaved={(g) => setLinked((m) => ({ ...m, [slot.k]: g }))} />
+      ))}
+      <OutfitTotal used={rows} saved={linked} prefix="copylook" title="Totale look modello" />
+    </div>
   );
 }

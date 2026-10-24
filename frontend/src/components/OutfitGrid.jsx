@@ -59,12 +59,12 @@ function SlotBox({ slot, item, onFile, onClear }) {
   );
 }
 
-function priceFmt(n, cur = "EUR") {
+export function priceFmt(n, cur = "EUR") {
   try { return new Intl.NumberFormat("it-IT", { style: "currency", currency: cur || "EUR" }).format(n); }
   catch { return `${n} ${cur}`; }
 }
 
-function SaveLinkRow({ slot, item, saved, onSaved }) {
+export function SaveLinkRow({ slot, item, saved, onSaved, prefix = "grid" }) {
   const [url, setUrl] = useState("");
   const [saving, setSaving] = useState(false);
   const save = async (e) => {
@@ -72,7 +72,7 @@ function SaveLinkRow({ slot, item, saved, onSaved }) {
     if (!url.trim()) return;
     setSaving(true);
     try {
-      const { data } = await api.post("/wardrobe/garments/from-screenshot", { image_path: item.path, url: url.trim(), slot: slot.k });
+      const { data } = await api.post("/wardrobe/garments/from-screenshot", { image_path: item.path, url: url.trim(), slot: slot.api || slot.k });
       onSaved(data);
       toast.success(`${slot.l} salvato nell'armadio`);
     } catch (err) {
@@ -82,24 +82,24 @@ function SaveLinkRow({ slot, item, saved, onSaved }) {
     }
   };
   return (
-    <form onSubmit={save} className="flex items-center gap-3" data-testid={`grid-save-${slot.k}`}>
+    <form onSubmit={save} className="flex items-center gap-3" data-testid={`${prefix}-save-${slot.k}`}>
       <img src={item.preview} alt="" className="w-12 h-12 object-contain bg-neutral-50 border hairline shrink-0" />
       <div className="flex-1">
         <div className="label-caps mb-1">{slot.l}</div>
         {saved ? (
-          <div className="text-sm text-[#2E7D32]" data-testid={`grid-save-${slot.k}-done`}>
+          <div className="text-sm text-[#2E7D32]" data-testid={`${prefix}-save-${slot.k}-done`}>
             Salvato · {saved.brand} — {saved.price != null ? priceFmt(saved.price, saved.currency) : "prezzo non disponibile"}
           </div>
         ) : (
           <input value={url} onChange={(e) => setUrl(e.target.value)}
             placeholder="Incolla link per salvare in armadio"
             className="w-full border hairline px-3 py-2 text-sm outline-none focus:border-[#0A0A0A]"
-            data-testid={`grid-save-${slot.k}-input`} />
+            data-testid={`${prefix}-save-${slot.k}-input`} />
         )}
       </div>
       {!saved && (
         <button type="submit" disabled={saving || !url.trim()}
-          className="self-end border hairline px-3 py-2 label-caps disabled:opacity-40" data-testid={`grid-save-${slot.k}-btn`}>
+          className="self-end border hairline px-3 py-2 label-caps disabled:opacity-40" data-testid={`${prefix}-save-${slot.k}-btn`}>
           {saving ? "…" : "Salva"}
         </button>
       )}
@@ -108,17 +108,17 @@ function SaveLinkRow({ slot, item, saved, onSaved }) {
   );
 }
 
-function OutfitTotal({ used, saved }) {
+export function OutfitTotal({ used, saved, prefix = "grid", title = "Totale outfit" }) {
   const rows = used.map(({ slot }) => ({ slot, g: saved[slot.k] })).filter((r) => r.g);
   if (!rows.length) return null;
   const priced = rows.filter((r) => r.g.price != null);
   const total = priced.reduce((sum, r) => sum + Number(r.g.price), 0);
   const currency = priced[0]?.g.currency || "EUR";
   return (
-    <div className="border-t hairline pt-5" data-testid="grid-total">
+    <div className="border-t hairline pt-5" data-testid={`${prefix}-total`}>
       <div className="flex items-baseline justify-between">
-        <div className="label-caps">Totale outfit</div>
-        <div className="font-serif text-2xl" data-testid="grid-total-price">{priceFmt(total, currency)}</div>
+        <div className="label-caps">{title}</div>
+        <div className="font-serif text-2xl" data-testid={`${prefix}-total-price`}>{priceFmt(total, currency)}</div>
       </div>
       {priced.length < rows.length && (
         <div className="text-xs text-neutral-500 mt-1">Alcuni capi hanno prezzo non disponibile</div>
@@ -128,7 +128,7 @@ function OutfitTotal({ used, saved }) {
           <li key={slot.k} className="flex items-center justify-between text-sm">
             <span>{slot.l} · {g.brand}</span>
             <a href={g.source_url} target="_blank" rel="noopener noreferrer" className="underline hover:text-[#8C7355]"
-              data-testid={`grid-buy-${slot.k}`}>
+              data-testid={`${prefix}-buy-${slot.k}`}>
               Acquista {g.price != null ? `— ${priceFmt(g.price, g.currency)}` : ""}
             </a>
           </li>
