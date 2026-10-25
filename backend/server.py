@@ -958,17 +958,26 @@ async def api_subscription_checkout(req: CheckoutRequest, request: Request, user
         **({"customer": customer_id} if customer_id else {"customer_email": user.email or None}),
         metadata={"user_id": user.account_id, "option": req.option, "email": user.email or ""},
     )
+    async def _create(**extra):
+        return await run_in_threadpool(lambda: stripe.checkout.Session.create(**kwargs, **extra))
+
     try:
-        session = await run_in_threadpool(lambda: stripe.checkout.Session.create(**kwargs, automatic_tax={"enabled": True}, billing_address_collection="required"))
+        try:
+            session = await _create(managed_payments={"enabled": True})
+        except stripe.error.InvalidRequestError as e:
+            msg = (e.user_message or str(e)).lower()
+            if "managed" not in msg and "ineligible" not in msg:
+                raise
+            session = await _create(automatic_tax={"enabled": True}, billing_address_collection="required")
     except stripe.error.InvalidRequestError as e:
         if "no such customer" in str(e).lower():
-            # Customer saved on a previous Stripe account (e.g. the old sandbox): forget it and use the email.
+            # Customer saved on a previous Stripe account: forget it and use the email.
             await db.users.update_one({"user_id": user.account_id}, {"$unset": {"stripe_customer_id": ""}})
             kwargs.pop("customer", None)
             kwargs["customer_email"] = user.email or None
         else:
-            logger.warning(f"checkout: automatic tax unavailable ({e.user_message or e}), retrying without")
-        session = await run_in_threadpool(lambda: stripe.checkout.Session.create(**kwargs))
+            logger.warning(f"checkout: tax options unavailable ({e.user_message or e}), retrying without")
+        session = await _create()
     now = datetime.now(timezone.utc).isoformat()
     await db.payment_transactions.insert_one({
         "session_id": session.id, "user_id": user.account_id, "option": req.option,

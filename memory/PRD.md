@@ -332,3 +332,8 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 - Webhook: log firma errata, eventi invoice.paid + customer.subscription.* registrati in db.stripe_events, errori interni → 200, eventi test-mode ignorati; enabled_events aggiornati su Stripe
 - Guardia LIVE: STRIPE_LIVE_KEYS (sk_/rk_live_ + pk_live_), altrimenti checkout 503 + log critical. Preview verificata: cs_live_, livemode True
 - Verifica prod: creare+far scadere una sessione e controllare pending_webhooks == 0
+
+## 2026-10 — Emergent Payments (Stripe) verso LIVE
+- Vecchio collegamento scollegato dall'utente; nuovo collegamento Emergent Payments creato (emergent_sandbox_id 4a865be5…, acct_1UU2OmA3yegZw5Gp, IT), chiavi preview in .env (STRIPE_MODE=test), catalogo ricreato con setup_stripe.py (managed_by emergent)
+- In attesa: l'utente clicca il link di collegamento e accede con il suo account Stripe Live → app Emergent Payments installata in live → la piattaforma inietta le chiavi live e ripubblica
+- Guardia STRIPE_LIVE_KEYS: con chiavi test il checkout risponde 503 (nessun pagamento con 4242 in produzione). Checkout: managed_payments → automatic_tax → semplice; "No such customer" → usa email
