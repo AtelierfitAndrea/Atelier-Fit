@@ -35,6 +35,9 @@ mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
 stripe.api_key = os.environ['STRIPE_SECRET_KEY']
+STRIPE_LIVE_KEYS = stripe.api_key.startswith(("sk_live_", "rk_live_")) and os.environ.get("STRIPE_PUBLISHABLE_KEY", "").startswith("pk_live_")
+if not STRIPE_LIVE_KEYS:
+    logging.getLogger(__name__).critical("Stripe: test/sandbox keys configured — checkout is disabled until LIVE keys are set")
 
 EMERGENT_KEY = os.environ.get("EMERGENT_LLM_KEY")
 STORAGE_BASE = (os.environ.get("INTEGRATION_PROXY_URL") or "").strip() or "https://integrations.emergentagent.com"
@@ -943,6 +946,8 @@ async def api_subscription_checkout(req: CheckoutRequest, request: Request, user
         rank = {"FREE": 0, "SINGLE": 1, "FAMILY": 2}
         if exp and exp - datetime.now(timezone.utc) > timedelta(days=3) and rank.get(st["plan"], 0) >= rank[req.option.upper()]:
             raise HTTPException(status_code=409, detail=f"Hai già un abbonamento {st['plan'].capitalize()} attivo fino al {exp.strftime('%d/%m/%Y')}: non serve pagare di nuovo.")
+    if not STRIPE_LIVE_KEYS:
+        raise HTTPException(status_code=503, detail="Pagamenti temporaneamente non disponibili")
     customer_id = await _stripe_customer_for(user)
     origin = req.origin_url.rstrip("/")
     kwargs = dict(
@@ -1062,6 +1067,9 @@ async def stripe_webhook(request: Request):
         raise HTTPException(status_code=400, detail="Invalid signature")
     obj, t = event["data"]["object"], event["type"]
     logger.info(f"stripe webhook: {t} {event.get('id')}")
+    if not event.get("livemode"):
+        logger.warning(f"stripe webhook: ignoring test-mode event {event.get('id')}")
+        return {"status": "ignored", "type": t}
     try:
         if t in ("checkout.session.completed", "checkout.session.async_payment_succeeded") and obj.get("payment_status") == "paid":
             await _mark_paid(obj["id"], obj)

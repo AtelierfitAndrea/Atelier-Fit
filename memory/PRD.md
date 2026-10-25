@@ -326,3 +326,9 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 - _clean_url: decodifica &amp;, sblocca redirect googleadservices/google/doubleclick (adurl/url/q), rimuove gclid/gclsrc/gad_*/gbraid/wbraid/utm_*/fbclid/msclkid/wmc/opc/mpp/otid… e valori Cj0KCQ; usato in analyze, from-url, from-screenshot, looks/from-link
 - _fetch_page: fallback curl_cffi (impersonate chrome) per Zalando/Akamai (403 → 200); _structured_meta (JSON-LD, meta price, trackingCurrentAmount) prima dell'LLM → Zalando OppoSuits 89,95 €
 - Prezzo a mano se il sito blocca: PUT /api/wardrobe/looks/{id}/price (LookPrice in CopyLook e armadio)
+
+## 2026-10 — Stripe webhook + solo LIVE (CODE DONE, prod pending user)
+- Causa webhook 400: STRIPE_WEBHOOK_SECRET in produzione ≠ signing secret endpoint live (we_1USXDuC7OX8nXTMUcoyXhNcg). Utente deve aggiornarlo da Re-publish → Secrets e ripubblicare (chiavi Stripe managed "stripe_sandbox": non modificabili dall'agente; per BYOK l'utente fa Unlink in Manage → Payments)
+- Webhook: log firma errata, eventi invoice.paid + customer.subscription.* registrati in db.stripe_events, errori interni → 200, eventi test-mode ignorati; enabled_events aggiornati su Stripe
+- Guardia LIVE: STRIPE_LIVE_KEYS (sk_/rk_live_ + pk_live_), altrimenti checkout 503 + log critical. Preview verificata: cs_live_, livemode True
+- Verifica prod: creare+far scadere una sessione e controllare pending_webhooks == 0
