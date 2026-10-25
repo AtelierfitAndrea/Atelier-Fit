@@ -1044,24 +1044,43 @@ async def payment_status(session_id: str):
     return {"session_id": session_id, "status": tx["status"], "payment_status": tx["payment_status"], "option": tx.get("option")}
 
 
+STRIPE_WEBHOOK_EVENTS = [
+    "checkout.session.completed", "checkout.session.async_payment_succeeded", "checkout.session.async_payment_failed",
+    "checkout.session.expired", "charge.refunded", "invoice.paid",
+    "customer.subscription.created", "customer.subscription.updated", "customer.subscription.deleted",
+]
+
+
 @api_router.post("/stripe/webhook")
 async def stripe_webhook(request: Request):
     payload = await request.body()
     try:
         event = stripe.Webhook.construct_event(payload, request.headers.get("stripe-signature", ""), os.environ["STRIPE_WEBHOOK_SECRET"])
-    except (stripe.error.SignatureVerificationError, ValueError):
+    except (stripe.error.SignatureVerificationError, ValueError) as e:
+        # Wrong STRIPE_WEBHOOK_SECRET for this endpoint (or a forged call): Stripe shows this 400 in the delivery log.
+        logger.error(f"stripe webhook: signature verification failed ({type(e).__name__}: {e}) — check STRIPE_WEBHOOK_SECRET matches the endpoint signing secret")
         raise HTTPException(status_code=400, detail="Invalid signature")
     obj, t = event["data"]["object"], event["type"]
-    if t in ("checkout.session.completed", "checkout.session.async_payment_succeeded") and obj.get("payment_status") == "paid":
-        await _mark_paid(obj["id"], obj)
-    elif t in ("checkout.session.async_payment_failed", "checkout.session.expired"):
-        st = "failed" if t.endswith("failed") else "expired"
-        await db.payment_transactions.update_one({"session_id": obj["id"], "payment_status": {"$ne": "paid"}},
-                                                 {"$set": {"status": st, "payment_status": st}})
-    elif t == "charge.refunded":
-        await db.payment_transactions.update_one({"stripe_payment_intent_id": obj.get("payment_intent")},
-                                                 {"$set": {"status": "refunded", "payment_status": "refunded"}})
-    return {"status": "ok"}
+    logger.info(f"stripe webhook: {t} {event.get('id')}")
+    try:
+        if t in ("checkout.session.completed", "checkout.session.async_payment_succeeded") and obj.get("payment_status") == "paid":
+            await _mark_paid(obj["id"], obj)
+        elif t in ("checkout.session.async_payment_failed", "checkout.session.expired"):
+            st = "failed" if t.endswith("failed") else "expired"
+            await db.payment_transactions.update_one({"session_id": obj["id"], "payment_status": {"$ne": "paid"}},
+                                                     {"$set": {"status": st, "payment_status": st}})
+        elif t == "charge.refunded":
+            await db.payment_transactions.update_one({"stripe_payment_intent_id": obj.get("payment_intent")},
+                                                     {"$set": {"status": "refunded", "payment_status": "refunded"}})
+        elif t == "invoice.paid" or t.startswith("customer.subscription."):
+            # Plans are 30-day one-time payments; recurring objects are only recorded for the owner's reference.
+            await db.stripe_events.update_one({"event_id": event["id"]}, {"$set": {
+                "event_id": event["id"], "type": t, "object_id": obj.get("id"), "customer": obj.get("customer"),
+                "status": obj.get("status"), "created_at": datetime.now(timezone.utc).isoformat()}}, upsert=True)
+    except Exception as e:
+        # Never make Stripe retry because of our own processing errors: log and acknowledge.
+        logger.exception(f"stripe webhook: error handling {t} {event.get('id')}: {e}")
+    return {"status": "ok", "type": t}
 
 
 @api_router.post("/subscription/cancel")
