@@ -34,10 +34,10 @@ load_dotenv(ROOT_DIR / '.env')
 mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
-stripe.api_key = os.environ['STRIPE_SECRET_KEY']
-STRIPE_LIVE_KEYS = stripe.api_key.startswith(("sk_live_", "rk_live_")) and os.environ.get("STRIPE_PUBLISHABLE_KEY", "").startswith("pk_live_")
+stripe.api_key = os.environ.get('STRIPE_SECRET_KEY') or None
+STRIPE_LIVE_KEYS = (stripe.api_key or "").startswith(("sk_live_", "rk_live_")) and os.environ.get("STRIPE_PUBLISHABLE_KEY", "").startswith("pk_live_")
 if not STRIPE_LIVE_KEYS:
-    logging.getLogger(__name__).critical("Stripe: test/sandbox keys configured — checkout is disabled until LIVE keys are set")
+    logging.getLogger(__name__).critical("Stripe: LIVE keys missing (or test keys set) — checkout is disabled until STRIPE_SECRET_KEY/STRIPE_PUBLISHABLE_KEY live are set")
 
 EMERGENT_KEY = os.environ.get("EMERGENT_LLM_KEY")
 STORAGE_BASE = (os.environ.get("INTEGRATION_PROXY_URL") or "").strip() or "https://integrations.emergentagent.com"
@@ -936,6 +936,8 @@ async def api_subscription_checkout(req: CheckoutRequest, request: Request, user
     origin_hdr = (request.headers.get("origin") or "").rstrip("/")
     if origin_hdr and origin_hdr != req.origin_url.rstrip("/"):
         raise HTTPException(status_code=400, detail="Origin non valida")
+    if not STRIPE_LIVE_KEYS:
+        raise HTTPException(status_code=503, detail="Pagamenti temporaneamente non disponibili")
     prices = await run_in_threadpool(lambda: stripe.Price.list(lookup_keys=[STRIPE_LOOKUP[req.option]], active=True, limit=1).data)
     if not prices:
         raise HTTPException(status_code=500, detail="Prezzo non configurato")
@@ -946,8 +948,6 @@ async def api_subscription_checkout(req: CheckoutRequest, request: Request, user
         rank = {"FREE": 0, "SINGLE": 1, "FAMILY": 2}
         if exp and exp - datetime.now(timezone.utc) > timedelta(days=3) and rank.get(st["plan"], 0) >= rank[req.option.upper()]:
             raise HTTPException(status_code=409, detail=f"Hai già un abbonamento {st['plan'].capitalize()} attivo fino al {exp.strftime('%d/%m/%Y')}: non serve pagare di nuovo.")
-    if not STRIPE_LIVE_KEYS:
-        raise HTTPException(status_code=503, detail="Pagamenti temporaneamente non disponibili")
     customer_id = await _stripe_customer_for(user)
     origin = req.origin_url.rstrip("/")
     kwargs = dict(
@@ -959,12 +959,16 @@ async def api_subscription_checkout(req: CheckoutRequest, request: Request, user
         metadata={"user_id": user.account_id, "option": req.option, "email": user.email or ""},
     )
     try:
-        session = await run_in_threadpool(lambda: stripe.checkout.Session.create(**kwargs, managed_payments={"enabled": True}))
-    except stripe.error.InvalidRequestError as e:
-        msg = (e.user_message or str(e)).lower()
-        if "managed" not in msg and "ineligible" not in msg:
-            raise
         session = await run_in_threadpool(lambda: stripe.checkout.Session.create(**kwargs, automatic_tax={"enabled": True}, billing_address_collection="required"))
+    except stripe.error.InvalidRequestError as e:
+        if "no such customer" in str(e).lower():
+            # Customer saved on a previous Stripe account (e.g. the old sandbox): forget it and use the email.
+            await db.users.update_one({"user_id": user.account_id}, {"$unset": {"stripe_customer_id": ""}})
+            kwargs.pop("customer", None)
+            kwargs["customer_email"] = user.email or None
+        else:
+            logger.warning(f"checkout: automatic tax unavailable ({e.user_message or e}), retrying without")
+        session = await run_in_threadpool(lambda: stripe.checkout.Session.create(**kwargs))
     now = datetime.now(timezone.utc).isoformat()
     await db.payment_transactions.insert_one({
         "session_id": session.id, "user_id": user.account_id, "option": req.option,
@@ -1060,7 +1064,7 @@ STRIPE_WEBHOOK_EVENTS = [
 async def stripe_webhook(request: Request):
     payload = await request.body()
     try:
-        event = stripe.Webhook.construct_event(payload, request.headers.get("stripe-signature", ""), os.environ["STRIPE_WEBHOOK_SECRET"])
+        event = stripe.Webhook.construct_event(payload, request.headers.get("stripe-signature", ""), os.environ.get("STRIPE_WEBHOOK_SECRET") or "")
     except (stripe.error.SignatureVerificationError, ValueError) as e:
         # Wrong STRIPE_WEBHOOK_SECRET for this endpoint (or a forged call): Stripe shows this 400 in the delivery log.
         logger.error(f"stripe webhook: signature verification failed ({type(e).__name__}: {e}) — check STRIPE_WEBHOOK_SECRET matches the endpoint signing secret")

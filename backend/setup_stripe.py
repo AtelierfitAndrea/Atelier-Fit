@@ -21,7 +21,7 @@ def get_or_create_product(entry):
         if p.to_dict().get("metadata", {}).get("emergent_product_id") == entry["emergent_product_id"]:
             return p
     return stripe.Product.create(name=entry["name"], tax_code=entry["tax_code"],
-                                 metadata={"managed_by": "emergent", "emergent_product_id": entry["emergent_product_id"]})
+                                 metadata={"emergent_product_id": entry["emergent_product_id"]})
 
 
 def ensure_catalog():
