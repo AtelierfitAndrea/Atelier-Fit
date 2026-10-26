@@ -55,7 +55,7 @@ def downscale(data: bytes, max_side: int) -> bytes:
 
 
 def is_long(category: str, name: str = "") -> bool:
-    return (category or "").lower() == "dress" or bool(LONG_WORDS.search(name or ""))
+    return (category or "").lower() in ("dress", "suit") or bool(LONG_WORDS.search(name or ""))
 
 
 def _faces(rgb: np.ndarray) -> list:

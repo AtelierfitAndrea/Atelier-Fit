@@ -1620,8 +1620,14 @@ _OUTER_WORDS = re.compile(r"\b(giacca|giubbotto|giubbino|cappotto|blazer|jacket|
 
 
 def _tuck_rule(items: list) -> str:
-    """Shirt / t-shirt worn alone (no jacket or coat over it) must hang OUTSIDE the trousers."""
-    has_top = any((i.get("category") or "").lower() == "top" or ((i.get("category") or "").lower() not in ("dress", "bottom", "shoes") and _TOP_WORDS.search(i.get("name") or "")) for i in items)
+    """Suit = shirt tucked in; jacket in outfit = natural; top without jacket = untucked."""
+    if any((i.get("category") or "").lower() == "suit" for i in items):
+        return ("SUIT — SHIRT TUCKED IN, MANDATORY:\n"
+                "• This is a complete suit (jacket + trousers + shirt): the shirt MUST be fully TUCKED INSIDE the trousers, waistband clean and visible "
+                "under the buttoned jacket, no shirt fabric hanging below the jacket hem. If there is a tie it hangs straight down the centre, "
+                "knot neat at the collar, its blade closed inside the jacket.\n"
+                "• NEGATIVE: untucked shirt, shirt tail hanging out, shirt hem visible below the jacket, crooked tie, tie outside the jacket.\n")
+    has_top = any((i.get("category") or "").lower() == "top" or ((i.get("category") or "").lower() not in ("dress", "bottom", "shoes", "bag") and _TOP_WORDS.search(i.get("name") or "")) for i in items)
     has_outer = any((i.get("category") or "").lower() == "outerwear" or _OUTER_WORDS.search(i.get("name") or "") for i in items)
     if not has_top or has_outer:
         return ""
@@ -1629,6 +1635,34 @@ def _tuck_rule(items: list) -> str:
             "• The shirt / t-shirt / top has NO jacket, blazer or coat over it, so it MUST be worn UNTUCKED: its hem hangs loose OUTSIDE "
             "the trousers/skirt, covering the waistband. NEVER tuck it inside the trousers, not even partially (no front tuck). "
             "NEGATIVE: tucked-in shirt, tucked t-shirt, half tuck, French tuck.\n")
+
+
+_GARMENT_CATS = ("top", "bottom", "dress", "outerwear", "shoes", "bag", "suit")
+
+
+async def _classify_garment(garment_path: str, fallback: Optional[str]) -> str:
+    # The user no longer picks a category: AI reads it from the product photo.
+    cached = await db.garment_class.find_one({"path": garment_path}, {"_id": 0, "category": 1})
+    if cached:
+        return cached["category"]
+    try:
+        raw, _ = get_object(garment_path)
+        small = await run_in_threadpool(head_lock.downscale, raw, head_lock.GARMENT_MAX_SIDE)
+        chat = LlmChat(api_key=EMERGENT_KEY, session_id=f"cls-{uuid.uuid4().hex[:8]}", system_message="You are a fashion product classifier. Reply with JSON only.")
+        chat.with_model("gemini", "gemini-3.8-flash")
+        prompt = ("Classify the product in this image. Return ONLY JSON {\"category\": \"...\"} with one of: "
+                  "suit (complete suit / tailleur: jacket AND matching trousers or skirt shown together, often with shirt/tie), "
+                  "top (shirt, t-shirt, polo, sweater, blouse), bottom (trousers, jeans, shorts, skirt), dress (dress, jumpsuit), "
+                  "outerwear (jacket, blazer, coat alone), shoes, bag (handbag, backpack, clutch).")
+        reply = await chat.send_message(UserMessage(text=prompt, file_contents=[ImageContent(base64.b64encode(small).decode())]))
+        cat = ((_extract_json(reply) or {}).get("category") or "").lower().strip()
+    except Exception as e:
+        logger.warning(f"garment classification failed: {e}")
+        return fallback or "top"
+    if cat not in _GARMENT_CATS:
+        return fallback or "top"
+    await db.garment_class.update_one({"path": garment_path}, {"$set": {"category": cat}}, upsert=True)
+    return cat
 
 
 def _bag_rule(items: list) -> str:
@@ -1808,9 +1842,10 @@ async def _tryon_generate(req: TryOnRequest, user: User):
     if status["is_blocked"]:
         raise HTTPException(status_code=402, detail="Quota exhausted — subscribe or buy an extra try-on.")
     m_doc = await _get_measurements(user.user_id)
+    req.garment_category = await _classify_garment(req.garment_path, req.garment_category)
     result_path = await _render_single(user.user_id, req.person_path, req.garment_path, req.garment_category, req.garment_name, m_doc)
 
-    rec_size = recommend_size(m_doc, req.garment_category or "")
+    rec_size = recommend_size(m_doc, "top" if req.garment_category == "suit" else req.garment_category)
     tryon_id = str(uuid.uuid4())
     accuracy_snapshot = await _compute_accuracy(user.user_id)
     created_at = datetime.now(timezone.utc).isoformat()

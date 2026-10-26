@@ -6,7 +6,7 @@ import { useAvatar } from "@/lib/avatar";
 import { Link } from "react-router-dom";
 import { useSubscription } from "@/lib/subscription";
 import TryonCounter from "@/components/TryonCounter";
-import { CloudArrowUp, Sparkle, ArrowRight } from "@phosphor-icons/react";
+import { CloudArrowUp, ArrowRight } from "@phosphor-icons/react";
 import PrivacyBox from "@/components/PrivacyBox";
 import AccountPersonalBox from "@/components/AccountPersonalBox";
 import OutfitGrid from "@/components/OutfitGrid";
@@ -18,15 +18,6 @@ import PendingOutfitModal from "@/components/PendingOutfitModal";
 import { usePendingDraft } from "@/lib/pendingOutfit";
 import { postRender } from "@/lib/renderJob";
 
-const CATEGORIES = [
-  { k: "top", l: "Top" },
-  { k: "bottom", l: "Bottom" },
-  { k: "dress", l: "Dress" },
-  { k: "outerwear", l: "Outerwear" },
-  { k: "shoes", l: "Shoes" },
-  { k: "bag", l: "Borsa" },
-];
-
 export default function Studio() {
   const { status: subStatus, openPaywall, refresh: refreshSub } = useSubscription();
   const location = useLocation();
@@ -35,7 +26,7 @@ export default function Studio() {
   const personPath = avatar?.path || null;
   const [garmentPath, setGarmentPath] = useState(preset?.garment_path || null);
   const [garmentPreview, setGarmentPreview] = useState(preset?.garment_path ? fileUrl(preset.garment_path) : null);
-  const [category, setCategory] = useState(preset?.category || "top");
+  const [category, setCategory] = useState(preset?.category || null);
   const [name, setName] = useState(preset?.name || "");
   const [chosenSize, setChosenSize] = useState(preset?.chosen_size || "");
   const [generating, setGenerating] = useState(false);
@@ -47,7 +38,7 @@ export default function Studio() {
     if (d.single?.garment_path) {
       setGarmentPath(d.single.garment_path);
       setGarmentPreview(fileUrl(d.single.garment_path));
-      setCategory(d.single.category || "top");
+      setCategory(d.single.category || null);
       setName(d.single.name || "");
       setChosenSize(d.single.chosen_size || "");
     }
@@ -127,64 +118,22 @@ export default function Studio() {
             } catch (e) { if (e?.response?.status !== 402) toast.error("Upload failed"); }
           }}
           testid="upload-garment"
-          className="lg:col-span-5"
+          className="lg:col-span-6"
         />
         <AvatarPanel path={personPath} />
-        <div className="lg:col-span-2 flex items-center justify-center">
-          <Sparkle size={56} weight="duotone" className="text-[#8C7355]" />
-        </div>
       </div>
 
-      <section className="border hairline p-6 md:p-8 bg-white">
-        <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
-          <div className="md:col-span-4">
-            <div className="label-caps mb-2">Categoria</div>
-            <div className="flex flex-wrap gap-2">
-              {CATEGORIES.map((c) => (
-                <button
-                  key={c.k}
-                  onClick={() => setCategory(c.k)}
-                  className={`px-3 py-2 label-caps border hairline transition-colors ${
-                    category === c.k ? "bg-[#0A0A0A] text-white border-[#0A0A0A]" : "hover:border-[#0A0A0A]"
-                  }`}
-                  data-testid={`cat-${c.k}`}
-                >
-                  {c.l}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div className="md:col-span-3">
-            <div className="label-caps mb-2">Nome capo (opzionale)</div>
-            <input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="es. Trench lino — Toteme"
-              className="w-full px-4 py-3 border hairline bg-transparent outline-none focus:border-[#0A0A0A] transition-colors font-serif text-lg"
-              data-testid="garment-name-input"
-            />
-          </div>
-          <div className="md:col-span-2">
-            <div className="label-caps mb-2">Taglia scelta</div>
-            <input
-              value={chosenSize}
-              onChange={(e) => setChosenSize(e.target.value.toUpperCase())}
-              placeholder="S / 40"
-              className="w-full px-4 py-3 border hairline bg-transparent outline-none focus:border-[#0A0A0A] transition-colors font-serif text-lg text-center"
-              data-testid="chosen-size-input"
-            />
-          </div>
-          <div className="md:col-span-3 flex flex-col justify-end gap-2">
-            <IncludedNote testid="included-note-tryon" />
-            <button
-              onClick={generate}
-              disabled={generating || !personPath || !garmentPath}
-              className="btn-primary w-full disabled:opacity-50 disabled:cursor-not-allowed"
-              data-testid="generate-tryon-btn"
-            >
-              {generating ? "Provo..." : (<>Provalo <ArrowRight size={16} weight="bold" /></>)}
-            </button>
-          </div>
+      <section className="border hairline p-6 md:p-8 bg-white" data-testid="tryon-action">
+        <div className="max-w-md flex flex-col gap-2">
+          <IncludedNote testid="included-note-tryon" />
+          <button
+            onClick={generate}
+            disabled={generating || !personPath || !garmentPath}
+            className="btn-primary w-full disabled:opacity-50 disabled:cursor-not-allowed"
+            data-testid="generate-tryon-btn"
+          >
+            {generating ? "Provo..." : (<>Provalo <ArrowRight size={16} weight="bold" /></>)}
+          </button>
         </div>
       </section>
 
@@ -206,7 +155,7 @@ export default function Studio() {
 
 function AvatarPanel({ path }) {
   return (
-    <div className="upload-zone p-6 min-h-[380px] flex flex-col lg:col-span-5" data-testid="studio-avatar">
+    <div className="upload-zone p-6 min-h-[380px] flex flex-col lg:col-span-6" data-testid="studio-avatar">
       <div className="label-caps">Il Mio Avatar</div>
       <p className="text-xs text-neutral-500 mt-1">La tua foto unica, usata per tutte le prove.</p>
       <div className="flex-1 mt-6 relative overflow-hidden" style={{ aspectRatio: "4/5" }}>
