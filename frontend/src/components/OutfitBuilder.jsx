@@ -8,6 +8,8 @@ import HemCard from "@/components/HemCard";
 import FreeRetry from "@/components/FreeRetry";
 import TryOnProgress from "@/components/TryOnProgress";
 import { notifyTabReady } from "@/lib/tabNotify";
+import { postRender } from "@/lib/renderJob";
+import SaveToGallery from "@/components/SaveToGallery";
 
 
 function priceFmt(n, cur = "EUR") {
@@ -94,7 +96,7 @@ export default function OutfitBuilder() {
     const personPath = avatar?.path;
     setGenerating(true); setResult(null);
     try {
-      const { data } = await api.post("/outfit/generate", {
+      const { data } = await postRender("/outfit/generate", {
         garment_ids: selected,
         person_path: personPath || undefined,
       });
@@ -260,6 +262,7 @@ function OutfitResult({ result, onSave, onShare, onClose, onRetry }) {
           <X size={16} weight="bold" />
         </button>
         <img src={fileUrl(result.result_path)} alt="" className="w-full h-auto block" data-testid="outfit-result-image" />
+        <SaveToGallery path={result.result_path} />
       </div>
       <div className="lg:col-span-12 lg:order-last grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
         <HemCard url={`/outfits/${result.id}/hem`} />

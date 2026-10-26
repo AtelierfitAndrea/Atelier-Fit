@@ -16,6 +16,7 @@ BOTTOM_PAD_RATIO = 0.20
 HEAD_SAFE_ZONE = 0.15
 logger = logging.getLogger(__name__)
 PERSON_MAX_SIDE = 1536
+PERSON_OUT_SIDE = 2048  # 2K output: lock canvas is kept at 2048, the model receives 1536
 GARMENT_MAX_SIDE = 1024
 LONG_WORDS = re.compile(r"\b(long|lungo|lunga|maxi|gown|abito|vestito|dress|trench|cappotto|coat|kaftan|caftano)\b", re.I)
 
@@ -132,7 +133,7 @@ def _paste_hand(out: np.ndarray, canvas: np.ndarray, res: np.ndarray, box: tuple
 
 def prepare(person_bytes: bytes, long_garment: bool, hands: list = None) -> tuple:
     """Returns (canvas_png_bytes, meta) with top safe margin and optional bottom extension."""
-    im = np.array(_open_small(person_bytes, PERSON_MAX_SIDE).convert("RGB"))
+    im = np.array(_open_small(person_bytes, PERSON_OUT_SIDE).convert("RGB"))
     h, w = im.shape[:2]
     top = max(TOP_PAD_MIN_PX, int(h * TOP_PAD_RATIO))
     bottom = int(h * BOTTOM_PAD_RATIO) if long_garment else 0
@@ -152,8 +153,11 @@ def prepare(person_bytes: bytes, long_garment: bool, hands: list = None) -> tupl
     else:
         mask[: top + int(h * HEAD_SAFE_ZONE)] = 255
     mask = cv2.GaussianBlur(mask, (0, 0), max(4, h / 160))
+    send = Image.fromarray(canvas)
+    send.thumbnail((PERSON_MAX_SIDE, PERSON_MAX_SIDE), Image.LANCZOS)
     buf = io.BytesIO()
-    Image.fromarray(canvas).save(buf, "PNG")
+    send.save(buf, "PNG")
+    del send
     face_c = (face[0], face[1] + top, face[2], face[3]) if face else None
     # Hand boxes (normalised 0-1000 [ymin, xmin, ymax, xmax] on the photo) -> canvas pixels.
     hand_c = []

@@ -24,6 +24,7 @@ import head_lock
 import receipt
 import hem as hem_mod
 import size_fallback
+import tryon_quality
 import re
 import stripe
 
@@ -1451,6 +1452,41 @@ def _measurements_desc(m_doc: Optional[dict]) -> str:
     return (" Body measurements of the person: " + ", ".join(parts) + ".") if parts else ""
 
 
+# ----- Render jobs: long AI renders run in background, the client polls (no proxy timeouts) -----
+_render_tasks: set = set()
+
+
+async def _start_render_job(user: User, coro) -> dict:
+    job_id = str(uuid.uuid4())
+    await db.render_jobs.insert_one({"id": job_id, "user_id": user.user_id, "status": "running", "created_at": datetime.now(timezone.utc).isoformat()})
+
+    async def run():
+        try:
+            res = await coro
+            upd = {"status": "done", "result": res}
+        except HTTPException as e:
+            upd = {"status": "error", "code": e.status_code, "detail": e.detail}
+        except Exception as e:
+            logger.exception(f"render job {job_id} failed: {e}")
+            upd = {"status": "error", "code": 500, "detail": "Generazione non riuscita, riprova."}
+        await db.render_jobs.update_one({"id": job_id}, {"$set": upd})
+
+    task = asyncio.create_task(run())
+    _render_tasks.add(task)
+    task.add_done_callback(_render_tasks.discard)
+    return {"job_id": job_id, "status": "running"}
+
+
+@api_router.get("/render-jobs/{job_id}")
+async def get_render_job(job_id: str, user: User = Depends(get_current_user)):
+    doc = await db.render_jobs.find_one({"id": job_id, "user_id": user.user_id}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Generazione non trovata")
+    if doc["status"] == "error":
+        raise HTTPException(status_code=doc.get("code") or 500, detail=doc.get("detail"))
+    return {"status": doc["status"], "result": doc.get("result")}
+
+
 # ----- Try-on generation -----
 class TryOnRequest(BaseModel):
     person_path: str
@@ -1501,39 +1537,32 @@ async def _render_single(user_id: str, person_path: str, garment_path: str, cate
         f"{extra}"
     )
 
-    session_id = f"tryon-{user_id}-{uuid.uuid4().hex[:8]}"
-    chat = LlmChat(
-        api_key=EMERGENT_KEY,
-        session_id=session_id,
-        system_message=(
-            "You are a professional fashion virtual try-on image generator. "
-            "Your only job is to re-dress the SAME person in the SAME scene, "
-            "preserving face, hands, tattoos, hair, pose and the original background. "
-            "Never generate stock models, replacement bodies, or neutral studios. "
-            "Hands must always be clean, with no tattoos. "
-            "The person in IMAGE 1 must remain fully recognisable."
-        ),
+    system = (
+        "You are a professional fashion virtual try-on image generator. "
+        "Your only job is to re-dress the SAME person in the SAME scene, "
+        "preserving face, hands, tattoos, hair, pose and the original background. "
+        "Never generate stock models, replacement bodies, or neutral studios. "
+        "Hands must always be clean, with no tattoos. "
+        "The person in IMAGE 1 must remain fully recognisable."
     )
-    chat.with_model("gemini", "gemini-3.1-flash-image-preview").with_params(modalities=["image", "text"])
-    msg = UserMessage(text=prompt, file_contents=[ImageContent(person_b64), ImageContent(garment_b64)])
     try:
-        text, images = await chat.send_message_multimodal_response(msg)
+        out_bytes = await tryon_quality.render(system, prompt, [ImageContent(person_b64), ImageContent(garment_b64)], lock,
+                                               f"{category}: {name or category}", f"tryon-{user_id}")
     except Exception as e:
         logger.error(f"Try-on generation error: {e}")
         raise HTTPException(status_code=500, detail=f"Image generation failed: {str(e)}")
-    if not images:
-        raise HTTPException(status_code=500, detail="No image was generated")
-    img = images[0]
-    del msg, person_b64, garment_b64
-    out_bytes = await run_in_threadpool(head_lock.finalize, base64.b64decode(img['data']), lock)
-    del images, img
-    result_path = f"{APP_NAME}/tryon/{user_id}/{uuid.uuid4().hex}.png"
-    put_object(result_path, out_bytes, "image/png")
+    del person_b64, garment_b64
+    result_path = f"{APP_NAME}/tryon/{user_id}/{uuid.uuid4().hex}.jpg"
+    put_object(result_path, out_bytes, "image/jpeg")
     return result_path
 
 
 @api_router.post("/tryon/generate")
 async def tryon_generate(req: TryOnRequest, user: User = Depends(get_current_user)):
+    return await _start_render_job(user, _tryon_generate(req, user))
+
+
+async def _tryon_generate(req: TryOnRequest, user: User):
     # Enforce subscription quota before any paid work (Nano Banana call).
     status = await get_subscription_status(user.account_id)
     if status["is_blocked"]:
@@ -1685,29 +1714,28 @@ async def _render_copylook(user_id: str, person_path: str, model_path: str, item
         "• Garments not listed stay as they are in IMAGE 1. Exactly ONE person in the output.\n\n"
         f"{HANDS_RULE}{head_lock.HEAD_LOCK_RULE}{_measurements_desc(m_doc)}{extra}"
     )
-    chat = LlmChat(api_key=EMERGENT_KEY, session_id=f"copylook-apply-{user_id}-{uuid.uuid4().hex[:8]}",
-                   system_message="You are a professional fashion virtual try-on generator. Re-dress the SAME person of IMAGE 1, never the model.")
-    chat.with_model("gemini", "gemini-3.1-flash-image-preview").with_params(modalities=["image", "text"])
     canvas_bytes, lock = await run_in_threadpool(head_lock.prepare, person_bytes, any(head_lock.is_long(i["category"], i["name"]) for i in items), await _hand_boxes(person_path, person_bytes))
-    msg = UserMessage(text=prompt, file_contents=[ImageContent(base64.b64encode(canvas_bytes).decode()), ImageContent(base64.b64encode(model_bytes).decode())])
+    contents = [ImageContent(base64.b64encode(canvas_bytes).decode()), ImageContent(base64.b64encode(model_bytes).decode())]
     del person_bytes, model_bytes, canvas_bytes
     try:
-        _text, images = await chat.send_message_multimodal_response(msg)
+        out_bytes = await tryon_quality.render(
+            "You are a professional fashion virtual try-on generator. Re-dress the SAME person of IMAGE 1, never the model.",
+            prompt, contents, lock, "; ".join(f"{i['category']}: {i['name']}" for i in items), f"copylook-{user_id}")
     except Exception as e:
         logger.error(f"copylook apply error: {e}")
         raise HTTPException(status_code=500, detail=f"Image generation failed: {str(e)}")
-    if not images:
-        raise HTTPException(status_code=500, detail="No image was generated")
-    del msg
-    result_path = f"{APP_NAME}/tryon/{user_id}/{uuid.uuid4().hex}.png"
-    out_bytes = await run_in_threadpool(head_lock.finalize, base64.b64decode(images[0]['data']), lock)
-    del images
-    put_object(result_path, out_bytes, "image/png")
+    del contents
+    result_path = f"{APP_NAME}/tryon/{user_id}/{uuid.uuid4().hex}.jpg"
+    put_object(result_path, out_bytes, "image/jpeg")
     return result_path
 
 
 @api_router.post("/copylook/apply")
 async def copylook_apply(req: CopyLookApplyRequest, user: User = Depends(get_current_user)):
+    return await _start_render_job(user, _copylook_apply(req, user))
+
+
+async def _copylook_apply(req: CopyLookApplyRequest, user: User):
     status = await get_subscription_status(user.account_id)
     if status["is_blocked"]:
         raise HTTPException(status_code=402, detail="Quota exhausted — subscribe or buy an extra try-on.")
@@ -2481,36 +2509,30 @@ async def _compose_outfit(user: User, person_path: Optional[str], items: list, l
         + HANDS_RULE + head_lock.HEAD_LOCK_RULE + extra
     )
 
-    session_id = f"outfit-{user.user_id}-{uuid.uuid4().hex[:8]}"
-    chat = LlmChat(
-        api_key=EMERGENT_KEY,
-        session_id=session_id,
-        system_message=(
-            "Virtual try-on for multi-item outfits. Preserve the person's face, hands, tattoos, pose and background exactly. "
-            "Compose all provided garments on the SAME person in a SINGLE image. Hands must always be clean, with no tattoos."
-        ),
+    system = (
+        "Virtual try-on for multi-item, multibrand outfits. Preserve the person's face, hands, tattoos, pose and background exactly. "
+        "Compose all provided garments on the SAME person in a SINGLE image, each keeping its exact colour and logo. Hands must always be clean, with no tattoos."
     )
-    chat.with_model("gemini", "gemini-3.1-flash-image-preview").with_params(modalities=["image", "text"])
     try:
-        _text, images = await chat.send_message_multimodal_response(
-            UserMessage(text=prompt, file_contents=file_contents)
-        )
+        out_bytes = await tryon_quality.render(system, prompt, file_contents, lock,
+                                               "; ".join(f"{g.get('category','top')}: {(g.get('brand') or '')} {g.get('name') or ''}".strip() for g in items),
+                                               f"outfit-{user.user_id}")
     except Exception as e:
         logger.error(f"Outfit generation error: {e}")
         raise HTTPException(status_code=500, detail=f"Generazione outfit non riuscita: {e}")
-    if not images:
-        raise HTTPException(status_code=500, detail="Nessuna immagine generata")
     del file_contents
-    out_bytes = await run_in_threadpool(head_lock.finalize, base64.b64decode(images[0]["data"]), lock)
-    del images
-    result_path = f"{APP_NAME}/outfit/{user.user_id}/{uuid.uuid4().hex}.png"
-    put_object(result_path, out_bytes, "image/png")
+    result_path = f"{APP_NAME}/outfit/{user.user_id}/{uuid.uuid4().hex}.jpg"
+    put_object(result_path, out_bytes, "image/jpeg")
     return person_path, result_path
 
 
 
 @api_router.post("/outfit/generate")
 async def outfit_generate(req: OutfitGenerateRequest, user: User = Depends(get_current_user)):
+    return await _start_render_job(user, _outfit_generate(req, user))
+
+
+async def _outfit_generate(req: OutfitGenerateRequest, user: User):
     if not (2 <= len(req.garment_ids) <= 4):
         raise HTTPException(status_code=400, detail="Seleziona da 2 a 4 capi")
     # Subscription quota — 1 outfit = 1 credit, enforced like a normal try-on
@@ -2576,6 +2598,10 @@ class GridOutfitRequest(BaseModel):
 
 @api_router.post("/outfit/generate-from-uploads")
 async def outfit_generate_from_uploads(req: GridOutfitRequest, user: User = Depends(get_current_user)):
+    return await _start_render_job(user, _outfit_generate_from_uploads(req, user))
+
+
+async def _outfit_generate_from_uploads(req: GridOutfitRequest, user: User):
     slots = {i.slot: i.image_path for i in req.items}
     if not (1 <= len(slots) <= 4) or any(k not in _GRID_SLOTS for k in slots):
         raise HTTPException(status_code=400, detail="Carica da 1 a 4 capi")
@@ -2899,6 +2925,10 @@ async def tryon_retry_state(tryon_id: str, user: User = Depends(get_current_user
 
 @api_router.post("/tryons/{tryon_id}/retry")
 async def tryon_retry(tryon_id: str, body: RetryIn, user: User = Depends(get_current_user)):
+    return await _start_render_job(user, _tryon_retry(tryon_id, body, user))
+
+
+async def _tryon_retry(tryon_id: str, body: RetryIn, user: User):
     doc = await db.tryons.find_one({"id": tryon_id, "user_id": user.user_id}, {"_id": 0})
     if not doc:
         raise HTTPException(status_code=404, detail="Prova non trovata")
@@ -2927,6 +2957,10 @@ async def tryon_retry(tryon_id: str, body: RetryIn, user: User = Depends(get_cur
 
 @api_router.post("/outfits/{outfit_id}/retry")
 async def outfit_retry(outfit_id: str, body: RetryIn, user: User = Depends(get_current_user)):
+    return await _start_render_job(user, _outfit_retry(outfit_id, body, user))
+
+
+async def _outfit_retry(outfit_id: str, body: RetryIn, user: User):
     doc = await db.outfits.find_one({"id": outfit_id, "user_id": user.user_id}, {"_id": 0})
     if not doc:
         raise HTTPException(status_code=404, detail="Outfit non trovato")

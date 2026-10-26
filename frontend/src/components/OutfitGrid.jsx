@@ -8,6 +8,8 @@ import HemCard from "@/components/HemCard";
 import FreeRetry from "@/components/FreeRetry";
 import TryOnProgress from "@/components/TryOnProgress";
 import { notifyTabReady } from "@/lib/tabNotify";
+import { postRender } from "@/lib/renderJob";
+import SaveToGallery from "@/components/SaveToGallery";
 
 const SLOTS = [
   { k: "top", n: 1, l: "Maglia / Top" },
@@ -180,7 +182,7 @@ export default function OutfitGrid({ personPath, uploadFile, restoreItems, onIte
     setGenerating(true);
     setResult(null);
     try {
-      const { data } = await api.post("/outfit/generate-from-uploads", {
+      const { data } = await postRender("/outfit/generate-from-uploads", {
         person_path: personPath,
         items: ready.map((s) => ({ slot: s.k, image_path: items[s.k].path })),
       });
@@ -226,6 +228,7 @@ export default function OutfitGrid({ personPath, uploadFile, restoreItems, onIte
         <div className="mt-10 grid grid-cols-1 lg:grid-cols-2 gap-8" data-testid="grid-result">
           <div className="space-y-4">
             <img src={fileUrl(result.result_path)} alt="Outfit" className="w-full border hairline" data-testid="grid-result-image" />
+            <SaveToGallery path={result.result_path} />
             <HemCard url={`/outfits/${result.id}/hem`} />
             <FreeRetry kind="outfits" item={result} onDone={(d) => setResult((r) => ({ ...r, ...d, used: r.used }))} />
           </div>

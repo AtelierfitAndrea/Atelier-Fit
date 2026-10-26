@@ -5,6 +5,7 @@ import { api, fileUrl } from "@/lib/api";
 import { ArrowLeft, Trash, ArrowsLeftRight } from "@phosphor-icons/react";
 import HemCard from "@/components/HemCard";
 import FreeRetry from "@/components/FreeRetry";
+import SaveToGallery from "@/components/SaveToGallery";
 
 const CAT_IT = { top: "Top", bottom: "Pantaloni / Gonna", dress: "Abito", outerwear: "Capospalla", shoes: "Scarpe", look: "Look copiato" };
 
@@ -44,6 +45,7 @@ export default function TryOnDetail() {
             <ArrowsLeftRight size={14} weight="bold" /> {view === "after" ? "Prima" : "Dopo"}
           </button>
         </div>
+        <SaveToGallery path={t.result_path} className="mt-4" />
         <div className="mt-4"><HemCard url={`/tryons/${id}/hem`} /></div>
       </div>
       <div className="lg:col-span-5">

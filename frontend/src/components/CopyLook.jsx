@@ -8,6 +8,7 @@ import TryOnProgress from "@/components/TryOnProgress";
 import { notifyTabReady } from "@/lib/tabNotify";
 import { priceFmt } from "@/components/OutfitGrid";
 import { LookPrice } from "@/components/ModelLooks";
+import { postRender } from "@/lib/renderJob";
 
 const CAT_IT = { top: "Top", bottom: "Pantaloni/Gonna", dress: "Abito", outerwear: "Capospalla", shoes: "Scarpe" };
 
@@ -73,7 +74,7 @@ export default function CopyLook({ personPath, uploadFile }) {
     setPhase("applying");
     try {
       const chosen = items.filter((i) => sel[i.idx]).map(({ name, category, image_path }) => ({ name, category, image_path }));
-      const { data } = await api.post("/copylook/apply", { model_path: model.path, items: chosen });
+      const { data } = await postRender("/copylook/apply", { model_path: model.path, items: chosen });
       toast.success("Look copiato sul tuo Avatar"); notifyTabReady(); refresh(); setPhase("idle");
       await new Promise((r) => setTimeout(r, 800));
       navigate(`/tryon/${data.id}`);

@@ -4,6 +4,7 @@ import { ArrowCounterClockwise, HandPalm } from "@phosphor-icons/react";
 import { api } from "@/lib/api";
 import TryOnProgress from "@/components/TryOnProgress";
 import { notifyTabReady } from "@/lib/tabNotify";
+import { postRender } from "@/lib/renderJob";
 
 const REASONS = [["mani_viso", "Mani o volto strani"], ["sfondo", "Sfondo cambiato"], ["viso", "Viso diverso"], ["capo", "Capo sbagliato"], ["altro", "Altro"]];
 const DAY = 24 * 3600 * 1000;
@@ -20,7 +21,7 @@ export default function FreeRetry({ kind, item, onDone }) {
   const go = async (why = reason) => {
     setBusy(true);
     try {
-      const { data } = await api.post(`/${kind}/${item.id}/retry`, { reason: why });
+      const { data } = await postRender(`/${kind}/${item.id}/retry`, { reason: why });
       toast.success("Nuova prova pronta, senza consumare credito");
       notifyTabReady();
       setBusy(false);

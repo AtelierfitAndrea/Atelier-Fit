@@ -3,17 +3,18 @@ import { fileUrl } from "@/lib/api";
 import { useAvatar } from "@/lib/avatar";
 
 const STEPS = [
-  [20, "Analizzo la tua silhouette..."],
-  [50, "Sto provando il capo su di te..."],
-  [80, "Sistemo vestibilità, pieghe e ombre..."],
-  [95, "Quasi fatto, rifinisco i dettagli..."],
+  [18, "Analizzo la tua silhouette..."],
+  [45, "Sto provando i capi su di te..."],
+  [70, "Sistemo vestibilità, pieghe e ombre in 2K..."],
+  [88, "Controllo qualità: viso, mani e capi..."],
+  [95, "Quasi fatto, firmo la tua foto..."],
   [101, "Ecco il risultato!"],
 ];
-const TAU = 14000; // ~48% at 10s, ~72% at 20s, ~88% at 30s, then creeps towards 95%
+const TAU = 30000; // ~55% at 30s, ~82% at 60s, ~90% at 90s, then creeps towards 95%
 
 const label = (p) => STEPS.find(([max]) => p < max)?.[1] || STEPS[STEPS.length - 1][1];
 
-// Perceived-progress bar for 30-40s AI generations: eases towards 95% while `active`, jumps to 100% when it ends.
+// Perceived-progress bar for 60-150s AI generations (2K + quality check): eases towards 95% while `active`, jumps to 100% when it ends.
 export default function TryOnProgress({ active, className = "", testid = "tryon-progress", photoPath }) {
   const { avatar } = useAvatar() || {};
   const photo = photoPath || avatar?.path;

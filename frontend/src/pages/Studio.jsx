@@ -16,6 +16,7 @@ import TryOnProgress from "@/components/TryOnProgress";
 import { notifyTabReady } from "@/lib/tabNotify";
 import PendingOutfitModal from "@/components/PendingOutfitModal";
 import { usePendingDraft } from "@/lib/pendingOutfit";
+import { postRender } from "@/lib/renderJob";
 
 const CATEGORIES = [
   { k: "top", l: "Top" },
@@ -76,7 +77,7 @@ export default function Studio() {
     if (subStatus?.is_blocked) { openPaywall(); return; }
     setGenerating(true);
     try {
-      const { data } = await api.post("/tryon/generate", {
+      const { data } = await postRender("/tryon/generate", {
         person_path: personPath,
         garment_path: garmentPath,
         garment_category: category,
