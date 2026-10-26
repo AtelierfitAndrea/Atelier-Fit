@@ -8,6 +8,8 @@ import os
 import re
 import uuid
 
+import numpy as np
+
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 from starlette.concurrency import run_in_threadpool
 from emergentintegrations.llm.chat import LlmChat, UserMessage, ImageContent
@@ -110,8 +112,31 @@ async def _qc(person_b64: str, result: bytes, garments_txt: str) -> dict:
     return {"ok": face and hands and garments, "score": 3 * garments + 3 * face + 2 * hands, "issues": str(d.get("issues") or "")[:400]}
 
 
+def _trim_pad_bands(im: Image.Image) -> Image.Image:
+    # Remove leftover flat head_lock padding the model did not fill (letterbox look), so the photo ends where the scene ends.
+    W, H = im.size
+    small = np.asarray(im.convert("L").resize((256, max(1, int(256 * H / W)))), dtype=np.float32)
+    sh = small.shape[0]
+    flat = small.std(axis=1) < 1.5
+    means = small.mean(axis=1)
+
+    def run(rows):
+        n = 0
+        for r in rows:
+            if not flat[r] or abs(means[r] - means[rows[0]]) > 2:
+                break
+            n += 1
+        return n
+    top = run(list(range(int(sh * 0.08))))
+    bot = run(list(range(sh - 1, sh - 1 - int(sh * 0.18), -1)))
+    if top < 3 and bot < 3:
+        return im
+    k = H / sh
+    return im.crop((0, int(top * k) if top >= 3 else 0, W, H - int(bot * k) if bot >= 3 else H))
+
+
 def watermark(img_bytes: bytes) -> bytes:
-    im = Image.open(io.BytesIO(img_bytes)).convert("RGB")
+    im = _trim_pad_bands(Image.open(io.BytesIO(img_bytes)).convert("RGB"))
     W, H = im.size
     font = ImageFont.truetype(FONT_PATH, max(16, int(min(W, H) * 0.034)))
     try:

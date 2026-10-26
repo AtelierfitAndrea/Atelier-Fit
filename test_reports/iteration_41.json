@@ -1,0 +1,44 @@
+{
+  "summary": "Tested the render-job pipeline (background job + polling) with 3 real AI generations: 1 single try-on via the API, 1 OutfitBuilder outfit via the UI and 1 OutfitGrid outfit via the UI. Backend: 15/15 pytest pass. POST returns {job_id, status:'running'} at once and GET /render-jobs goes running -> done with the doc. Errors come back with the original code and detail: 400, 402 quota, 403 foreign path, 404 and 422 for a bad retry reason. Another user's job returns 404 and no auth returns 401. The single try-on took about 60s and produced a 1536x2579 JPEG served as image/jpeg, with the white 'myatelierapp.it' signature and soft shadow at bottom-right. QC passed on the first attempt, so no fix pass was triggered. Frontend: the OutfitBuilder render (~33s) and OutfitGrid render (~42s) were polled through postRender and the result showed. The progress steps went 'Analizzo...' -> 'Sto provando...' -> 'Sistemo ... 2K' -> 'Controllo qualità: viso, mani e capi...'. The 'Salva in Galleria' button appears on TryOnDetail, the OutfitBuilder result and the OutfitGrid result. Clicking it downloads myatelier-<ts>.jpg (743KB) and shows the 'Foto salvata' toast. Two problems found: (1) the button text is almost invisible (grey on black), and (2) the single try-on output has flat grey letterbox bands with the signature sitting on the band.",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "POST /api/tryon/generate (and POST /api/outfit/generate person_path)", "issue": "SECURITY/IDOR: req.person_path and req.garment_path are never checked with _path_owner. Any logged-in user who knows a path can render another user's private avatar or photo, and the result is saved under the attacker. copylook/apply and generate-from-uploads do check ownership.", "priority": "HIGH"}
+    ],
+    "minor": [
+      {"endpoint": "all render-job endpoints", "issue": "Quota race: because POST returns at once, a FREE user can start many jobs in parallel. Every job passes get_subscription_status before any consume_tryon_quota runs, so the user gets more renders than the limit. Fix: reserve or decrement the quota atomically when the job starts and refund on error, or allow at most 1 running job per user."},
+      {"endpoint": "render_jobs collection", "issue": "Jobs still running when the backend restarts or hot-reloads stay 'running' forever, and the client polls for 8 minutes before timing out. There is also no TTL index, so jobs and their full result docs pile up. Fix: on startup mark running jobs as error 500, and add a TTL index on created_at (e.g. 1 day)."},
+      {"endpoint": "tryon_quality.render / head_lock pad bands", "issue": "In the single try-on (long dress), 548 of 2579 rows were flat grey padding at the top and bottom: the model did not extend the scene into the head_lock pad bands. The final photo looks letterboxed and the signature sits on the grey band, not on the photo. The outfit renders had no such bands. Consider trimming leftover flat pad bands before watermark(), or checking for them in QC."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "SaveToGallery", "issue": "Button label is unreadable. The .label-caps class sets color: var(--vfit-muted), which overrides text-white. Computed text is rgb(82,82,82) on a rgb(26,26,26) background, about 2.3:1 contrast. Seen on TryOnDetail (mobile) and the OutfitGrid result. Fix: drop label-caps, or use !text-white / inline style color:#fff.", "selector": "[data-testid='save-to-gallery-btn']", "priority": "HIGH"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "TryOnDetail desktop 1920x1080", "issues": ["The 'Salva in Galleria' button is below the fold (y=1164), so the user has to scroll to find it. Consider also placing it in the right column near the actions."]},
+      {"screen": "TryOnProgress", "issues": ["Renders now finish in about 33-60s, so the 'Controllo qualità' step (shown at 70-88%) is often skipped or only shown briefly. This is cosmetic."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_render_jobs.py", "/app/test_reports/pytest/render_jobs.xml"],
+  "action_items": [
+    "Fix the SaveToGallery text contrast (label-caps overrides text-white)",
+    "Add _path_owner checks for person_path and garment_path in /tryon/generate and for person_path in /outfit/generate",
+    "Make quota consumption atomic, or limit each user to 1 running render job",
+    "On startup, mark stale running render_jobs as errors and add a TTL index",
+    "Trim or avoid flat grey pad bands left in single try-on outputs before the watermark is applied"
+  ],
+  "critical_code_review_comments": [
+    "server.py is 3007 lines and should be split into routers (tryon, outfit, copylook, render jobs)",
+    "_start_render_job stores the whole result doc in render_jobs, which duplicates tryons/outfits data. Storing a ref id would be enough",
+    "_qc silently accepts the image when the QC LLM call fails (logs a warning). Acceptable, but no metric shows how often QC is skipped",
+    "postRender keeps polling on network errors until MAX_MS with no user feedback. Acceptable"
+  ],
+  "updated_files": ["/app/backend/tests/test_render_jobs.py"],
+  "success_rate": {"backend": "100% (15/15)", "frontend": "90% (all flows work; save button contrast bug)"},
+  "seed_data_creation": "Temporary session t1_render_tok and TEST_ garments for owner user_389c87aaadc6. All of it was deleted afterwards, together with the generated tryon, 2 outfits, the log entry, the render_jobs and the grid uploads (files marked deleted). The owner's quota fields were restored and are unchanged.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "test_render_jobs.py needs a session row with session_token 't1_render_tok' for user_389c87aaadc6 (it skips otherwise). The real render test only runs with RUN_REAL_RENDER=1. The owner is in honeymoon until 2026-11-02, so the quota is unlimited. The 402 test temporarily sets free_month_end in the past and restores it afterwards. Use pytest -p no:xdist if the real test and the 402 test must not overlap. 3 real generations were used this iteration.",
+  "rca of the issue": "SaveToGallery contrast: index.css .label-caps {color: var(--vfit-muted)} wins over Tailwind text-white on the same element. Pad bands: head_lock.prepare adds top and bottom bands filled with the background colour. When the model leaves them flat, finalize keeps them and watermark draws on the band."
+}

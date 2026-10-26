@@ -45,7 +45,6 @@ export default function TryOnDetail() {
             <ArrowsLeftRight size={14} weight="bold" /> {view === "after" ? "Prima" : "Dopo"}
           </button>
         </div>
-        <SaveToGallery path={t.result_path} className="mt-4" />
         <div className="mt-4"><HemCard url={`/tryons/${id}/hem`} /></div>
       </div>
       <div className="lg:col-span-5">
@@ -59,6 +58,7 @@ export default function TryOnDetail() {
           <Row label="Categoria" value={cat} />
         </div>
 
+        <SaveToGallery path={t.result_path} className="mt-6" />
         <div className="mt-6 grid grid-cols-2 gap-3">
           <div className="border hairline p-3">
             <div className="label-caps">Capo</div>

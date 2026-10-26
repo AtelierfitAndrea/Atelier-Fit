@@ -29,7 +29,7 @@ export default function SaveToGallery({ path, className = "", testid = "save-to-
   };
   return (
     <button onClick={save} disabled={busy} data-testid={testid}
-      className={`w-full inline-flex items-center justify-center gap-2 bg-[#1A1A1A] text-white px-5 py-3.5 label-caps hover:bg-[#8C7355] disabled:opacity-60 transition-colors duration-300 ${className}`}>
+      className={`w-full inline-flex items-center justify-center gap-2 bg-[#1A1A1A] text-white px-5 py-3.5 text-xs font-semibold uppercase tracking-[0.18em] hover:bg-[#8C7355] disabled:opacity-60 transition-colors duration-300 ${className}`}>
       <DownloadSimple size={16} weight="bold" /> {busy ? "Salvataggio..." : "Salva in Galleria"}
     </button>
   );

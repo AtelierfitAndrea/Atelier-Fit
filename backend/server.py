@@ -249,6 +249,8 @@ async def startup():
     except Exception as e:
         logger.error(f"Storage init failed: {e}")
     await _migrate_plaintext_personal_data()
+    await db.render_jobs.create_index("expires_at", expireAfterSeconds=0)
+    await db.render_jobs.update_many({"status": "running"}, {"$set": {"status": "error", "code": 500, "detail": "Generazione interrotta, riprova."}})
     if STRIPE_LIVE_KEYS:
         try:
             import setup_stripe
@@ -1338,6 +1340,18 @@ def _path_owner(path: str) -> Optional[str]:
     return parts[2] if len(parts) >= 4 and parts[0] == APP_NAME else None
 
 
+async def _require_account_paths(user: User, *paths: Optional[str]):
+    # Same rule as GET /files: a photo can be used only by the account (and its family profiles) that owns it.
+    ids = None
+    for p in paths:
+        if not p:
+            continue
+        if ids is None:
+            ids = await _account_owner_ids(User(user_id=user.owner_id or user.user_id, name=""))
+        if _path_owner(p) not in ids:
+            raise HTTPException(status_code=403, detail="Accesso negato")
+
+
 @api_router.get("/files/{path:path}")
 async def files_get(path: str, request: Request, authorization: Optional[str] = Header(None)):
     # Private by default: only the account (and its family profiles) can view; shared outfits stay public.
@@ -1457,8 +1471,15 @@ _render_tasks: set = set()
 
 
 async def _start_render_job(user: User, coro) -> dict:
+    coro_close = getattr(coro, "close", None)
+    now = datetime.now(timezone.utc)
+    # One render at a time per user: quota is checked inside the job, parallel jobs would bypass it.
+    if await db.render_jobs.find_one({"user_id": user.user_id, "status": "running", "started_at": {"$gt": now - timedelta(minutes=10)}}, {"_id": 1}):
+        coro_close and coro_close()
+        raise HTTPException(status_code=409, detail="Hai già una foto in preparazione: attendi che finisca.")
     job_id = str(uuid.uuid4())
-    await db.render_jobs.insert_one({"id": job_id, "user_id": user.user_id, "status": "running", "created_at": datetime.now(timezone.utc).isoformat()})
+    await db.render_jobs.insert_one({"id": job_id, "user_id": user.user_id, "status": "running", "started_at": now,
+                                     "expires_at": now + timedelta(days=1), "created_at": now.isoformat()})
 
     async def run():
         try:
@@ -1563,6 +1584,7 @@ async def tryon_generate(req: TryOnRequest, user: User = Depends(get_current_use
 
 
 async def _tryon_generate(req: TryOnRequest, user: User):
+    await _require_account_paths(user, req.person_path, req.garment_path)
     # Enforce subscription quota before any paid work (Nano Banana call).
     status = await get_subscription_status(user.account_id)
     if status["is_blocked"]:
@@ -2533,6 +2555,7 @@ async def outfit_generate(req: OutfitGenerateRequest, user: User = Depends(get_c
 
 
 async def _outfit_generate(req: OutfitGenerateRequest, user: User):
+    await _require_account_paths(user, req.person_path)
     if not (2 <= len(req.garment_ids) <= 4):
         raise HTTPException(status_code=400, detail="Seleziona da 2 a 4 capi")
     # Subscription quota — 1 outfit = 1 credit, enforced like a normal try-on
