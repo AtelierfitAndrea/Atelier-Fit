@@ -4,7 +4,7 @@ import stripe
 from dotenv import load_dotenv
 
 load_dotenv(Path(__file__).parent / ".env")
-stripe.api_key = os.environ["STRIPE_SECRET_KEY"]
+stripe.api_key = os.environ["STRIPE_LIVE_SECRET_KEY"]
 
 CATALOG = [
     {"emergent_product_id": "atelier_extra", "name": "My Atelier · 1 prova extra", "tax_code": "txcd_10103001",

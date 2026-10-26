@@ -34,10 +34,10 @@ load_dotenv(ROOT_DIR / '.env')
 mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
-stripe.api_key = os.environ.get('STRIPE_SECRET_KEY') or None
-STRIPE_LIVE_KEYS = (stripe.api_key or "").startswith(("sk_live_", "rk_live_")) and os.environ.get("STRIPE_PUBLISHABLE_KEY", "").startswith("pk_live_")
+stripe.api_key = os.environ.get('STRIPE_LIVE_SECRET_KEY') or None
+STRIPE_LIVE_KEYS = (stripe.api_key or "").startswith(("sk_live_", "rk_live_")) and os.environ.get("STRIPE_LIVE_PUBLISHABLE_KEY", "").startswith("pk_live_")
 if not STRIPE_LIVE_KEYS:
-    logging.getLogger(__name__).critical("Stripe: LIVE keys missing (or test keys set) — checkout is disabled until STRIPE_SECRET_KEY/STRIPE_PUBLISHABLE_KEY live are set")
+    logging.getLogger(__name__).critical("Stripe: LIVE keys missing (or test keys set) — checkout is disabled until STRIPE_LIVE_SECRET_KEY/STRIPE_LIVE_PUBLISHABLE_KEY live are set")
 
 EMERGENT_KEY = os.environ.get("EMERGENT_LLM_KEY")
 STORAGE_BASE = (os.environ.get("INTEGRATION_PROXY_URL") or "").strip() or "https://integrations.emergentagent.com"
@@ -248,6 +248,13 @@ async def startup():
     except Exception as e:
         logger.error(f"Storage init failed: {e}")
     await _migrate_plaintext_personal_data()
+    if STRIPE_LIVE_KEYS:
+        try:
+            import setup_stripe
+            await run_in_threadpool(setup_stripe.ensure_catalog)
+            logger.info("Stripe catalog ensured on live account")
+        except Exception as e:
+            logger.error(f"Stripe catalog setup failed: {e}")
     try:
         await _backfill_account_fields()
     except Exception as e:
@@ -1073,10 +1080,10 @@ STRIPE_WEBHOOK_EVENTS = [
 async def stripe_webhook(request: Request):
     payload = await request.body()
     try:
-        event = stripe.Webhook.construct_event(payload, request.headers.get("stripe-signature", ""), os.environ.get("STRIPE_WEBHOOK_SECRET") or "")
+        event = stripe.Webhook.construct_event(payload, request.headers.get("stripe-signature", ""), os.environ.get("STRIPE_LIVE_WEBHOOK_SECRET") or "")
     except (stripe.error.SignatureVerificationError, ValueError) as e:
-        # Wrong STRIPE_WEBHOOK_SECRET for this endpoint (or a forged call): Stripe shows this 400 in the delivery log.
-        logger.error(f"stripe webhook: signature verification failed ({type(e).__name__}: {e}) — check STRIPE_WEBHOOK_SECRET matches the endpoint signing secret")
+        # Wrong STRIPE_LIVE_WEBHOOK_SECRET for this endpoint (or a forged call): Stripe shows this 400 in the delivery log.
+        logger.error(f"stripe webhook: signature verification failed ({type(e).__name__}: {e}) — check STRIPE_LIVE_WEBHOOK_SECRET matches the endpoint signing secret")
         raise HTTPException(status_code=400, detail="Invalid signature")
     obj, t = event["data"]["object"], event["type"]
     logger.info(f"stripe webhook: {t} {event.get('id')}")

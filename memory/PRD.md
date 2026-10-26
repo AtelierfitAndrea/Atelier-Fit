@@ -337,3 +337,10 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 - Vecchio collegamento scollegato dall'utente; nuovo collegamento Emergent Payments creato (emergent_sandbox_id 4a865be5…, acct_1UU2OmA3yegZw5Gp, IT), chiavi preview in .env (STRIPE_MODE=test), catalogo ricreato con setup_stripe.py (managed_by emergent)
 - In attesa: l'utente clicca il link di collegamento e accede con il suo account Stripe Live → app Emergent Payments installata in live → la piattaforma inietta le chiavi live e ripubblica
 - Guardia STRIPE_LIVE_KEYS: con chiavi test il checkout risponde 503 (nessun pagamento con 4242 in produzione). Checkout: managed_payments → automatic_tax → semplice; "No such customer" → usa email
+
+## 2026-10-26 Stripe BYOK Live
+- Emergent managed Stripe sandbox DELETED. App uses user's own live keys: STRIPE_LIVE_SECRET_KEY (rk_live), STRIPE_LIVE_PUBLISHABLE_KEY, STRIPE_LIVE_WEBHOOK_SECRET (account acct_1UOM2IC7OX8nXTMU).
+- Old STRIPE_* names are platform-managed and overwritten on deploy — never use them again.
+- Startup auto-runs setup_stripe.ensure_catalog when live keys present.
+- Verified: signed webhook 200, bad signature 400, live checkout session creation OK.
+- Backlog: Security Audit (P1), Claude AI models integration (P1).
