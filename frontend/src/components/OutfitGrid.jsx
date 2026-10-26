@@ -207,7 +207,9 @@ export default function OutfitGrid({ personPath, uploadFile, restoreItems, onIte
       <p className="mt-2 text-sm text-neutral-600">Carica da 1 a 4 screenshot dei capi, anche di brand diversi, e se vuoi la tua borsa da qualsiasi sito. Usiamo la tua foto base.</p>
       <div className="mt-6 grid grid-cols-2 gap-4 max-w-xl">
         {SLOTS.map((s) => (
-          <SlotBox key={s.k} slot={s} item={items[s.k]} onFile={(f) => setSlot(s.k, f)} onClear={() => clearSlot(s.k)} />
+          <div key={s.k} className={s.k === "bag" ? "col-span-2 w-1/2 justify-self-center" : ""}>
+            <SlotBox slot={s} item={items[s.k]} onFile={(f) => setSlot(s.k, f)} onClear={() => clearSlot(s.k)} />
+          </div>
         ))}
       </div>
       <button onClick={generate} disabled={generating || busy || !ready.length}

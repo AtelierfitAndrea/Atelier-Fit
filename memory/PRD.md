@@ -372,3 +372,7 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 - Frontend: ReferralClaimer (salva ?ref in localStorage, claim dopo login), InviteFriend card in Home.
 - Share events POST /api/share-events (whitelist canali, 1/min per canale); /api/admin/stats daily_shares + referrals; AdminAtelier sezione "LOOK CONDIVISI E INVITI".
 - Tested: iteration_44 (+ fix minori).
+
+## 2026-06 — Borsa (bag) accessory
+- Added bag slot (5th) to OutfitGrid, AI auto-placement (hand/shoulder/crossbody) via _bag_rule; E2E tested (iteration_46) 100%. Bag slot centred in grid. Redeployed to myatelierapp.it.
+- Backlog: lock non-carrying hand when bag present; Security Audit; Claude AI features; refactor server.py.

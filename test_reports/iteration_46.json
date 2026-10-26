@@ -1,0 +1,31 @@
+{
+  "summary": "Tested the BORSA (bag) slot in the outfit grid. Backend: 6/6 pytest pass (tests/test_outfit_grid_bag.py). An unknown slot returns 400 'Carica da 1 a 5 capi' and zero items returns 400; both come back through the render-job poll. A foreign image path returns 403. _bag_rule is added to the prompt only when a bag is present, and _GRID_ORDER puts bag last. from-screenshot accepts slot 'bag'. The bag-only grid ran 2 real Nano Banana generations, about 35-45 s each. One used a Ferragamo top-handle bag and one a Gucci Marmont crossbody, with a full-body B&W person photo. Both jobs completed with source=grid, items=[bag] and category bag, and the result image downloaded. For the FREE quota test the honeymoon was expired temporarily: tryons_used_today went 0 -> 1 and remaining 3 -> 2, then the original state was restored. Quality was checked visually. The top-handle bag is held in the relaxed free hand, fingers natural, realistic scale, logo and hardware kept. The crossbody strap goes across the torso with the bag at the hip; gold GG hardware kept, correct scale. Face, pose and background were kept. Frontend (Playwright, owner session, /studio, 1920px): the grid shows 5 slots (1 MAGLIA/TOP, 2 PANTALONI/BOTTOM, 3 GIACCA, 4 SCARPE, 5 BORSA) and the heading 'FINO A 4 CAPI + BORSA'. Uploading a wicker top-handle bag plus a top and clicking grid-generate-btn sent exactly {person_path, items:[{slot:'top'},{slot:'bag'}]}. The result image rendered (1536x2170) with the 'Outfit pronto' toast and save-link rows for Top and Borsa, and there were no page errors. In the result the bag is held in the free hand (the phone stays in the other hand) with a natural 5-finger grip.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/outfit/generate-from-uploads", "issue": "Bag-only output on a 900x1350 input came back 900x1431 (aspect changed slightly, extra headroom). Not tested on the non-bag path, so it may be general render padding."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Studio outfit grid", "issues": ["The 5th slot (Borsa) sits alone on a third row of the 2-col grid, leaving an empty cell on the right. Acceptable, but could be centred or span 2 columns."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_outfit_grid_bag.py", "/app/test_reports/pytest/pytest_bag.xml"],
+  "action_items": [
+    "Optional: update the stale /app/backend/tests/test_outfit_grid.py. It uses a dead token, expects synchronous 400s (the endpoint is now an async render job) and has test_five_items_rejected, which is obsolete now that 5 slots are allowed. 7/13 fail for these test-side reasons, not because of app bugs.",
+    "Optional: when a bag is in the outfit, _compose_outfit skips _hand_boxes, so hand-lock protection is off for BOTH hands, including the hand not holding the bag. Consider locking only the non-carrying hand."
+  ],
+  "critical_code_review_comments": [
+    "_outfit_generate_from_uploads silently drops duplicate slots (dict); fine but not reported to the client.",
+    "The max 5-item grid (all slots + bag) was not generated end-to-end; validation allows it."
+  ],
+  "updated_files": ["/app/backend/tests/test_outfit_grid_bag.py"],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "seed_data_creation": "Uploaded test files for the owner. The 3 test outfits created were deleted from db.outfits. free_month_end was restored and daily_tryon_count unset.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Owner token pending_test_tok (expires 2026-11-02). The owner is in honeymoon until 2026-11-02, so to test FREE quota set free_month_end in the past temporarily and restore it afterwards (see test_outfit_grid_bag.py). Grid validation errors come back via GET /api/render-jobs/{id} status codes, not from the POST. A bag generation takes about 40 s. Bag images: unsplash photo-1584917865442 (top-handle), photo-1548036328 (Gucci crossbody), photo-1590874103328 (wicker)."
+}
