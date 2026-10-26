@@ -366,3 +366,9 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 ## 2026-10-26 Entrata animata + Condividi il look
 - index.css .gold-reveal (oro → bianco, 3.2s) / .soft-in su Landing; bottone ENTRA appare dopo ~2.6s.
 - ShareLook.jsx (TryOnDetail, OutfitBuilder, OutfitGrid): Web Share con foto firmata + "Provalo anche tu su https://myatelierapp.it"; fallback pulsanti WhatsApp/Facebook/Telegram (solo testo+link) e Instagram (scarica foto + copia invito).
+
+## 2026-10-26 Invita un'Amica + Look condivisi (Stanza)
+- Referral: users.referral_code (unique), db.referrals {inviter_id, invitee_id unique, status joined→qualified, paid_at}. Claim POST /api/referral/claim (nuovi <14gg, senza prove). Premi alla PRIMA prova dell'amica (hook in consume_tryon_quota): amica +5 crediti; invitante FREE +5 crediti, pagante +7 giorni. Amica che paga Single/Family (solo livemode): invitante +30 giorni (o SINGLE 30gg). Badge Atelierista TOP a 3 qualificate. Nessun limite.
+- Frontend: ReferralClaimer (salva ?ref in localStorage, claim dopo login), InviteFriend card in Home.
+- Share events POST /api/share-events (whitelist canali, 1/min per canale); /api/admin/stats daily_shares + referrals; AdminAtelier sezione "LOOK CONDIVISI E INVITI".
+- Tested: iteration_44 (+ fix minori).

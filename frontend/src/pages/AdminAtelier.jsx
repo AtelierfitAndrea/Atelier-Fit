@@ -45,10 +45,11 @@ function SharesChart({ data, referrals }) {
   const today = rows.length ? rows[rows.length - 1].count : 0;
   return (
     <>
-      <div className="mt-6 grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="mt-6 grid grid-cols-2 lg:grid-cols-5 gap-4">
         <Kpi label="CONDIVISIONI OGGI" value={num(today)} testid="admin-kpi-shares-today" />
         <Kpi label="CONDIVISIONI 30 GG" value={num(total)} testid="admin-kpi-shares-30" />
         <Kpi label="AMICHE INVITATE" value={num(referrals?.invited || 0)} testid="admin-kpi-ref-invited" />
+        <Kpi label="HANNO PROVATO" value={num(referrals?.qualified || 0)} testid="admin-kpi-ref-qualified" />
         <Kpi label="AMICHE ABBONATE" value={num(referrals?.paid || 0)} testid="admin-kpi-ref-paid" />
       </div>
       <div className="mt-4 border p-6" style={{ borderColor: `${GOLD}40` }} data-testid="admin-shares-chart">

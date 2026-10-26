@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
@@ -13,14 +13,16 @@ try {
 
 export default function ReferralClaimer() {
   const { user } = useAuth();
+  const sent = useRef(false);
   useEffect(() => {
     let code = null;
     try { code = localStorage.getItem(KEY); } catch (_e) { return; }
-    if (!user || !code) return;
+    if (!user || !code || sent.current) return;
+    sent.current = true;
+    const done = () => { try { localStorage.removeItem(KEY); } catch (_e) { /* ignore */ } };
     api.post("/referral/claim", { code })
-      .then(({ data }) => { if (!data.already) toast.success("Invito accettato: alla tua prima prova ricevi 5 prove bonus"); })
-      .catch(() => {})
-      .finally(() => { try { localStorage.removeItem(KEY); } catch (_e) { /* ignore */ } });
+      .then(({ data }) => { done(); if (!data.already) toast.success("Invito accettato: alla tua prima prova ricevi 5 prove bonus"); })
+      .catch((e) => { if ([400, 404, 409, 422].includes(e?.response?.status)) done(); else sent.current = false; });
   }, [user]);
   return null;
 }

@@ -1011,9 +1011,17 @@ async def referral_claim(body: ReferralClaimIn, user: User = Depends(get_account
     return {"ok": True}
 
 
+SHARE_CHANNELS = {"native", "whatsapp", "facebook", "telegram", "instagram"}
+
+
 @api_router.post("/share-events")
 async def share_event(body: ShareEventIn, user: User = Depends(get_current_user)):
+    if body.channel.lower() not in SHARE_CHANNELS:
+        raise HTTPException(status_code=400, detail="Canale non valido")
     now = datetime.now(timezone.utc)
+    # At most 1 counted share per user per channel per minute (no stat inflation).
+    if await db.share_events.find_one({"user_id": user.user_id, "channel": body.channel.lower(), "created_at": {"$gt": (now - timedelta(minutes=1)).isoformat()}}, {"_id": 1}):
+        return {"ok": True, "counted": False}
     await db.share_events.insert_one({"user_id": user.user_id, "channel": body.channel.lower(), "day": now.strftime("%Y-%m-%d"), "created_at": now.isoformat()})
     return {"ok": True}
 
@@ -1141,7 +1149,8 @@ async def _apply_paid_session(session_id: str) -> None:
         "plan_expires_at": (start + timedelta(days=PLAN_DAYS)).isoformat(), "stripe_last_session": session_id,
     }})
     try:
-        await _referral_on_payment(uid)
+        if tx.get("livemode"):
+            await _referral_on_payment(uid)
     except Exception as e:
         logger.error(f"referral payment reward failed for {uid}: {e}")
     asyncio.create_task(_send_receipt(session_id))
