@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="2" skipped="0" tests="18" time="3.105" timestamp="2026-10-26T19:36:48.247137+00:00" hostname="agent-env-f3c230d8-1a44-433c-8c23-1801fcf76593"><testcase classname="tests.test_render_jobs_fixes.TestIdor" name="test_tryon_foreign_path_403[body0]" time="0.397" /><testcase classname="tests.test_render_jobs_fixes.TestIdor" name="test_tryon_foreign_path_403[body1]" time="0.123" /><testcase classname="tests.test_render_jobs_fixes.TestIdor" name="test_outfit_foreign_person_403" time="0.127" /><testcase classname="tests.test_render_jobs_fixes.TestIdor" name="test_outfit_own_person_passes_ownership" time="0.131" /><testcase classname="tests.test_render_jobs_fixes.TestBusy" name="test_second_job_409[/tryon/generate-body0]" time="0.048" /><testcase classname="tests.test_render_jobs_fixes.TestBusy" name="test_second_job_409[/outfit/generate-body1]" time="0.050" /><testcase classname="tests.test_render_jobs_fixes.TestBusy" name="test_second_job_409[/outfit/generate-from-uploads-body2]" time="0.058" /><testcase classname="tests.test_render_jobs_fixes.TestBusy" name="test_second_job_409[/copylook/apply-body3]" time="0.065" /><testcase classname="tests.test_render_jobs_fixes.TestBusy" name="test_second_job_409[/tryons/TEST_x/retry-body4]" time="0.048" /><testcase classname="tests.test_render_jobs_fixes.TestBusy" name="test_second_job_409[/outfits/TEST_x/retry-body5]" time="0.055" /><testcase classname="tests.test_render_jobs_fixes.TestBusy" name="test_accepted_after_finish" time="0.103" /><testcase classname="tests.test_render_jobs_fixes.TestBusy" name="test_stale_running_over_10min_does_not_block" time="0.095" /><testcase classname="tests.test_render_jobs_fixes.TestBusy" name="test_concurrent_posts_only_one_accepted" time="1.075"><failure message="AssertionError: race: 8 jobs accepted in parallel: [200, 200, 200, 200, 200, 200, 200, 200]&#10;assert 8 == 1&#10; +  where 8 = &lt;built-in method count of list object at 0xfbf377313a40&gt;(200)&#10; +    where &lt;built-in method count of list object at 0xfbf377313a40&gt; = [200, 200, 200, 200, 200, 200, ...].count">tests/test_render_jobs_fixes.py:142: in test_concurrent_posts_only_one_accepted
+    assert codes.count(200) == 1, f"race: {codes.count(200)} jobs accepted in parallel: {codes}"
+E   AssertionError: race: 8 jobs accepted in parallel: [200, 200, 200, 200, 200, 200, 200, 200]
+E   assert 8 == 1
+E    +  where 8 = &lt;built-in method count of list object at 0xfbf377313a40&gt;(200)
+E    +    where &lt;built-in method count of list object at 0xfbf377313a40&gt; = [200, 200, 200, 200, 200, 200, ...].count</failure></testcase><testcase classname="tests.test_render_jobs_fixes.TestTtl" name="test_ttl_index" time="0.001" /><testcase classname="tests.test_render_jobs_fixes.TestTtl" name="test_new_job_has_expires_at" time="0.106" /><testcase classname="tests.test_render_jobs_fixes.TestTrim" name="test_no_bands_untouched" time="0.132" /><testcase classname="tests.test_render_jobs_fixes.TestTrim" name="test_bands_removed" time="0.008" /><testcase classname="tests.test_render_jobs_fixes.TestTrim" name="test_watermark_on_banded_image" time="0.089"><failure message="OSError: broken data stream when writing image file">/root/.venv/lib/python3.11/site-packages/PIL/ImageFile.py:663: in _save
+    fh = fp.fileno()
+         ^^^^^^^^^^^
+E   io.UnsupportedOperation: fileno
+
+The above exception was the direct cause of the following exception:
+tests/test_render_jobs_fixes.py:187: in test_watermark_on_banded_image
+    im = Image.open(io.BytesIO(watermark(buf.getvalue())))
+                               ^^^^^^^^^^^^^^^^^^^^^^^^^
+tryon_quality.py:161: in watermark
+    im.save(buf, "JPEG", quality=94, subsampling=0, optimize=True)
+/root/.venv/lib/python3.11/site-packages/PIL/Image.py:2711: in save
+    save_handler(self, fp, filename)
+/root/.venv/lib/python3.11/site-packages/PIL/JpegImagePlugin.py:847: in _save
+    ImageFile._save(
+/root/.venv/lib/python3.11/site-packages/PIL/ImageFile.py:667: in _save
+    _encode_tile(im, fp, tile, bufsize, None, exc)
+/root/.venv/lib/python3.11/site-packages/PIL/ImageFile.py:702: in _encode_tile
+    raise _get_oserror(errcode, encoder=True) from exc
+E   OSError: broken data stream when writing image file</failure></testcase></testsuite></testsuites>

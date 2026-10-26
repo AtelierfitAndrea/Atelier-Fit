@@ -344,3 +344,11 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 - Startup auto-runs setup_stripe.ensure_catalog when live keys present.
 - Verified: signed webhook 200, bad signature 400, live checkout session creation OK.
 - Backlog: Security Audit (P1), Claude AI models integration (P1).
+
+## 2026-10-26 Qualità foto maniacale + firma + Salva in Galleria (tutte e 3 le modalità)
+- backend/tryon_quality.py: Nano Banana Pro (gemini-3-pro-image-preview, fallback 3.1 flash) at 2K with aspect_ratio from canvas; QUALITY_RULES (user positive/negative prompt); QC with gemini-3.8-flash (face_same/hands_ok/garments_ok); up to 2 face/hands-only fix passes that keep ALL garments incl. trousers; best-scoring image kept; flat pad bands trimmed; 'myatelierapp.it' signature burned bottom-right (Playfair Display, backend/fonts); JPEG q94.
+- head_lock: lock canvas at 2048 (PERSON_OUT_SIDE), model input still 1536.
+- Render jobs: all render endpoints return {job_id}; GET /api/render-jobs/{id} polling (frontend lib/renderJob.js postRender). One running job per user (unique partial index), TTL 1 day, running jobs failed on restart.
+- Security: _require_account_paths on /tryon/generate and /outfit/generate.
+- Frontend: SaveToGallery button (share sheet on mobile, download on desktop) on TryOnDetail, OutfitBuilder, OutfitGrid. Progress bar TAU 30s with QC step.
+- Tested: iteration_41/42.

@@ -25,6 +25,7 @@ import receipt
 import hem as hem_mod
 import size_fallback
 import tryon_quality
+from pymongo.errors import DuplicateKeyError
 import re
 import stripe
 
@@ -249,8 +250,9 @@ async def startup():
     except Exception as e:
         logger.error(f"Storage init failed: {e}")
     await _migrate_plaintext_personal_data()
-    await db.render_jobs.create_index("expires_at", expireAfterSeconds=0)
     await db.render_jobs.update_many({"status": "running"}, {"$set": {"status": "error", "code": 500, "detail": "Generazione interrotta, riprova."}})
+    await db.render_jobs.create_index("expires_at", expireAfterSeconds=0)
+    await db.render_jobs.create_index("user_id", name="one_running_per_user", unique=True, partialFilterExpression={"status": "running"})
     if STRIPE_LIVE_KEYS:
         try:
             import setup_stripe
@@ -1473,13 +1475,16 @@ _render_tasks: set = set()
 async def _start_render_job(user: User, coro) -> dict:
     coro_close = getattr(coro, "close", None)
     now = datetime.now(timezone.utc)
-    # One render at a time per user: quota is checked inside the job, parallel jobs would bypass it.
-    if await db.render_jobs.find_one({"user_id": user.user_id, "status": "running", "started_at": {"$gt": now - timedelta(minutes=10)}}, {"_id": 1}):
+    # One render at a time per user (unique partial index): quota is checked inside the job, parallel jobs would bypass it.
+    await db.render_jobs.update_many({"user_id": user.user_id, "status": "running", "started_at": {"$lt": now - timedelta(minutes=10)}},
+                                     {"$set": {"status": "error", "code": 500, "detail": "Generazione interrotta, riprova."}})
+    job_id = str(uuid.uuid4())
+    try:
+        await db.render_jobs.insert_one({"id": job_id, "user_id": user.user_id, "status": "running", "started_at": now,
+                                         "expires_at": now + timedelta(days=1), "created_at": now.isoformat()})
+    except DuplicateKeyError:
         coro_close and coro_close()
         raise HTTPException(status_code=409, detail="Hai già una foto in preparazione: attendi che finisca.")
-    job_id = str(uuid.uuid4())
-    await db.render_jobs.insert_one({"id": job_id, "user_id": user.user_id, "status": "running", "started_at": now,
-                                     "expires_at": now + timedelta(days=1), "created_at": now.isoformat()})
 
     async def run():
         try:

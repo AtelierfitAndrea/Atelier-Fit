@@ -117,13 +117,13 @@ def _trim_pad_bands(im: Image.Image) -> Image.Image:
     W, H = im.size
     small = np.asarray(im.convert("L").resize((256, max(1, int(256 * H / W)))), dtype=np.float32)
     sh = small.shape[0]
-    flat = small.std(axis=1) < 1.5
+    flat = small.std(axis=1) < 3.5
     means = small.mean(axis=1)
 
     def run(rows):
         n = 0
         for r in rows:
-            if not flat[r] or abs(means[r] - means[rows[0]]) > 2:
+            if not flat[r] or abs(means[r] - means[rows[0]]) > 4:
                 break
             n += 1
         return n

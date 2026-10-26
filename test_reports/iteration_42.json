@@ -1,0 +1,32 @@
+{
+  "summary": "Retested the 5 fixes from iteration 41 plus a regression check, using 1 real generation via the API (71s). Backend pytest: 17/18 pass. Fix 1 (IDOR) works: a foreign person_path or garment_path on /tryon/generate, and a foreign person_path on /outfit/generate, end with GET render-jobs 403 'Accesso negato'; own paths pass. Fix 2 works for sequential requests: while a job is running, all 6 render endpoints return 409 with the exact message. The real render also got 409 on a second POST, and after it finished a new POST was accepted. Running jobs older than 10 minutes do not block. BUT 8 simultaneous POSTs were all accepted (8x 200), so the race is not closed. Fix 3 works: the TTL index expires_at_1 exists and new jobs get expires_at = started_at + 1 day. After a backend restart, a job left running returns 500 'Generazione interrotta, riprova.'. Fix 4 mostly works: the real render is 1536x2075 instead of 2579 tall, the bottom bands are gone and the signature sits on the photo. A thin near-flat light-grey strip (~85 rows, about 4%) is still at the top. Fix 5 works: on desktop TryOnDetail the save button text is white rgb(255,255,255) on rgb(26,26,26), it is in the right column above the action buttons at y=426 with no scrolling, and clicking it downloads myatelier-<ts>.jpg with the 'Foto salvata' toast. On mobile it sits below the fold, which is expected for a stacked layout.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "_start_render_job (all render endpoints)", "issue": "The 1-running-job check is not atomic. It does find_one and then insert_one, so 8 parallel POSTs were all accepted. A FREE user can still go past the quota by sending requests at the same time. Fix: use an atomic guard, e.g. a unique partial index on render_jobs {user_id} with partialFilterExpression {status:'running'} and catch DuplicateKeyError -> 409, or an atomic find_one_and_update lock on the user doc. Note that the 10-minute stale window would then need explicit cleanup, e.g. flip stale running jobs to error before inserting."},
+      {"endpoint": "tryon_quality._trim_pad_bands", "issue": "In the real render, about 85 near-flat rows remain at the top (row std 1.3-3.0, mean about 169). They are visible as a lighter strip above the mirror frame. The flatness threshold (std<1.5 on the 256px downscale) plus the requirement that means stay within 2 stops the trim early on a slightly noisy or gradient pad. Consider a looser std (about 3) or a per-row tolerance against the band mean. Also note the trim may crop legitimately plain backdrops in the top 8%; this is low risk."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": ["/app/backend/tests/test_render_jobs_fixes.py", "/app/test_reports/pytest/render_jobs_fixes.xml"],
+  "action_items": [
+    "Make the one-running-job guard atomic (unique partial index on user_id where status='running', or an atomic lock) so concurrent POSTs cannot bypass the quota",
+    "Optional: relax the _trim_pad_bands flatness threshold so slightly noisy leftover pad strips at the top are also removed"
+  ],
+  "critical_code_review_comments": [
+    "_start_render_job race: check-then-insert without atomicity (confirmed by test_concurrent_posts_only_one_accepted)",
+    "watermark() calls JPEG save with optimize=True. With very high-entropy content, Pillow raised 'broken data stream / Suspension not allowed here' on a synthetic noise image. Real photos are fine, but wrapping the save, or retrying without optimize on OSError, would be safer",
+    "startup() marks ALL running jobs as error. This is fine with a single worker, but with multiple uvicorn workers or replicas a restart of one would kill jobs that are still running in another"
+  ],
+  "updated_files": ["/app/backend/tests/test_render_jobs_fixes.py"],
+  "success_rate": {"backend": "94% (17/18; the failure is the concurrency race)", "frontend": "100%"},
+  "seed_data_creation": "Temporary session t1_render_tok for user_389c87aaadc6, fake TEST_ render_jobs rows and 1 real tryon (e1a63838...). All of it was deleted afterwards: the tryon through the DELETE API, its try_on_log entry, all of the owner's render_jobs, and the session. The owner's quota fields are unchanged.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "test_render_jobs_fixes.py needs a session row with token 't1_render_tok' for user_389c87aaadc6 and must run with -n0 (pytest.ini enables xdist). It uses fake running jobs in Mongo, so it costs no credits. 1 real generation was used this iteration. The backend was restarted once for the Fix 3 test.",
+  "rca of the issue": "Race: _start_render_job does db.render_jobs.find_one(running) and then insert_one. Concurrent requests all see no running job before any insert lands. Reproduce: send 8 parallel POSTs to /api/tryon/generate -> 8x 200."
+}
