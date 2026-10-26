@@ -1,7 +1,9 @@
 import { useState } from "react";
 import { toast } from "sonner";
 import { ShareNetwork, WhatsappLogo, InstagramLogo, FacebookLogo, TelegramLogo } from "@phosphor-icons/react";
-import { fileUrl } from "@/lib/api";
+import { api, fileUrl } from "@/lib/api";
+
+const track = (channel) => api.post("/share-events", { channel }).catch(() => {});
 
 const SITE = "https://myatelierapp.it";
 const TEXT = `Provalo anche tu su ${SITE}`;
@@ -36,7 +38,7 @@ export default function ShareLook({ path, className = "" }) {
     try {
       const file = await loadFile(path);
       if (navigator.canShare?.({ files: [file] })) {
-        try { await navigator.share({ files: [file], text: TEXT, title: "My Atelier" }); } catch (e) { if (e?.name !== "AbortError") setMenu(true); }
+        try { await navigator.share({ files: [file], text: TEXT, title: "My Atelier" }); track("native"); } catch (e) { if (e?.name !== "AbortError") setMenu(true); }
         return;
       }
       setMenu(true);
@@ -47,6 +49,7 @@ export default function ShareLook({ path, className = "" }) {
   const instagram = async () => {
     try {
       download(await loadFile(path));
+      track("instagram");
       await navigator.clipboard?.writeText(TEXT).catch(() => {});
       toast.success("Foto salvata e invito copiato: aprila su Instagram e incolla il testo");
     } catch { toast.error("Salvataggio non riuscito"); }
@@ -61,7 +64,7 @@ export default function ShareLook({ path, className = "" }) {
       {menu && (
         <div className="mt-2 grid grid-cols-4 gap-2" data-testid="share-look-menu">
           {LINKS.map(([k, label, Icon, href]) => (
-            <a key={k} href={href} target="_blank" rel="noopener noreferrer" data-testid={`share-${k}`}
+            <a key={k} href={href} target="_blank" rel="noopener noreferrer" data-testid={`share-${k}`} onClick={() => track(k)}
               className="flex flex-col items-center gap-1 border hairline bg-white py-2.5 text-[11px] hover:border-[#1A1A1A] transition-colors">
               <Icon size={22} weight="duotone" /> {label}
             </a>

@@ -9,6 +9,7 @@ import TryonCounter from "@/components/TryonCounter";
 import CalcolaTagliaBox from "@/components/CalcolaTagliaBox";
 import AvatarBox from "@/components/AvatarBox";
 import MeasuresForm from "@/components/MeasuresForm";
+import InviteFriend from "@/components/InviteFriend";
 import { useSubscription } from "@/lib/subscription";
 import { useAvatar } from "@/lib/avatar";
 
@@ -27,6 +28,7 @@ export default function Dashboard() {
       {!avatarLoading && !avatar?.path && <AvatarBox />}
       <NewTryOnButton blocked={subStatus?.is_blocked} onBlocked={openPaywall} />
       <RecentTryons tryons={tryons} />
+      <InviteFriend />
       <OptionalSizeSection />
       <WeightModal open={modalOpen} onClose={() => setModalOpen(false)} onSaved={refreshAvatar} />
     </div>

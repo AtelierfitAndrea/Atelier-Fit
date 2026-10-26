@@ -39,6 +39,37 @@ function HotCategory({ name, items }) {
   );
 }
 
+function SharesChart({ data, referrals }) {
+  const rows = (data || []).map((d) => ({ ...d, label: d.date.slice(8, 10) + "/" + d.date.slice(5, 7) }));
+  const total = rows.reduce((a, d) => a + d.count, 0);
+  const today = rows.length ? rows[rows.length - 1].count : 0;
+  return (
+    <>
+      <div className="mt-6 grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <Kpi label="CONDIVISIONI OGGI" value={num(today)} testid="admin-kpi-shares-today" />
+        <Kpi label="CONDIVISIONI 30 GG" value={num(total)} testid="admin-kpi-shares-30" />
+        <Kpi label="AMICHE INVITATE" value={num(referrals?.invited || 0)} testid="admin-kpi-ref-invited" />
+        <Kpi label="AMICHE ABBONATE" value={num(referrals?.paid || 0)} testid="admin-kpi-ref-paid" />
+      </div>
+      <div className="mt-4 border p-6" style={{ borderColor: `${GOLD}40` }} data-testid="admin-shares-chart">
+        <div className="text-xs tracking-[0.3em]" style={{ color: GOLD }}>FOTO CONDIVISE AL GIORNO</div>
+        <div className="mt-6 h-56">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={rows}>
+              <CartesianGrid stroke="#ffffff14" vertical={false} />
+              <XAxis dataKey="label" tick={{ fill: "#ffffff80", fontSize: 10 }} axisLine={false} tickLine={false} interval={2} />
+              <YAxis allowDecimals={false} tick={{ fill: "#ffffff80", fontSize: 10 }} axisLine={false} tickLine={false} width={30} />
+              <Tooltip cursor={{ fill: "#ffffff0d" }} contentStyle={{ background: "#000", border: `1px solid ${GOLD}`, color: "#fff" }}
+                formatter={(v) => [`${v} foto`, "Condivise"]} labelStyle={{ color: GOLD }} />
+              <Bar dataKey="count" fill={GOLD} radius={[2, 2, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+    </>
+  );
+}
+
 function RevenueChart({ data }) {
   const rows = data.map((d) => ({ ...d, label: d.date.slice(8, 10) + "/" + d.date.slice(5, 7) }));
   const total = data.reduce((a, d) => a + d.total, 0);
@@ -162,6 +193,9 @@ export default function AdminAtelier() {
           <h2 className="mt-14 text-sm tracking-[0.4em]" style={{ color: GOLD }}>PAGAMENTI STRIPE</h2>
           <RevenueChart data={stats.daily_revenue} />
           <Payments byPlan={stats.by_plan} last={stats.last_payments} />
+          <h2 className="mt-14 text-sm tracking-[0.4em]" style={{ color: GOLD }}>LOOK CONDIVISI E INVITI</h2>
+          <p className="mt-1 text-xs text-white/40">Foto firmate condivise dagli utenti e amiche portate col link personale</p>
+          <SharesChart data={stats.daily_shares} referrals={stats.referrals} />
           <h2 className="mt-14 text-sm tracking-[0.4em]" style={{ color: GOLD }}>RIPROVE GRATUITE</h2>
           <p className="mt-1 text-xs text-white/40">Prove rigenerate senza credito e motivo indicato dall&apos;utente</p>
           <FreeRetries />

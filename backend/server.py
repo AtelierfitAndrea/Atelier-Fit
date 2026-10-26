@@ -253,6 +253,9 @@ async def startup():
     await db.render_jobs.update_many({"status": "running"}, {"$set": {"status": "error", "code": 500, "detail": "Generazione interrotta, riprova."}})
     await db.render_jobs.create_index("expires_at", expireAfterSeconds=0)
     await db.render_jobs.create_index("user_id", name="one_running_per_user", unique=True, partialFilterExpression={"status": "running"})
+    await db.users.create_index("referral_code", unique=True, partialFilterExpression={"referral_code": {"$type": "string"}})
+    await db.referrals.create_index("invitee_id", unique=True)
+    await db.share_events.create_index("day")
     if STRIPE_LIVE_KEYS:
         try:
             import setup_stripe
@@ -524,6 +527,9 @@ async def admin_stats(_: User = Depends(require_owner)):
                            "email": emails.get(x["user_id"], "")} for x in last],
         "hot_products": hot,
         "daily_revenue": await _daily_revenue(now, paid_q),
+        "daily_shares": await _daily_shares(now, excl),
+        "referrals": {"invited": await db.referrals.count_documents({}), "qualified": await db.referrals.count_documents({"status": "qualified"}),
+                      "paid": await db.referrals.count_documents({"paid_at": {"$exists": True}})},
     }
 
 
@@ -914,8 +920,120 @@ async def get_subscription_status(user_id: str) -> dict:
     }
 
 
+# ----- Invita un'Amica (referral) + share tracking -----
+REF_TOP_AT = 3
+REF_NEW_USER_DAYS = 14
+
+
+class ReferralClaimIn(BaseModel):
+    code: str = Field(min_length=4, max_length=16)
+
+
+class ShareEventIn(BaseModel):
+    channel: str = Field(min_length=2, max_length=20)
+
+
+async def _referral_code(uid: str) -> str:
+    doc = await db.users.find_one({"user_id": uid}, {"_id": 0, "referral_code": 1}) or {}
+    while not doc.get("referral_code"):
+        code = uuid.uuid4().hex[:7].upper()
+        try:
+            await db.users.update_one({"user_id": uid, "referral_code": {"$exists": False}}, {"$set": {"referral_code": code}})
+        except DuplicateKeyError:
+            continue
+        doc = await db.users.find_one({"user_id": uid}, {"_id": 0, "referral_code": 1}) or {}
+    return doc["referral_code"]
+
+
+async def _extend_plan(uid: str, days: int):
+    doc = await db.users.find_one({"user_id": uid}, {"_id": 0, "plan": 1, "plan_expires_at": 1}) or {}
+    now = datetime.now(timezone.utc)
+    exp = _parse_dt(doc.get("plan_expires_at"))
+    if doc.get("plan") in ("SINGLE", "FAMILY") and exp and exp > now:
+        await db.users.update_one({"user_id": uid}, {"$set": {"plan_expires_at": (exp + timedelta(days=days)).isoformat()}})
+    else:
+        await db.users.update_one({"user_id": uid}, {"$set": {"plan": "SINGLE", "plan_started_at": now.isoformat(),
+                                                             "plan_expires_at": (now + timedelta(days=days)).isoformat()}})
+
+
+async def _referral_on_first_tryon(account_id: str):
+    # The friend counts once she creates her first photo: 5 bonus try-ons to her, reward to the inviter.
+    ref = await db.referrals.find_one_and_update({"invitee_id": account_id, "status": "joined"},
+                                                 {"$set": {"status": "qualified", "qualified_at": datetime.now(timezone.utc).isoformat()}})
+    if not ref:
+        return
+    await db.users.update_one({"user_id": account_id}, {"$inc": {"extra_tryon_credits": 5}})
+    inviter = await get_subscription_status(ref["inviter_id"])
+    if inviter["plan"] in ("SINGLE", "FAMILY"):
+        await _extend_plan(ref["inviter_id"], 7)
+        reward = "7 giorni di abbonamento"
+    else:
+        await db.users.update_one({"user_id": ref["inviter_id"]}, {"$inc": {"extra_tryon_credits": 5}})
+        reward = "5 prove extra"
+    await db.referrals.update_one({"id": ref["id"]}, {"$set": {"inviter_reward": reward, "invitee_reward": "5 prove bonus"}})
+
+
+async def _referral_on_payment(account_id: str):
+    ref = await db.referrals.find_one_and_update({"invitee_id": account_id, "paid_at": {"$exists": False}},
+                                                 {"$set": {"paid_at": datetime.now(timezone.utc).isoformat()}})
+    if ref:
+        await _extend_plan(ref["inviter_id"], 30)
+
+
+@api_router.get("/referral/me")
+async def referral_me(user: User = Depends(get_account_user)):
+    code = await _referral_code(user.user_id)
+    refs = await db.referrals.find({"inviter_id": user.user_id}, {"_id": 0, "status": 1, "paid_at": 1}).to_list(1000)
+    qualified = sum(1 for r in refs if r["status"] == "qualified")
+    return {"code": code, "invited": len(refs), "qualified": qualified, "paid": sum(1 for r in refs if r.get("paid_at")),
+            "is_top": qualified >= REF_TOP_AT, "top_at": REF_TOP_AT}
+
+
+@api_router.post("/referral/claim")
+async def referral_claim(body: ReferralClaimIn, user: User = Depends(get_account_user)):
+    me = await db.users.find_one({"user_id": user.user_id}, {"_id": 0, "referred_by": 1, "created_at": 1}) or {}
+    if me.get("referred_by"):
+        return {"ok": True, "already": True}
+    inviter = await db.users.find_one({"referral_code": body.code.strip().upper()}, {"_id": 0, "user_id": 1})
+    if not inviter:
+        raise HTTPException(status_code=404, detail="Link invito non valido")
+    if inviter["user_id"] == user.user_id:
+        raise HTTPException(status_code=400, detail="Non puoi invitare te stesso")
+    created = _parse_dt(me.get("created_at")) or datetime.now(timezone.utc)
+    if datetime.now(timezone.utc) - created > timedelta(days=REF_NEW_USER_DAYS) or await db.tryons.find_one({"user_id": {"$in": list(await _account_owner_ids(user))}}, {"_id": 1}):
+        raise HTTPException(status_code=409, detail="Il link invito vale solo per i nuovi iscritti")
+    try:
+        await db.referrals.insert_one({"id": str(uuid.uuid4()), "inviter_id": inviter["user_id"], "invitee_id": user.user_id,
+                                       "status": "joined", "created_at": datetime.now(timezone.utc).isoformat()})
+    except DuplicateKeyError:
+        return {"ok": True, "already": True}
+    await db.users.update_one({"user_id": user.user_id}, {"$set": {"referred_by": inviter["user_id"]}})
+    return {"ok": True}
+
+
+@api_router.post("/share-events")
+async def share_event(body: ShareEventIn, user: User = Depends(get_current_user)):
+    now = datetime.now(timezone.utc)
+    await db.share_events.insert_one({"user_id": user.user_id, "channel": body.channel.lower(), "day": now.strftime("%Y-%m-%d"), "created_at": now.isoformat()})
+    return {"ok": True}
+
+
+async def _daily_shares(now: datetime, excl: list, days: int = 30) -> list:
+    since = (now - timedelta(days=days - 1)).strftime("%Y-%m-%d")
+    rows = await db.share_events.aggregate([
+        {"$match": {"day": {"$gte": since}, "user_id": {"$nin": excl}}},
+        {"$group": {"_id": "$day", "count": {"$sum": 1}}},
+    ]).to_list(days + 1)
+    by_day = {r["_id"]: r["count"] for r in rows}
+    return [{"date": d, "count": by_day.get(d, 0)} for d in ((now - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(days - 1, -1, -1))]
+
+
 async def consume_tryon_quota(user_id: str, status: dict):
     """After a successful try-on. Decrement credits/counter if applicable."""
+    try:
+        await _referral_on_first_tryon(user_id)
+    except Exception as e:
+        logger.error(f"referral reward failed for {user_id}: {e}")
     if status["plan"] in ("SINGLE", "FAMILY") or status["honeymoon_active"]:
         return
     # FREE plan after honeymoon
@@ -1022,6 +1140,10 @@ async def _apply_paid_session(session_id: str) -> None:
         "plan": plan, "plan_started_at": now.isoformat(),
         "plan_expires_at": (start + timedelta(days=PLAN_DAYS)).isoformat(), "stripe_last_session": session_id,
     }})
+    try:
+        await _referral_on_payment(uid)
+    except Exception as e:
+        logger.error(f"referral payment reward failed for {uid}: {e}")
     asyncio.create_task(_send_receipt(session_id))
 
 

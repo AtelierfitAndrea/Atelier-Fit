@@ -18,6 +18,7 @@ import AppShell from "@/components/AppShell";
 import Terms from "@/pages/Terms";
 import ComingSoon, { LAUNCH_AT } from "@/components/ComingSoon";
 import WhatsAppButton from "@/components/WhatsAppButton";
+import ReferralClaimer from "@/components/ReferralClaimer";
 import AdminAtelier from "@/pages/AdminAtelier";
 import AdminSupport from "@/pages/AdminSupport";
 import Support from "@/pages/Support";
@@ -85,6 +86,7 @@ export default function App() {
             <Toaster position="top-center" theme="light" />
             <SessionRevokedNotice />
             <WhatsAppButton />
+            <ReferralClaimer />
           </BrowserRouter>
           </AvatarProvider>
         </SubscriptionProvider>
