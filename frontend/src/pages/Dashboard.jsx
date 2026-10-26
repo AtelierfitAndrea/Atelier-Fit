@@ -40,7 +40,7 @@ function FreeMonthLine({ status }) {
   return (
     <p className="text-center text-xs md:text-sm font-semibold uppercase tracking-[0.22em] text-[#8C7355]" translate="no" data-testid="free-month-line">
       Primo mese gratuito · Illimitato
-      {status.days_left_honeymoon ? <span className="ml-2 font-normal normal-case tracking-normal text-neutral-500">({status.days_left_honeymoon} giorni rimasti)</span> : null}
+      {status.days_left_honeymoon ? <span className="block mt-1 text-[11px] font-normal normal-case tracking-normal text-neutral-500">{status.days_left_honeymoon} giorni rimasti</span> : null}
     </p>
   );
 }

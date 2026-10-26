@@ -102,10 +102,10 @@ export default function AvatarBox({ manage = false, title = "Il Mio Avatar", onS
           <div className="flex gap-3 flex-wrap mb-4">
             <button type="button" disabled={busy} onClick={openCam} className="btn-primary disabled:opacity-50" data-testid="avatar-shoot-now-btn"><Camera size={14} /> Scatta ora</button>
             <button type="button" disabled={busy} onClick={() => galleryRef.current?.click()} className="btn-ghost disabled:opacity-50" data-testid="avatar-gallery-btn"><Images size={14} /> Carica da galleria</button>
-            <input ref={galleryRef} type="file" accept="image/*" className="hidden" data-testid="avatar-gallery-input"
-              onChange={async (e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) setGallery({ file: f, ...(await photoAgeDays(f)) }); }} />
           </div>
           )}
+          <input ref={galleryRef} type="file" accept="image/*" className="hidden" data-testid="avatar-gallery-input"
+            onChange={async (e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) setGallery({ file: f, ...(await photoAgeDays(f)) }); }} />
           {manage && avatar?.path && (
             <button onClick={remove} className="btn-ghost mt-2" data-testid="avatar-delete-btn"><Trash size={14} /> Elimina foto</button>
           )}

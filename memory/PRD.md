@@ -352,3 +352,10 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 - Security: _require_account_paths on /tryon/generate and /outfit/generate.
 - Frontend: SaveToGallery button (share sheet on mobile, download on desktop) on TryOnDetail, OutfitBuilder, OutfitGrid. Progress bar TAU 30s with QC step.
 - Tested: iteration_41/42.
+
+## 2026-10-26 Home intuitiva + camicia fuori
+- Home: riga "Primo mese gratuito · Illimitato" (solo honeymoon, poi TryonCounter) → bottone gigante NUOVA PROVA → Il tuo atelier (max 2 foto grandi) → sezione in fondo "Vuoi anche la taglia perfetta? (Facoltativo)" con MeasuresForm (a tendina) + CalcolaTagliaBox. Prezzi solo nel paywall.
+- Eliminati AccuracyBadge, FittingAccuracy (Profile), footer "Metodo Fitting Accuracy", stat cards, Aggiorna peso dalla home.
+- Avatar: primo accesso riquadro grande con Conferma foto / Rifai foto; poi AvatarBubble rotondo nell'header (thumb ?thumb=128 su /api/files) → fullscreen "Vuoi cambiare foto?" con note privacy sempre visibili.
+- Prompt: _tuck_rule (top senza giacca = sempre fuori dai pantaloni) in tutte e 3 le modalità + controllo QC/fix.
+- Tested: iteration_43.

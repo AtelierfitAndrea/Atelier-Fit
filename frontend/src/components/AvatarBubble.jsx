@@ -17,7 +17,9 @@ export default function AvatarBubble() {
   }, []);
   useEffect(() => {
     document.body.style.overflow = open ? "hidden" : "";
-    return () => { document.body.style.overflow = ""; };
+    const onKey = (e) => { if (e.key === "Escape") setOpen(false); };
+    if (open) window.addEventListener("keydown", onKey);
+    return () => { document.body.style.overflow = ""; window.removeEventListener("keydown", onKey); };
   }, [open]);
 
   return (
@@ -25,7 +27,7 @@ export default function AvatarBubble() {
       {avatar?.path && (
         <button onClick={() => setOpen(true)} title="La tua foto" data-testid="avatar-bubble"
           className="w-9 h-9 rounded-full overflow-hidden ring-2 ring-white/70 hover:ring-[#D4AF37] transition-shadow duration-200 shrink-0">
-          <img src={fileUrl(avatar.path)} alt="La tua foto" className="w-full h-full object-cover object-top" />
+          <img src={`${fileUrl(avatar.path)}?thumb=128`} alt="La tua foto" className="w-full h-full object-cover object-top" />
         </button>
       )}
       {open && createPortal(

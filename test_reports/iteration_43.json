@@ -1,0 +1,43 @@
+{
+  "summary": "Tested the Home redesign, the avatar bubble/first-time AvatarBox flow, Profile without FittingAccuracy, the paywall when blocked, and the _tuck_rule unit checks. Desktop 1920x1080 and mobile 390x844, owner user user_389c87aaadc6. Almost everything passes. One bug: 'Rifai foto' after picking a gallery photo does not reopen the gallery picker.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "AvatarBox retake (gallery source)", "issue": "After choosing a photo from the gallery, clicking 'Rifai foto' does NOT reopen the file picker (Playwright filechooser timed out). RCA: the hidden <input data-testid='avatar-gallery-input' ref={galleryRef}> is only rendered in the non-pending branch. While pending it is unmounted, so galleryRef.current is null when retake() calls galleryRef.current?.click() right after setPending(null). Fix: render the file input outside the pending/non-pending conditional. The same applies in the fullscreen 'Vuoi cambiare foto?' box. Retake for a camera photo calls openCam and should work, but was not tested (no camera in headless).", "selector": "[data-testid='avatar-retake-btn']", "priority": "MEDIUM"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Home mobile 390", "issues": ["free-month-line wraps awkwardly: '(7 giorni rimasti)' breaks onto a 2nd line under uppercase tracking text. Consider putting it on its own line or using smaller tracking on mobile."]},
+      {"screen": "Header avatar-bubble", "issues": ["The bubble loads the full 3000px decrypted avatar for a 36px circle. Heavy on mobile and the image appears late (the bubble/fullscreen showed an empty box for ~2s). Consider a thumbnail."]},
+      {"screen": "Avatar fullscreen", "issues": ["Escape key does not close it (only the X button). Minor."]}
+    ]
+  },
+  "passed_checks": [
+    "Home order: free-month-line ('Primo mese gratuito · Illimitato (7 giorni rimasti)') -> giant NUOVA PROVA (href /studio) -> Il tuo atelier/Prove recenti -> optional-size-section",
+    "No accuracy-row, hero-update-weight-btn, stat-* cards, prices, 'Affidabil', 'Aggiorna Peso', 'Prova Taglia Pronta' on Home",
+    "Recent tryons: exactly 2 tryon cards in 2 columns (648x864 on desktop, 163x217 on mobile), see-all-wardrobe link",
+    "Optional section: exact title and text; the toggle expands MeasuresForm (9 inputs); CalcolaTagliaBox present",
+    "First-time flow: avatar-box shown above NUOVA PROVA with privacy note; gallery upload -> GalleryWarning -> preview with 'Conferma foto'/'Rifai foto'; no POST before confirm; confirm sends POST /api/profile/avatar 200 -> avatar-box hidden, avatar-bubble shown; persists after reload",
+    "Bubble: 36px round, top-right; opens avatar-fullscreen 'Vuoi cambiare foto?' with privacy note visible; close works and restores body overflow; persists after reload",
+    "Profile: no Fitting Accuracy / Affidabilità / 'Metodo Fitting' text",
+    "Studio, Wardrobe, TryOnDetail load with no page errors",
+    "Blocked state (honeymoon expired + quota used, simulated in DB): free line replaced by TryonCounter, dashboard-locked-tryon opens paywall-modal, no prices on Home itself",
+    "_tuck_rule: untucked for top alone, top by name, top+bottom; empty with outerwear category, jacket name, dress, bottom-only, empty list (8/8)"
+  ],
+  "test_report_links": ["/app/backend/tests/test_tuck_rule_home.py", "/app/test_reports/pytest/pytest_tuck.xml"],
+  "action_items": [
+    "Fix AvatarBox gallery retake: keep the hidden avatar-gallery-input mounted at all times (outside the pending conditional) so 'Rifai foto' reopens the gallery",
+    "Optional: tidy the mobile wrap of free-month-line; serve a small thumbnail for avatar-bubble; Escape closes avatar-fullscreen"
+  ],
+  "critical_code_review_comments": [
+    "AvatarBox.retake relies on a ref to a conditionally rendered input (the bug above)",
+    "Dashboard still mounts RefreshBanner + WeightModal: fine, but the WeightModal is only reachable via RefreshBanner now",
+    "i18n.jsx still contains the unused 'Fitting Accuracy' keys (dead strings)"
+  ],
+  "updated_files": ["/app/backend/tests/test_tuck_rule_home.py"],
+  "success_rate": {"backend": "100% (10/10)", "frontend": "~95% (1 medium bug)"},
+  "seed_data_creation": "Recreated user_sessions token pending_test_tok for user_389c87aaadc6. Temporarily unset the avatar (restored to the original e2bf1a90...bin; the test-uploaded avatar was marked is_deleted in files). Temporarily changed free_month_end/monthly_tryon_count to simulate blocked (restored).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Owner session: cookie session_token=pending_test_tok. First-time avatar flow: test by unsetting users.avatar_path for the owner, then restore it. The browser tool rewrites screenshot paths, so use simple filenames."
+}

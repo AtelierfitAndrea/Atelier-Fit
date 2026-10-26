@@ -1355,7 +1355,7 @@ async def _require_account_paths(user: User, *paths: Optional[str]):
 
 
 @api_router.get("/files/{path:path}")
-async def files_get(path: str, request: Request, authorization: Optional[str] = Header(None)):
+async def files_get(path: str, request: Request, authorization: Optional[str] = Header(None), thumb: Optional[int] = None):
     # Private by default: only the account (and its family profiles) can view; shared outfits stay public.
     if path.split("/")[1:2] == ["measure"]:
         raise HTTPException(status_code=404, detail="File non trovato")
@@ -1366,6 +1366,9 @@ async def files_get(path: str, request: Request, authorization: Optional[str] = 
         if _path_owner(path) not in await _account_owner_ids(account):
             raise HTTPException(status_code=403, detail="Accesso negato")
     data, content_type = get_object(path)
+    if thumb and content_type.startswith("image/"):
+        data = await run_in_threadpool(head_lock.downscale, data, max(64, min(thumb, 512)))
+        content_type = "image/png" if data[:4] == b"\x89PNG" else "image/jpeg"
     return Response(content=data, media_type=content_type, headers={"Cache-Control": "private, max-age=3600"})
 
 
