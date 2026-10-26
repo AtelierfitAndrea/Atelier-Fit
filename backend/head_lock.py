@@ -170,6 +170,28 @@ def prepare(person_bytes: bytes, long_garment: bool, hands: list = None) -> tupl
     return buf.getvalue(), {"canvas": canvas, "mask": mask, "face": face_c, "hands": hand_c}
 
 
+def _match_head_colour(canvas: np.ndarray, res: np.ndarray, mask: np.ndarray) -> np.ndarray:
+    # Model may shift white balance: tint the pasted head to the result using the ring of background above/beside it (no halo).
+    H, W = mask.shape
+    ys, xs = np.where(mask > 8)
+    y0, y1, x0, x1 = ys.min(), ys.max() + 1, xs.min(), xs.max() + 1
+    pad = int(0.25 * max(y1 - y0, x1 - x0))
+    Y0, Y1, X0, X1 = max(0, y0 - pad), min(H, y1 + pad), max(0, x0 - pad), min(W, x1 + pad)
+    m = mask[Y0:Y1, X0:X1]
+    ring = m < 8
+    ring[(y0 + y1) // 2 - Y0:] = False  # upper half only: below the chin the garment changed
+    if ring.sum() < 400:
+        return canvas
+    c = canvas[Y0:Y1, X0:X1]
+    gain = (np.median(res[Y0:Y1, X0:X1][ring], 0) + 1) / (np.median(c[ring], 0) + 1)
+    gain = np.clip(gain, 0.75, 1.33)
+    if np.abs(gain - 1).max() < 0.02:
+        return canvas
+    canvas = canvas.copy()
+    canvas[Y0:Y1, X0:X1] = np.clip(c.astype(np.float32) * gain, 0, 255).astype(np.uint8)
+    return canvas
+
+
 def finalize(result_bytes: bytes, meta: dict) -> bytes:
     canvas, mask = meta["canvas"], meta["mask"]
     H, W = canvas.shape[:2]
@@ -225,6 +247,8 @@ def finalize(result_bytes: bytes, meta: dict) -> bytes:
         # Pasting the original head onto a misplaced generated one would create a double face: keep the model output.
         logger.warning("head_lock: generated head not aligned with original %s, skipping head paste", head_at)
         mask = np.zeros_like(mask)
+    if mask.any():
+        canvas = _match_head_colour(canvas, res, mask)
     # Per-pixel blend on uint8 images with single-channel weights (no full-size float32 RGB copies).
     w = mask.astype(np.float32) * (1 / 255)
     out = cv2.blendLinear(canvas, res, w, 1 - w)

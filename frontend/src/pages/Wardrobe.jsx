@@ -5,7 +5,8 @@ import { TShirt } from "@phosphor-icons/react";
 import OutfitBuilder from "@/components/OutfitBuilder";
 import ModelLooks from "@/components/ModelLooks";
 
-const FILTERS = ["all", "top", "bottom", "dress", "outerwear", "shoes", "bag"];
+const FILTERS = ["all", "top", "bottom", "dress", "outerwear", "suit", "shoes", "bag"];
+const LABEL = { bag: "borsa", suit: "completo" };
 
 export default function Wardrobe() {
   const [items, setItems] = useState([]);
@@ -43,7 +44,7 @@ export default function Wardrobe() {
               }`}
               data-testid={`filter-${f}`}
             >
-              {f === "bag" ? "borsa" : f}
+              {LABEL[f] || f}
             </button>
           ))}
         </div>
@@ -69,7 +70,7 @@ export default function Wardrobe() {
               <img src={fileUrl(t.result_path)} alt="" className="absolute inset-0 w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" />
               <div className="absolute left-3 bottom-3 right-3 bg-white/90 backdrop-blur-sm px-3 py-2 border hairline">
                 <div className="flex items-center justify-between">
-                  <span className="label-caps">{t.garment_category || "piece"}</span>
+                  <span className="label-caps">{LABEL[t.garment_category] || t.garment_category || "piece"}</span>
                   <span className="label-caps text-[#8C7355]">{t.recommended_size || ""}</span>
                 </div>
                 <div className="font-serif text-base truncate mt-0.5">{t.garment_name || "Untitled"}</div>

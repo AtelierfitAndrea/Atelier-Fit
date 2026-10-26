@@ -8,7 +8,7 @@ import FreeRetry from "@/components/FreeRetry";
 import SaveToGallery from "@/components/SaveToGallery";
 import ShareLook from "@/components/ShareLook";
 
-const CAT_IT = { top: "Top", bottom: "Pantaloni / Gonna", dress: "Abito", outerwear: "Capospalla", shoes: "Scarpe", bag: "Borsa", look: "Look copiato" };
+const CAT_IT = { top: "Top", bottom: "Pantaloni / Gonna", dress: "Abito", outerwear: "Capospalla", shoes: "Scarpe", bag: "Borsa", suit: "Abito completo", look: "Look copiato" };
 
 export default function TryOnDetail() {
   const { id } = useParams();

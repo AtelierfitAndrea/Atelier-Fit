@@ -171,6 +171,8 @@ async def render(system: str, prompt: str, contents: list, lock: dict, garments_
     person_b64 = contents[0].file_content_base64
     if "UNTUCKED TOP" in prompt:
         garments_txt += " — the shirt/t-shirt must be worn UNTUCKED, hanging outside the trousers (tucked in = garments_ok false)"
+    if "SUIT — SHIRT TUCKED IN" in prompt:
+        garments_txt += " — complete suit: the shirt must be TUCKED INSIDE the trousers, tie straight inside the jacket (shirt hanging out = garments_ok false)"
     aspect = _aspect(lock)
     base = _snapshot(lock)
     # Grey levels of the head_lock padding bands: only rows still showing exactly that pad get trimmed.

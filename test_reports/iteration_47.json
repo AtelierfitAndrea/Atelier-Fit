@@ -1,0 +1,39 @@
+{
+  "summary": "Tested the suit tuck rule, automatic category recognition from the photo, the simplified /studio page (mobile 390x844 and desktop 1920x1080) and a regression run of the outfit grid with the Borsa slot. Everything requested works. The tuck rule is right in both real renders and the category is recognised from the photo. One serious visual bug turned up: a bluish oval halo around the head on the black-suit render.",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "POST /api/tryon/generate (head_lock.finalize)", "issue": "Visible bluish oval halo around the head on the black-suit render (tryon e3972739-aced-479e-98ce-db9737fdbe86). The model made the whole image warmer and the wall turned beige. finalize() then blends in the original cool-grey head ellipse (mask is 0.95*face width, so it includes a lot of wall) with no colour matching. QC flagged 'visible halo artifact around head' on both attempts. The fix passes cannot remove it because finalize re-pastes the same original head every time, so the halo is guaranteed whenever the model shifts white balance.", "priority": "HIGH"}
+    ],
+    "minor": [
+      {"endpoint": "tryon_quality.render", "issue": "QC adds an UNTUCKED hint to garments_txt but no matching SUIT 'shirt must be tucked in' hint, so QC will not reject an untucked suit render."},
+      {"endpoint": "_classify_garment", "issue": "Each new garment upload adds one extra Gemini call before the render (it is cached per path only). It also overrides an explicit garment_category coming from a preset or catalog. Acceptable, but worth knowing."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "TryOnDetail CAT_IT", "issue": "No 'suit' key, so the result page shows the raw English 'SUIT' under 'Capo senza nome'. Add suit: 'Abito completo'.", "selector": "pages/TryOnDetail.jsx:11", "priority": "MEDIUM"},
+      {"component": "Wardrobe FILTERS", "issue": "No 'suit' filter, and the card label shows the raw 'suit'. Suit try-ons only appear under 'all'.", "selector": "pages/Wardrobe.jsx:8,72", "priority": "LOW"},
+      {"component": "Studio", "issue": "If Studio opens with a preset (location.state.preset.category) and the user then uploads a different photo, the stale preset category is still sent. onFile does not reset category, name or chosenSize. That category is only a fallback when classification fails, but garment_name or chosen_size are wrong.", "selector": "upload-garment", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": ["/app/backend/tests/test_suit_tuck_classify.py", "/app/test_reports/pytest/suit_tryon.xml", "/app/backend/tests/test_outfit_grid_bag.py", "/app/backend/tests/test_tuck_rule_home.py"],
+  "action_items": [
+    "Fix the head halo in head_lock.finalize: match the pasted head colour to the result before blending (for example LAB mean/std transfer from a ring just outside the mask), tighten or shrink the mask so it holds less background, or skip the paste when the colour difference across the ring is large.",
+    "Add a SUIT tucked hint to the garments_txt passed to QC in tryon_quality.render, the same way the UNTUCKED hint is added.",
+    "Add the 'suit' label to CAT_IT in TryOnDetail.jsx and a 'suit' entry plus Italian label in the Wardrobe FILTERS and card label.",
+    "Studio onFile: reset category, name and chosenSize when the user uploads a new photo."
+  ],
+  "critical_code_review_comments": [
+    "head_lock.finalize blends original pixels with no colour or white-balance correction. This is the root cause of the halo.",
+    "Grid slots carry fixed categories (top, bottom, outerwear and so on) and _classify_garment is not used there. A complete suit uploaded into the Top slot will not get the SUIT rule. That is acceptable under spec B."
+  ],
+  "updated_files": ["/app/backend/tests/test_suit_tuck_classify.py"],
+  "success_rate": {"backend": "100% (9/9 new tests + 15/15 regression; visual halo bug noted separately)", "frontend": "100% of the requested /studio checks"},
+  "seed_data_creation": "Created owner try-ons: blue suit (via pytest), black suit e3972739-aced-479e-98ce-db9737fdbe86 (via UI), and grid outfit 40566fa8-56e3-4798-8296-493d480b7a00 (shirt + bag). Also new garment_class cache entries.",
+  "retest_needed": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Owner token pending_test_tok, avatar at GET /api/profile/avatar. Test images (download into /tmp): unsplash photo-1594938298603-c8148c4dae35 (blue 3-piece suit, classified as suit), photo-1507679799987-c73779587ccf (black suit with tie, classified as suit), photo-1596755094514-f87e34085b2c (shirt, classified as top), photo-1584917865442-de89df76afd3 (handbag, classified as bag). Run classification tests with a single module-level event loop (motor). To verify the halo fix, regenerate the black suit on the owner avatar and look at the head region.",
+  "rca of the issue": "Halo. Reproduce: in /studio, upload unsplash photo-1507679799987 (black suit) on the owner avatar and click Provalo. The result has a cool-grey ellipse behind the head on a warm beige wall. Cause: the model shifts global colour temperature, and head_lock.prepare builds a wide feathered ellipse (0.95*face width, from 0.75*face height above the face to 1.12*face height below it) that finalize() blends in with raw original pixels. QC detects the halo but the fix passes are re-finalized with the same paste, so it persists. Mitigation: colour-transfer the canvas inside the mask to match result statistics in the surrounding ring, and/or make the mask hug the head more tightly."
+}

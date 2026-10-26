@@ -112,6 +112,7 @@ export default function Studio() {
           onFile={async (f) => {
             if (subStatus?.is_blocked) { openPaywall(); return; }
             setGarmentPreview(URL.createObjectURL(f));
+            setCategory(null); setName(""); setChosenSize("");
             try {
               const p = await uploadFile(f, "garment");
               setGarmentPath(p);
