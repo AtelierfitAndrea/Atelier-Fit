@@ -1440,6 +1440,22 @@ async def _hand_boxes(person_path: str, person_bytes: bytes) -> list:
     return boxes
 
 
+_TOP_WORDS = re.compile(r"\b(camici\w*|maglia|maglietta|t-?shirt|tee|shirt|polo|blusa|top|canotta|felpa)\b", re.I)
+_OUTER_WORDS = re.compile(r"\b(giacca|giubbotto|giubbino|cappotto|blazer|jacket|coat|trench|piumino|parka|bomber|gilet|cardigan)\b", re.I)
+
+
+def _tuck_rule(items: list) -> str:
+    """Shirt / t-shirt worn alone (no jacket or coat over it) must hang OUTSIDE the trousers."""
+    has_top = any((i.get("category") or "").lower() == "top" or ((i.get("category") or "").lower() not in ("dress", "bottom", "shoes") and _TOP_WORDS.search(i.get("name") or "")) for i in items)
+    has_outer = any((i.get("category") or "").lower() == "outerwear" or _OUTER_WORDS.search(i.get("name") or "") for i in items)
+    if not has_top or has_outer:
+        return ""
+    return ("UNTUCKED TOP — MANDATORY:\n"
+            "• The shirt / t-shirt / top has NO jacket, blazer or coat over it, so it MUST be worn UNTUCKED: its hem hangs loose OUTSIDE "
+            "the trousers/skirt, covering the waistband. NEVER tuck it inside the trousers, not even partially (no front tuck). "
+            "NEGATIVE: tucked-in shirt, tucked t-shirt, half tuck, French tuck.\n")
+
+
 HANDS_RULE = (
     "IDENTITY — STRICT:\n"
     "• Use IMAGE 1 as the EXACT source for identity. Exactly ONE person with ONE face: no duplicate, twin or second face, no face blending, no face swap.\n"
@@ -1558,6 +1574,7 @@ async def _render_single(user_id: str, person_path: str, garment_path: str, cate
         f"• Do NOT cut, crop or extend the head/arms/legs beyond the original frame.\n"
         f"• Do NOT invent new tattoos, jewellery or accessories that are not in IMAGE 1.\n\n"
         f"{HANDS_RULE}"
+        f"{_tuck_rule([{'category': category, 'name': name or ''}])}"
         f"{head_lock.HEAD_LOCK_RULE}"
         f"{measurements_desc}"
         f"{extra}"
@@ -1739,7 +1756,7 @@ async def _render_copylook(user_id: str, person_path: str, model_path: str, item
         "(natural drape, length and ease relative to the person's measurements), not like it fits the model.\n"
         "• Preserve colour, pattern, cut and material of each garment exactly as in IMAGE 2.\n"
         "• Garments not listed stay as they are in IMAGE 1. Exactly ONE person in the output.\n\n"
-        f"{HANDS_RULE}{head_lock.HEAD_LOCK_RULE}{_measurements_desc(m_doc)}{extra}"
+        f"{HANDS_RULE}{_tuck_rule(items)}{head_lock.HEAD_LOCK_RULE}{_measurements_desc(m_doc)}{extra}"
     )
     canvas_bytes, lock = await run_in_threadpool(head_lock.prepare, person_bytes, any(head_lock.is_long(i["category"], i["name"]) for i in items), await _hand_boxes(person_path, person_bytes))
     contents = [ImageContent(base64.b64encode(canvas_bytes).decode()), ImageContent(base64.b64encode(model_bytes).decode())]
@@ -2533,7 +2550,7 @@ async def _compose_outfit(user: User, person_path: Optional[str], items: list, l
         "• Preserve each garment's exact colour, pattern, cut and material from its product shot.\n"
         "• Natural fabric drape, folds and shadows that match IMAGE 1 lighting.\n\n"
         "FORBIDDEN: altering face/hands, replacing the background with a studio, cropping the head, adding items not provided.\n\n"
-        + HANDS_RULE + head_lock.HEAD_LOCK_RULE + extra
+        + HANDS_RULE + _tuck_rule(items) + head_lock.HEAD_LOCK_RULE + extra
     )
 
     system = (

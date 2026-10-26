@@ -49,6 +49,7 @@ def _fix_prompt(issues: str, garments_txt: str) -> str:
         "skirt, shoes and outerwear: same items, colours, logos, patterns, fit, length and folds. Never remove, add or swap a garment.\n"
         "• Background, lighting, pose, body, framing and image size.\n"
         f"FIX ONLY: {issues or 'face and hands'}.\n"
+        "• If the issues mention a tucked-in shirt/t-shirt, pull it OUT so its hem hangs outside the trousers — the only garment change allowed.\n"
         "• Face: identical to IMAGE 2 (same person, same features, skin tone and hair), a single face, no ghost face, no halo.\n"
         "• Hands: exactly 5 natural, well-formed fingers per hand, no fused or extra fingers. If a hand cannot be made perfect, "
         "hide it naturally (in a pocket, behind the body or the garment).\n"
@@ -167,6 +168,8 @@ def watermark(img_bytes: bytes) -> bytes:
 async def render(system: str, prompt: str, contents: list, lock: dict, garments_txt: str, tag: str) -> bytes:
     """Generate -> head/hand lock -> QC; up to MAX_FIXES face/hands-only fixes that keep all garments. Returns signed JPEG."""
     person_b64 = contents[0].file_content_base64
+    if "UNTUCKED TOP" in prompt:
+        garments_txt += " — the shirt/t-shirt must be worn UNTUCKED, hanging outside the trousers (tucked in = garments_ok false)"
     aspect = _aspect(lock)
     base = _snapshot(lock)
     lock.clear()

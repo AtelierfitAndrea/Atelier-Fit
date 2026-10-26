@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import Avatar3D from "@/components/Avatar3D";
 import WeightTracker from "@/components/WeightTracker";
-import FittingAccuracy from "@/components/FittingAccuracy";
 import MeasureResult from "@/components/AutoMeasure";
 import MeasuresForm from "@/components/MeasuresForm";
 
@@ -26,7 +25,6 @@ export default function Profile() {
         </p>
         <p className="mt-2 text-sm text-neutral-500" data-testid="profile-avatar-note">La foto avatar serve solo per la prova vestiti</p>
 
-        <div className="mt-8"><FittingAccuracy nonce={nonce} /></div>
         <div className="mt-10 space-y-10">
           <MeasuresForm onSaved={() => { load(); setNonce((n) => n + 1); }} />
           {m.complete && m.brand_sizes ? (

@@ -8,6 +8,7 @@ import FamilySwitcher from "@/components/FamilySwitcher";
 import TermsGate from "@/components/TermsGate";
 import OnboardingGate from "@/components/OnboardingGate";
 import ReminderPopup from "@/components/ReminderPopup";
+import AvatarBubble from "@/components/AvatarBubble";
 import { SignOut, House, User as UserIcon, TShirt, Sparkle, GearSix, MagnifyingGlass, Crown, Question } from "@phosphor-icons/react";
 
 function useSupportPending() {
@@ -83,6 +84,7 @@ export default function AppShell({ children }) {
             )}
             <Link to="/assistenza" className="md:hidden" title="Assistenza" data-testid="nav-support-mobile"><Question size={22} weight="duotone" /></Link>
             <FamilySwitcher />
+            <AvatarBubble />
             {user?.picture && (
               <img src={user.picture} alt="" className="hidden sm:block w-8 h-8 object-cover" style={{ borderRadius: 2 }} />
             )}
@@ -106,7 +108,7 @@ export default function AppShell({ children }) {
           style={{ fontSize: "10px", color: "#9CA3AF", letterSpacing: "0.05em" }}
           translate="no"
         >
-          Metodo Fitting Accuracy® — Sistema brevettato per la verifica dell&apos;affidabilità dell&apos;utente — Atelier Fit Proprietary Technology
+          Atelier Fit Proprietary Technology
           <div className="mt-2">
             <Link to="/termini" className="underline hover:text-[#0A0A0A]" data-testid="shell-terms-link">Termini e Condizioni</Link>
             <span className="mx-2">·</span>

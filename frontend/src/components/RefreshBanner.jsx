@@ -11,7 +11,7 @@ export default function RefreshBanner({ onWeight }) {
     try { await api.post("/profile/refresh/snooze"); setRefreshDue(false); toast("Te lo ricordiamo tra 7 giorni"); }
     catch { toast.error("Riprova"); }
   };
-  const photo = () => document.getElementById("il-mio-avatar")?.scrollIntoView({ behavior: "smooth", block: "center" });
+  const photo = () => window.dispatchEvent(new Event("atelier-open-avatar"));
 
   return (
     <div className="flex items-center gap-4 flex-wrap border border-[#8B7355]/40 bg-[#FAF8F5] px-5 py-4" data-testid="refresh-banner">
