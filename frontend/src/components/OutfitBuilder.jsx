@@ -10,6 +10,7 @@ import TryOnProgress from "@/components/TryOnProgress";
 import { notifyTabReady } from "@/lib/tabNotify";
 import { postRender } from "@/lib/renderJob";
 import SaveToGallery from "@/components/SaveToGallery";
+import ShareLook from "@/components/ShareLook";
 
 
 function priceFmt(n, cur = "EUR") {
@@ -263,6 +264,7 @@ function OutfitResult({ result, onSave, onShare, onClose, onRetry }) {
         </button>
         <img src={fileUrl(result.result_path)} alt="" className="w-full h-auto block" data-testid="outfit-result-image" />
         <SaveToGallery path={result.result_path} />
+        <ShareLook path={result.result_path} className="bg-white" />
       </div>
       <div className="lg:col-span-12 lg:order-last grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
         <HemCard url={`/outfits/${result.id}/hem`} />

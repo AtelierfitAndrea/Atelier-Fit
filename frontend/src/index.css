@@ -165,3 +165,15 @@ body {
 .theme-dark .btn-ghost:hover { background: #FFFFFF; color: #000000; }
 .theme-dark .text-neutral-500 { color: #A3A3A3; }
 .theme-dark .text-neutral-600, .theme-dark .text-neutral-700 { color: #D4D4D4; }
+
+/* Entry page: slow golden reveal that settles into white */
+@keyframes gold-reveal {
+  0% { opacity: 0; color: #D4AF37; filter: blur(6px); letter-spacing: 0.06em; text-shadow: 0 0 0 rgba(212, 175, 55, 0); }
+  45% { opacity: 1; color: #E8C766; filter: blur(0); text-shadow: 0 0 28px rgba(212, 175, 55, 0.55); }
+  75% { color: #F3E3B0; text-shadow: 0 0 14px rgba(212, 175, 55, 0.25); }
+  100% { opacity: 1; color: #FFFFFF; filter: blur(0); letter-spacing: 0.01em; text-shadow: 0 0 0 rgba(212, 175, 55, 0); }
+}
+@keyframes soft-in { from { opacity: 0; } to { opacity: 1; } }
+.gold-reveal { opacity: 0; animation: gold-reveal 3.2s cubic-bezier(0.22, 0.61, 0.36, 1) forwards; }
+.soft-in { opacity: 0; animation: soft-in 1.4s ease-out forwards; }
+@media (prefers-reduced-motion: reduce) { .gold-reveal, .soft-in { animation: none; opacity: 1; color: #fff; } }

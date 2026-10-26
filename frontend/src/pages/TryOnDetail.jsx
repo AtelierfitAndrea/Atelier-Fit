@@ -6,6 +6,7 @@ import { ArrowLeft, Trash, ArrowsLeftRight } from "@phosphor-icons/react";
 import HemCard from "@/components/HemCard";
 import FreeRetry from "@/components/FreeRetry";
 import SaveToGallery from "@/components/SaveToGallery";
+import ShareLook from "@/components/ShareLook";
 
 const CAT_IT = { top: "Top", bottom: "Pantaloni / Gonna", dress: "Abito", outerwear: "Capospalla", shoes: "Scarpe", look: "Look copiato" };
 
@@ -59,6 +60,7 @@ export default function TryOnDetail() {
         </div>
 
         <SaveToGallery path={t.result_path} className="mt-6" />
+        <ShareLook path={t.result_path} className="mt-3" />
         <div className="mt-6 grid grid-cols-2 gap-3">
           <div className="border hairline p-3">
             <div className="label-caps">Capo</div>

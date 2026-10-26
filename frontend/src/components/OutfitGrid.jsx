@@ -10,6 +10,7 @@ import TryOnProgress from "@/components/TryOnProgress";
 import { notifyTabReady } from "@/lib/tabNotify";
 import { postRender } from "@/lib/renderJob";
 import SaveToGallery from "@/components/SaveToGallery";
+import ShareLook from "@/components/ShareLook";
 
 const SLOTS = [
   { k: "top", n: 1, l: "Maglia / Top" },
@@ -229,6 +230,7 @@ export default function OutfitGrid({ personPath, uploadFile, restoreItems, onIte
           <div className="space-y-4">
             <img src={fileUrl(result.result_path)} alt="Outfit" className="w-full border hairline" data-testid="grid-result-image" />
             <SaveToGallery path={result.result_path} />
+            <ShareLook path={result.result_path} />
             <HemCard url={`/outfits/${result.id}/hem`} />
             <FreeRetry kind="outfits" item={result} onDone={(d) => setResult((r) => ({ ...r, ...d, used: r.used }))} />
           </div>

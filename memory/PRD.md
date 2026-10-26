@@ -362,3 +362,7 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 
 ## 2026-10-26 Pagina d'ingresso minimal luxury
 - Landing.jsx: fondo nero, "MY ATELIER" (Bodoni Moda), "by Andrea M." (Pinyon Script), bottone ovale ENTRA (login Emergent Google invariato), footer 9px #555 "Termini e Condizioni | Privacy" (/termini, /termini#privacy). Bottone WhatsApp nascosto solo su "/".
+
+## 2026-10-26 Entrata animata + Condividi il look
+- index.css .gold-reveal (oro → bianco, 3.2s) / .soft-in su Landing; bottone ENTRA appare dopo ~2.6s.
+- ShareLook.jsx (TryOnDetail, OutfitBuilder, OutfitGrid): Web Share con foto firmata + "Provalo anche tu su https://myatelierapp.it"; fallback pulsanti WhatsApp/Facebook/Telegram (solo testo+link) e Instagram (scarica foto + copia invito).

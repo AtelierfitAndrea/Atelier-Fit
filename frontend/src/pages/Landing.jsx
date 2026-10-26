@@ -15,17 +15,17 @@ export default function Landing() {
   return (
     <div className="min-h-screen w-full bg-black text-white flex flex-col" translate="no" data-testid="landing-root">
       <main className="flex-1 flex flex-col items-center justify-center px-6">
-        <h1 className="fade-up text-center leading-none text-[13vw] sm:text-7xl md:text-8xl tracking-[0.01em]"
+        <h1 className="gold-reveal text-center leading-none text-[13vw] sm:text-7xl md:text-8xl tracking-[0.01em]"
           style={{ fontFamily: '"Bodoni Moda", "Playfair Display", Didot, serif', fontWeight: 400 }} data-testid="hero-logo">
           MY ATELIER
         </h1>
-        <div className="fade-up mt-4 md:mt-6 text-[7vw] sm:text-4xl md:text-5xl text-white/95"
-          style={{ fontFamily: '"Pinyon Script", cursive', animationDelay: "120ms" }} data-testid="hero-slogan-author">
+        <div className="gold-reveal mt-4 md:mt-6 text-[7vw] sm:text-4xl md:text-5xl"
+          style={{ fontFamily: '"Pinyon Script", cursive', animationDelay: "900ms" }} data-testid="hero-slogan-author">
           by Andrea M.
         </div>
         <button onClick={handleEnter} data-testid="landing-login-btn"
-          className="fade-up mt-16 md:mt-20 w-[46vw] max-w-[220px] min-w-[180px] h-14 rounded-full border border-white/85 text-white text-base tracking-[0.18em] hover:bg-white hover:text-black transition-colors duration-500"
-          style={{ fontFamily: '"Manrope", sans-serif', animationDelay: "240ms" }}>
+          className="soft-in mt-16 md:mt-20 w-[46vw] max-w-[220px] min-w-[180px] h-14 rounded-full border border-white/85 text-white text-base tracking-[0.18em] hover:bg-white hover:text-black transition-colors duration-500"
+          style={{ fontFamily: '"Manrope", sans-serif', animationDelay: "2600ms" }}>
           ENTRA
         </button>
       </main>
