@@ -195,6 +195,8 @@ async def get_current_user(
 def recommend_size(measurements: dict, category: str) -> str:
     """Size recommendation from the user's real tape measurements only."""
     cat = (category or "").lower()
+    if cat == "bag":
+        return "Taglia unica"
     if not _measures_complete(measurements):
         return INCOMPLETE_SIZE
     measurements = measurements or {}
@@ -1629,6 +1631,26 @@ def _tuck_rule(items: list) -> str:
             "NEGATIVE: tucked-in shirt, tucked t-shirt, half tuck, French tuck.\n")
 
 
+def _bag_rule(items: list) -> str:
+    """A bag is an accessory: carried naturally by type, real scale, exact look."""
+    if not any((i.get("category") or "").lower() == "bag" for i in items):
+        return ""
+    return ("BAG — MANDATORY (accessory, not clothing):\n"
+            "• Remove the bag from its product shot/screenshot background and place it on the person, carried the way THAT bag is designed "
+            "to be carried: top-handle / tote / bowling bag -> held in the hand or hooked on the forearm; shoulder bag / hobo / baguette -> on the shoulder "
+            "under the arm; crossbody / camera bag / long thin strap -> strap across the torso, bag resting at the hip; clutch / pochette -> held in the hand; "
+            "backpack -> on the back with straps over both shoulders.\n"
+            "• Real-world scale relative to the person's body (a mini bag stays mini, a tote is big). Keep its exact colour, leather/fabric texture, "
+            "logo, monogram, stitching and metal hardware — no redesign, no invented details.\n"
+            "• 100% photorealistic integration: correct perspective and lighting of IMAGE 1, contact shadows where it touches the body or clothes, "
+            "the strap presses slightly into the shoulder/garment, the bag hangs with real weight.\n"
+            "• If held, use the FREE hand (never the hand holding a phone): that arm may relax naturally along the body so the hand grips the handle "
+            "with exactly 5 well-formed fingers wrapped around it — this arm/hand pose change is the ONLY pose change allowed. The bag must be physically "
+            "supported (fingers around the handle, strap resting in the shoulder or elbow crease), beside the body with correct occlusion, never floating "
+            "in front of the torso. The bag never covers the face and does not change, hide the shape of, or replace any garment.\n"
+            "• NEGATIVE: floating bag, pasted sticker look, wrong scale, bag merged into the body, deformed strap, distorted logo, extra hands.\n")
+
+
 HANDS_RULE = (
     "IDENTITY — STRICT:\n"
     "• Use IMAGE 1 as the EXACT source for identity. Exactly ONE person with ONE face: no duplicate, twin or second face, no face blending, no face swap.\n"
@@ -1717,7 +1739,7 @@ async def _render_single(user_id: str, person_path: str, garment_path: str, cate
     # Load both images
     person_bytes, person_ct = get_object(person_path)
     garment_bytes, garment_ct = get_object(garment_path)
-    canvas_bytes, lock = await run_in_threadpool(head_lock.prepare, person_bytes, head_lock.is_long(category_in, name or ""), await _hand_boxes(person_path, person_bytes))
+    canvas_bytes, lock = await run_in_threadpool(head_lock.prepare, person_bytes, head_lock.is_long(category_in, name or ""), ([] if (category_in or "").lower() == "bag" else await _hand_boxes(person_path, person_bytes)))
     garment_bytes = await run_in_threadpool(head_lock.downscale, garment_bytes, head_lock.GARMENT_MAX_SIDE)
     person_b64 = base64.b64encode(canvas_bytes).decode('utf-8')
     garment_b64 = base64.b64encode(garment_bytes).decode('utf-8')
@@ -1748,6 +1770,7 @@ async def _render_single(user_id: str, person_path: str, garment_path: str, cate
         f"• Do NOT invent new tattoos, jewellery or accessories that are not in IMAGE 1.\n\n"
         f"{HANDS_RULE}"
         f"{_tuck_rule([{'category': category, 'name': name or ''}])}"
+        f"{_bag_rule([{'category': category}])}"
         f"{head_lock.HEAD_LOCK_RULE}"
         f"{measurements_desc}"
         f"{extra}"
@@ -1876,7 +1899,7 @@ async def copylook_extract(req: CopyLookExtractRequest, user: User = Depends(get
         "This is a photo of a fashion model. Detect EVERY clothing item and shoes worn by the model "
         "(ignore jewellery, bags and accessories). Return ONLY JSON:\n"
         "{\"items\": [{\"name\": \"short Italian name with colour and material, e.g. Blazer beige in lino\", "
-        "\"category\": \"top|bottom|dress|outerwear|shoes\", \"box_2d\": [ymin, xmin, ymax, xmax]}]}\n"
+        "\"category\": \"top|bottom|dress|outerwear|shoes|bag\", \"box_2d\": [ymin, xmin, ymax, xmax]}]}\n"
         "box_2d is normalised 0-1000 and must tightly contain only that garment. A pair of shoes is ONE item whose box covers both shoes. "
         "No text outside the JSON."
     )
@@ -2190,7 +2213,7 @@ async def _call_llm_for_analysis(page_text: Optional[str], image_b64: Optional[s
         f"MISURE UTENTE (cm/kg): {pyjson.dumps(user_m)}\n"
         f"URL fornito: {hint_url}\n\n"
         "ISTRUZIONI:\n"
-        "1) Identifica brand, nome prodotto, categoria (top/bottom/dress/outerwear/shoes).\n"
+        "1) Identifica brand, nome prodotto, categoria (top/bottom/dress/outerwear/shoes/bag = borsa).\n"
         "2) Estrai la TABELLA TAGLIE con le misure corporee a cui corrisponde ogni taglia (NON le misure del capo).\n"
         "3) Rileva NOTE DI VESTIBILITÀ: 'veste piccolo' / 'veste grande' / 'conforme'.\n"
         "4) Confronta con le misure utente e scegli la taglia perfetta. Se c'è una nota 'veste piccolo' consiglia 1 taglia in più, se 'veste grande' 1 in meno.\n"
@@ -2293,7 +2316,7 @@ class AnalyzeUrlRequest(BaseModel):
 
 
 _MARKETPLACES = {"amazon", "zalando", "asos", "ebay", "aliexpress", "farfetch", "yoox", "shein", "temu", "amzn"}
-_CAT_GROUP = {"top": "sopra", "outerwear": "sopra", "dress": "sopra", "bottom": "sotto", "shoes": "scarpe"}
+_CAT_GROUP = {"top": "sopra", "outerwear": "sopra", "dress": "sopra", "bottom": "sotto", "shoes": "scarpe", "bag": "borsa"}
 
 
 def _brand_key(url: str = "", brand: Optional[str] = None) -> Optional[str]:
@@ -2506,7 +2529,7 @@ def _parse_price(txt: Optional[str]) -> Optional[float]:
 async def _extract_product_meta(page_text: str, url: str) -> dict:
     prompt = (
         "Analizza il testo di una pagina prodotto e restituisci SOLO JSON con questi campi:\n"
-        "{ \"brand\": \"Zara\", \"product_name\": \"Blazer lino\", \"price\": 59.95, \"currency\": \"EUR\", \"category\": \"top|bottom|dress|outerwear|shoes\" }\n"
+        "{ \"brand\": \"Zara\", \"product_name\": \"Blazer lino\", \"price\": 59.95, \"currency\": \"EUR\", \"category\": \"top|bottom|dress|outerwear|shoes|bag\" }\n"
         "Se un campo non è deducibile metti null. Nessun testo attorno.\n\n"
         f"URL: {url}\n\nCONTENUTO:\n{page_text}"
     )
@@ -2664,7 +2687,7 @@ async def wardrobe_delete_garment(garment_id: str, user: User = Depends(get_curr
 
 
 # ----- Outfit generation (single AI call, layered) -----
-_LAYER_ORDER = {"bottom": 1, "dress": 2, "shoes": 2, "top": 3, "outerwear": 4}
+_LAYER_ORDER = {"bottom": 1, "dress": 2, "shoes": 2, "top": 3, "outerwear": 4, "bag": 5}
 
 
 class OutfitGenerateRequest(BaseModel):
@@ -2672,7 +2695,7 @@ class OutfitGenerateRequest(BaseModel):
     person_path: Optional[str] = None
 
 
-_DEFAULT_LAYER_TEXT = "  1) bottoms / dress 2) shoes 3) top / shirt 4) outerwear / jacket on top."
+_DEFAULT_LAYER_TEXT = "  1) bottoms / dress 2) shoes 3) top / shirt 4) outerwear / jacket on top 5) bag (accessory, carried last)."
 
 
 async def _compose_outfit(user: User, person_path: Optional[str], items: list, layer_order_text: str = _DEFAULT_LAYER_TEXT, extra: str = ""):
@@ -2692,7 +2715,7 @@ async def _compose_outfit(user: User, person_path: Optional[str], items: list, l
         raise HTTPException(status_code=400, detail="Crea prima il tuo Avatar nella Home")
     # Build the multi-image prompt
     person_bytes, _ = get_object(person_path)
-    canvas_bytes, lock = await run_in_threadpool(head_lock.prepare, person_bytes, any(head_lock.is_long(g.get("category"), g.get("name") or "") for g in items), await _hand_boxes(person_path, person_bytes))
+    canvas_bytes, lock = await run_in_threadpool(head_lock.prepare, person_bytes, any(head_lock.is_long(g.get("category"), g.get("name") or "") for g in items), ([] if any((g.get("category") or "").lower() == "bag" for g in items) else await _hand_boxes(person_path, person_bytes)))
     file_contents = [ImageContent(base64.b64encode(canvas_bytes).decode("utf-8"))]
     del person_bytes, canvas_bytes
     layer_lines = []
@@ -2723,7 +2746,7 @@ async def _compose_outfit(user: User, person_path: Optional[str], items: list, l
         "• Preserve each garment's exact colour, pattern, cut and material from its product shot.\n"
         "• Natural fabric drape, folds and shadows that match IMAGE 1 lighting.\n\n"
         "FORBIDDEN: altering face/hands, replacing the background with a studio, cropping the head, adding items not provided.\n\n"
-        + HANDS_RULE + _tuck_rule(items) + head_lock.HEAD_LOCK_RULE + extra
+        + HANDS_RULE + _tuck_rule(items) + _bag_rule(items) + head_lock.HEAD_LOCK_RULE + extra
     )
 
     system = (
@@ -2751,8 +2774,8 @@ async def outfit_generate(req: OutfitGenerateRequest, user: User = Depends(get_c
 
 async def _outfit_generate(req: OutfitGenerateRequest, user: User):
     await _require_account_paths(user, req.person_path)
-    if not (2 <= len(req.garment_ids) <= 4):
-        raise HTTPException(status_code=400, detail="Seleziona da 2 a 4 capi")
+    if not (2 <= len(req.garment_ids) <= 5):
+        raise HTTPException(status_code=400, detail="Seleziona da 2 a 5 capi")
     # Subscription quota — 1 outfit = 1 credit, enforced like a normal try-on
     status = await get_subscription_status(user.account_id)
     if status["is_blocked"]:
@@ -2799,9 +2822,10 @@ _GRID_SLOTS = {
     "bottom": ("bottom", "Pantaloni / Bottom"),
     "top": ("top", "Maglia / Top"),
     "jacket": ("outerwear", "Giacca"),
+    "bag": ("bag", "Borsa"),
 }
-_GRID_ORDER = ["shoes", "bottom", "top", "jacket"]
-_GRID_LAYER_TEXT = "  1) shoes 2) trousers / bottoms 3) top / shirt 4) jacket / outerwear on top."
+_GRID_ORDER = ["shoes", "bottom", "top", "jacket", "bag"]
+_GRID_LAYER_TEXT = "  1) shoes 2) trousers / bottoms 3) top / shirt 4) jacket / outerwear on top 5) bag (accessory, carried last)."
 
 
 class GridItem(BaseModel):
@@ -2821,8 +2845,8 @@ async def outfit_generate_from_uploads(req: GridOutfitRequest, user: User = Depe
 
 async def _outfit_generate_from_uploads(req: GridOutfitRequest, user: User):
     slots = {i.slot: i.image_path for i in req.items}
-    if not (1 <= len(slots) <= 4) or any(k not in _GRID_SLOTS for k in slots):
-        raise HTTPException(status_code=400, detail="Carica da 1 a 4 capi")
+    if not (1 <= len(slots) <= 5) or any(k not in _GRID_SLOTS for k in slots):
+        raise HTTPException(status_code=400, detail="Carica da 1 a 5 capi")
     for path in [*slots.values(), req.person_path]:
         if path and _path_owner(path) != user.user_id:
             raise HTTPException(status_code=403, detail="Accesso negato")
@@ -2885,7 +2909,7 @@ class LookFromLinkRequest(BaseModel):
     items: List[LookFromLinkItem]
 
 
-_LOOK_CAT = {"top": "top", "bottom": "bottom", "dress": "dress", "outerwear": "outerwear", "shoes": "shoes"}
+_LOOK_CAT = {"top": "top", "bottom": "bottom", "dress": "dress", "outerwear": "outerwear", "shoes": "shoes", "bag": "bag"}
 
 
 @api_router.post("/wardrobe/looks/from-link")

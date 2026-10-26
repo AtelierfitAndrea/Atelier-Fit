@@ -69,7 +69,7 @@ export default function OutfitBuilder() {
   const toggle = (id) => {
     setSelected((prev) => {
       if (prev.includes(id)) return prev.filter((x) => x !== id);
-      if (prev.length >= 4) { toast.error("Massimo 4 capi"); return prev; }
+      if (prev.length >= 5) { toast.error("Massimo 5 capi"); return prev; }
       return [...prev, id];
     });
   };
@@ -80,7 +80,7 @@ export default function OutfitBuilder() {
       .reduce((s, g) => s + (Number(g.price) || 0), 0);
   }, [garments, selected]);
 
-  const canGenerate = selected.length >= 2 && selected.length <= 4;
+  const canGenerate = selected.length >= 2 && selected.length <= 5;
 
   const removeGarment = async (id) => {
     try { await api.delete(`/wardrobe/garments/${id}`); setSelected((s) => s.filter((x) => x !== id)); await load(); }

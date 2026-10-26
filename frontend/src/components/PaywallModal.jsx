@@ -7,7 +7,7 @@ import { useSubscription } from "@/lib/subscription";
 
 export default function PaywallModal() {
   const { t } = useI18n();
-  const { paywallOpen, closePaywall } = useSubscription();
+  const { paywallOpen, closePaywall, status } = useSubscription();
   const [processing, setProcessing] = useState(null); // "extra" | "single" | "family"
 
   useEffect(() => { if (!paywallOpen) setProcessing(null); }, [paywallOpen]);
@@ -45,9 +45,9 @@ export default function PaywallModal() {
           <X size={20} weight="bold" />
         </button>
         <div className="px-8 md:px-12 pt-12 pb-6">
-          <div className="label-caps !text-white/60">Atelier Fit</div>
-          <h2 className="font-serif text-3xl md:text-5xl tracking-tight mt-2" translate="no">{t("sub.paywall.title")}</h2>
-          <p className="mt-3 text-white/70 max-w-2xl">{t("sub.paywall.subtitle")}</p>
+          <div className="label-caps !text-white/60">My Atelier</div>
+          <h2 className="font-serif text-3xl md:text-5xl tracking-tight mt-2" translate="no">{status?.is_blocked ? t("sub.paywall.title") : "Scegli il tuo piano"}</h2>
+          <p className="mt-3 text-white/70 max-w-2xl">{status?.is_blocked ? t("sub.paywall.subtitle") : "FREE 3 prove al giorno, BOOST per oggi o PRO illimitato."}</p>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-px bg-[#1f1f1f] border-t border-b border-[#1f1f1f]">
           {/* Extra */}

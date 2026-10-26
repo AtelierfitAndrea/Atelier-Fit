@@ -5,7 +5,7 @@ import { TShirt } from "@phosphor-icons/react";
 import OutfitBuilder from "@/components/OutfitBuilder";
 import ModelLooks from "@/components/ModelLooks";
 
-const FILTERS = ["all", "top", "bottom", "dress", "outerwear", "shoes"];
+const FILTERS = ["all", "top", "bottom", "dress", "outerwear", "shoes", "bag"];
 
 export default function Wardrobe() {
   const [items, setItems] = useState([]);
@@ -43,7 +43,7 @@ export default function Wardrobe() {
               }`}
               data-testid={`filter-${f}`}
             >
-              {f}
+              {f === "bag" ? "borsa" : f}
             </button>
           ))}
         </div>

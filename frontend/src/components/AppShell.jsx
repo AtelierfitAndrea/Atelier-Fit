@@ -39,9 +39,9 @@ export default function AppShell({ children }) {
   return (
     <div className="min-h-screen bg-[#FDFDFD]">
       <header className="theme-dark sticky top-0 z-30 border-b hairline">
-        <div className="max-w-[1400px] mx-auto px-6 md:px-10 flex items-center justify-between py-4">
+        <div className="max-w-[1400px] mx-auto px-3 sm:px-6 md:px-10 flex items-center justify-between gap-2 py-4">
           <div
-            className="flex items-center gap-2 cursor-pointer shrink-0 mr-6"
+            className="flex items-center gap-2 cursor-pointer shrink-0 mr-2 sm:mr-6"
             onClick={() => navigate("/dashboard")}
             data-testid="shell-brand"
           >
@@ -52,25 +52,25 @@ export default function AppShell({ children }) {
           </div>
           <nav className="hidden md:flex items-center gap-3 xl:gap-5" translate="no">
             <NavLink to="/dashboard" className={navItem} data-testid="nav-dashboard">
-              <House size={14} weight="duotone" /> {t("nav.home")}
+              <House size={14} weight="duotone" /> <span className="hidden xl:inline">{t("nav.home")}</span>
             </NavLink>
             <NavLink to="/studio" className={navItem} data-testid="nav-studio">
-              <Sparkle size={14} weight="duotone" /> {t("nav.studio")}
+              <Sparkle size={14} weight="duotone" /> <span className="hidden xl:inline">{t("nav.studio")}</span>
             </NavLink>
             <NavLink to="/analyze" className={navItem} data-testid="nav-analyze">
-              <MagnifyingGlass size={14} weight="duotone" /> {t("nav.analyze")}
+              <MagnifyingGlass size={14} weight="duotone" /> <span className="hidden xl:inline">{t("nav.analyze")}</span>
             </NavLink>
             <NavLink to="/wardrobe" className={navItem} data-testid="nav-wardrobe">
-              <TShirt size={14} weight="duotone" /> {t("nav.wardrobe")}
+              <TShirt size={14} weight="duotone" /> <span className="hidden xl:inline">{t("nav.wardrobe")}</span>
             </NavLink>
             <NavLink to="/profile" className={navItem} data-testid="nav-profile">
-              <UserIcon size={14} weight="duotone" /> {t("nav.profile")}
+              <UserIcon size={14} weight="duotone" /> <span className="hidden xl:inline">{t("nav.profile")}</span>
             </NavLink>
             <NavLink to="/settings" className={navItem} data-testid="nav-settings">
-              <GearSix size={14} weight="duotone" /> {t("nav.settings")}
+              <GearSix size={14} weight="duotone" /> <span className="hidden xl:inline">{t("nav.settings")}</span>
             </NavLink>
             <NavLink to="/assistenza" className={navItem} data-testid="nav-support">
-              <Question size={14} weight="duotone" /> {t("nav.support")}
+              <Question size={14} weight="duotone" /> <span className="hidden xl:inline">{t("nav.support")}</span>
             </NavLink>
           </nav>
           <div className="flex items-center gap-2 sm:gap-4 min-w-0">
@@ -86,9 +86,9 @@ export default function AppShell({ children }) {
             <FamilySwitcher />
             <AvatarBubble />
             {user?.picture && (
-              <img src={user.picture} alt="" className="hidden sm:block w-8 h-8 object-cover" style={{ borderRadius: 2 }} />
+              <img src={user.picture} alt="" className="hidden 2xl:block w-8 h-8 object-cover" style={{ borderRadius: 2 }} />
             )}
-            <div className="hidden sm:block text-right">
+            <div className="hidden 2xl:block text-right">
               <div className="text-sm font-medium" data-testid="shell-user-name">{user?.name}</div>
               <div className="text-xs text-neutral-500">{user?.email}</div>
             </div>

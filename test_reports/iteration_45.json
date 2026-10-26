@@ -1,0 +1,39 @@
+{
+  "summary": "Tested the new freemium model. Backend: 18/18 pytest pass (tests/test_freemium_daily.py), using HTTP calls with the owner session plus direct imports of server.py and tryon_quality.py. No AI generations and no real Stripe sessions. Status: a FREE user past the honeymoon gets limit 3, remaining 3, boost 0, extra 0, watermark 'free', and resets_at equals the next Rome midnight in UTC (23:00 UTC after the DST change, checked live). With 3 used she is is_blocked=true and POST /api/upload returns 402. A BOOST for today unblocks her. A daily count or boost from yesterday is ignored. Honeymoon users are unlimited with watermark 'free'. SINGLE and FAMILY are unlimited with 'pro'. An expired SINGLE goes back to FREE. Consume order was checked step by step: daily 3, then today's BOOST, then permanent extra credits, then blocked. Consume does nothing for PRO or honeymoon users. _apply_paid_session('extra') sets boost {today, +3}: it adds to today's credits (1 -> 4), replaces a stale boost (-> 3) and applies only once. Checkout with option 'family' returns 400 'Invalid option'. _mark_for returns free/pro by plan, and a family child profile gets 'pro' from its owner. watermark() draws in the bottom-right corner; the 'pro' mark is narrower (under 70% of the free width) and more transparent. _trim_pad_bands trims only bands matching the pad grey (pads None, a different grey or no flat band means no trim). _top_referrers sorts by qualified then invited, ignores past months, and /api/admin/stats returns top_referrers. Frontend (Playwright, owner session, 1920px): FREE past honeymoon shows 'Ti restano 3/3 prove oggi. Tornano domani a mezzanotte'. With 0 left it shows tryon-counter-finished with the exact CTA. counter-invite-btn scrolls to #invite-friend; counter-unlock and dashboard-locked-tryon open the paywall. The paywall has plan-extra (BOOST · +3 prove oggi 0,99 €), plan-single (PRO · Illimitato 2,99 € / 30 giorni, 5 perks) and plan-free with an invite CTA that closes the modal and scrolls; there is no plan-family. Honeymoon shows free-month-line ('7 giorni rimasti') and free-month-after. PRO shows the Home pro-badge and the small gold badge in the header, with a gold ring on the avatar. /stanza CLASSIFICA ATELIERISTE lists exactly 10 rows (12 seeded) in the right order with TOP badges. Terms section 5 has all the required phrases. The owner's DB state was restored and all test data deleted.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "consume_tryon_quota / is_blocked gate", "issue": "Not atomic: the quota is checked before a 20-40 s generation and decremented afterwards with a read-then-$set. A FREE user with 1 try-on left can start several generations in parallel and get them all, beating the 3/day limit. Suggested fix: reserve the quota atomically before generating (conditional $inc with a filter on used<3 / credits>0)."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "AppShell header", "issue": "The header overflows horizontally and the page scrolls sideways. With the PRO badge, logout-btn is pushed off-screen: 1920px -> scrollWidth 1980, 1440px -> 1740, 390px -> 451 (logout off-screen and the avatar cut). It already overflows on FREE at 1440px (1663). The new PRO badge makes it worse and breaks 1920 and mobile.", "selector": "header [data-testid=pro-badge], [data-testid=logout-btn]", "priority": "HIGH"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "PaywallModal", "issues": ["The title is always 'Hai finito le 3 prove di oggi / Tornano domani a mezzanotte', even when it is opened by a honeymoon user or from Settings 'Scegli un piano' while try-ons are left", "The kicker still says 'Atelier Fit' (old brand?)", "The 'PIÙ SCELTO' tag on plan-single has low contrast"]},
+      {"screen": "Settings", "issues": ["'Membro dal' shows 10/3/2026 for 3 October (US M/D/Y format in the Italian UI)", "Today's BOOST credits are not shown (only permanent extras)"]},
+      {"screen": "TryonCounter copy", "issue_note": "", "issues": ["The CTA says 'Invita un'amica per +5 extra oggi', but referral bonuses are permanent and only arrive after the friend's first try-on. 'oggi' is misleading."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_freemium_daily.py", "/app/test_reports/pytest/freemium_daily.xml"],
+  "action_items": [
+    "Fix the header overflow: logout-btn is off-screen when the PRO badge shows (1920/1440/390). Hide the name/email on smaller widths or let the nav wrap or collapse.",
+    "Make the try-on quota reservation atomic to stop parallel requests from beating the 3/day limit",
+    "Use a context-aware paywall title (only 'Hai finito le 3...' when tryons_remaining==0 for a FREE user)",
+    "Optional: remove the dead PricingCards.jsx and the stale i18n sub.pricing strings ('5 prove al mese', '1 prova', Family 4,99); format 'Membro dal' with it-IT; show boost_credits in Settings; give the two pro-badge testids distinct names (header vs home)"
+  ],
+  "critical_code_review_comments": [
+    "get_subscription_status: free_month_end overrides created_at. To test past-honeymoon you must change free_month_end too, not only created_at.",
+    "PricingCards.jsx is not imported anywhere and still has the old Family/5-per-month texts",
+    "data-testid 'pro-badge' is used twice (header and Home); suggest pro-badge-header",
+    "server.py is 3226 lines; it should be split into modules (subscription, referral, admin)"
+  ],
+  "updated_files": ["/app/backend/tests/test_freemium_daily.py"],
+  "success_rate": {"backend": "100% (18/18)", "frontend": "95% (all requested flows pass; header overflow issue)"},
+  "seed_data_creation": "Temporary test_frm_* and test_frmui_* users, referrals and cs_test_frm_* payment_transactions, all deleted. The owner's created_at, free_month_end, plan and daily_tryon_count were changed temporarily and restored to the originals.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Owner session token: pending_test_tok (cookie session_token or Bearer). The prelaunch gate means only the owner can call the API; test other users by importing server.py with server.db = AsyncIOMotorClient (see test_freemium_daily.py run()). The Rome day differs from the UTC day between 23:00 and 24:00 UTC (winter); always use server._rome_day for the day key."
+}

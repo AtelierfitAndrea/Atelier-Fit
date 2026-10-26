@@ -28,7 +28,7 @@ export default function AvatarBubble() {
 
   return (
     <>
-      {pro && <ProBadge plan={status.plan} small />}
+      {pro && <span className="hidden sm:inline-flex"><ProBadge plan={status.plan} small /></span>}
       {avatar?.path && (
         <button onClick={() => setOpen(true)} title="La tua foto" data-testid="avatar-bubble"
           className={`w-9 h-9 rounded-full overflow-hidden ring-2 ${pro ? "ring-[#D4AF37]" : "ring-white/70"} hover:ring-[#D4AF37] transition-shadow duration-200 shrink-0`}>

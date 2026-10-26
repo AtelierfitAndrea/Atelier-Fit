@@ -17,6 +17,7 @@ const SLOTS = [
   { k: "bottom", n: 2, l: "Pantaloni / Bottom" },
   { k: "jacket", n: 3, l: "Giacca" },
   { k: "shoes", n: 4, l: "Scarpe" },
+  { k: "bag", n: 5, l: "Borsa" },
 ];
 const ACCEPT = ["image/jpeg", "image/png", "image/webp"];
 
@@ -202,8 +203,8 @@ export default function OutfitGrid({ personPath, uploadFile, restoreItems, onIte
 
   return (
     <section className="border hairline p-6 md:p-8 bg-white" translate="no" data-testid="outfit-grid-section">
-      <h2 className="label-caps text-sm">COMPONI IL TUO OUTFIT MULTI-BRAND - FINO A 4 CAPI</h2>
-      <p className="mt-2 text-sm text-neutral-600">Carica da 1 a 4 screenshot dei capi, anche di brand diversi. Usiamo la tua foto base.</p>
+      <h2 className="label-caps text-sm">COMPONI IL TUO OUTFIT MULTI-BRAND - FINO A 4 CAPI + BORSA</h2>
+      <p className="mt-2 text-sm text-neutral-600">Carica da 1 a 4 screenshot dei capi, anche di brand diversi, e se vuoi la tua borsa da qualsiasi sito. Usiamo la tua foto base.</p>
       <div className="mt-6 grid grid-cols-2 gap-4 max-w-xl">
         {SLOTS.map((s) => (
           <SlotBox key={s.k} slot={s} item={items[s.k]} onFile={(f) => setSlot(s.k, f)} onClear={() => clearSlot(s.k)} />

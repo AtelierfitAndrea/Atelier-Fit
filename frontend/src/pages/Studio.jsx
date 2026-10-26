@@ -24,6 +24,7 @@ const CATEGORIES = [
   { k: "dress", l: "Dress" },
   { k: "outerwear", l: "Outerwear" },
   { k: "shoes", l: "Shoes" },
+  { k: "bag", l: "Borsa" },
 ];
 
 export default function Studio() {
