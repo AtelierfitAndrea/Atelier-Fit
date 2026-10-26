@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 MODELS = ("gemini-3-pro-image-preview", "gemini-3.1-flash-image-preview")
 QC_MODEL = "gemini-3.8-flash"
 MAX_FIXES = 2
-SIGNATURE = "myatelierapp.it"
+MARKS = {"free": ("Creato con My Atelier", 0.034, 215), "pro": ("myatelierapp.it", 0.024, 140)}
 FONT_PATH = os.path.join(os.path.dirname(__file__), "fonts", "PlayfairDisplay.ttf")
 _RATIOS = {"1:1": 1, "2:3": 2 / 3, "3:2": 1.5, "3:4": 0.75, "4:3": 4 / 3, "4:5": 0.8, "5:4": 1.25, "9:16": 9 / 16, "16:9": 16 / 9}
 
@@ -113,7 +113,7 @@ async def _qc(person_b64: str, result: bytes, garments_txt: str) -> dict:
     return {"ok": face and hands and garments, "score": 3 * garments + 3 * face + 2 * hands, "issues": str(d.get("issues") or "")[:400]}
 
 
-def _trim_pad_bands(im: Image.Image) -> Image.Image:
+def _trim_pad_bands(im: Image.Image, pads=None) -> Image.Image:
     # Remove leftover flat head_lock padding the model did not fill (letterbox look), so the photo ends where the scene ends.
     W, H = im.size
     small = np.asarray(im.convert("L").resize((256, max(1, int(256 * H / W)))), dtype=np.float32)
@@ -121,30 +121,31 @@ def _trim_pad_bands(im: Image.Image) -> Image.Image:
     flat = small.std(axis=1) < 3.5
     means = small.mean(axis=1)
 
-    def run(rows):
+    def run(rows, ref):
         n = 0
         for r in rows:
-            if not flat[r] or abs(means[r] - means[rows[0]]) > 4:
+            if ref is None or not flat[r] or abs(means[r] - ref) > 4:
                 break
             n += 1
         return n
-    top = run(list(range(int(sh * 0.08))))
-    bot = run(list(range(sh - 1, sh - 1 - int(sh * 0.18), -1)))
+    top = run(list(range(int(sh * 0.08))), pads[0] if pads else None)
+    bot = run(list(range(sh - 1, sh - 1 - int(sh * 0.18), -1)), pads[1] if pads else None)
     if top < 3 and bot < 3:
         return im
     k = H / sh
     return im.crop((0, int(top * k) if top >= 3 else 0, W, H - int(bot * k) if bot >= 3 else H))
 
 
-def watermark(img_bytes: bytes) -> bytes:
-    im = _trim_pad_bands(Image.open(io.BytesIO(img_bytes)).convert("RGB"))
+def watermark(img_bytes: bytes, mark: str = "free", pads=None) -> bytes:
+    signature, size_k, alpha = MARKS.get(mark, MARKS["free"])
+    im = _trim_pad_bands(Image.open(io.BytesIO(img_bytes)).convert("RGB"), pads)
     W, H = im.size
-    font = ImageFont.truetype(FONT_PATH, max(16, int(min(W, H) * 0.034)))
+    font = ImageFont.truetype(FONT_PATH, max(14, int(min(W, H) * size_k)))
     try:
         font.set_variation_by_name("Medium")
     except Exception:
         pass
-    x0, y0, x1, y1 = ImageDraw.Draw(im).textbbox((0, 0), SIGNATURE, font=font)
+    x0, y0, x1, y1 = ImageDraw.Draw(im).textbbox((0, 0), signature, font=font)
     tw, th = x1 - x0, y1 - y0
     margin, pad = int(min(W, H) * 0.035), max(6, th // 2)
     px, py = W - margin - tw - pad, H - margin - th - pad
@@ -152,26 +153,29 @@ def watermark(img_bytes: bytes) -> bytes:
     patch = im.crop((px - pad, py - pad, px + tw + 2 * pad, py + th + 2 * pad)).convert("RGBA")
     shadow = Image.new("RGBA", patch.size, (0, 0, 0, 0))
     off = max(1, th // 18)
-    ImageDraw.Draw(shadow).text((2 * pad - x0 + off, 2 * pad - y0 + off), SIGNATURE, font=font, fill=(0, 0, 0, 120))
+    ImageDraw.Draw(shadow).text((2 * pad - x0 + off, 2 * pad - y0 + off), signature, font=font, fill=(0, 0, 0, int(alpha * 0.55)))
     shadow = shadow.filter(ImageFilter.GaussianBlur(max(1, th // 10)))
     text = Image.new("RGBA", patch.size, (0, 0, 0, 0))
-    ImageDraw.Draw(text).text((2 * pad - x0, 2 * pad - y0), SIGNATURE, font=font, fill=(255, 255, 255, 215))
+    ImageDraw.Draw(text).text((2 * pad - x0, 2 * pad - y0), signature, font=font, fill=(255, 255, 255, alpha))
     patch = Image.alpha_composite(Image.alpha_composite(patch, shadow), text)
     im.paste(patch.convert("RGB"), (px - pad, py - pad))
     buf = io.BytesIO()
-    im.save(buf, "JPEG", quality=94, subsampling=0, optimize=True)
+    im.save(buf, "JPEG", quality=94, subsampling=0)
     del im, patch
     gc.collect()
     return buf.getvalue()
 
 
-async def render(system: str, prompt: str, contents: list, lock: dict, garments_txt: str, tag: str) -> bytes:
+async def render(system: str, prompt: str, contents: list, lock: dict, garments_txt: str, tag: str, mark: str = "free") -> bytes:
     """Generate -> head/hand lock -> QC; up to MAX_FIXES face/hands-only fixes that keep all garments. Returns signed JPEG."""
     person_b64 = contents[0].file_content_base64
     if "UNTUCKED TOP" in prompt:
         garments_txt += " — the shirt/t-shirt must be worn UNTUCKED, hanging outside the trousers (tucked in = garments_ok false)"
     aspect = _aspect(lock)
     base = _snapshot(lock)
+    # Grey levels of the head_lock padding bands: only rows still showing exactly that pad get trimmed.
+    lum = np.array([0.299, 0.587, 0.114], np.float32)
+    pads = (float((base["canvas"][0] @ lum).mean()), float((base["canvas"][-1] @ lum).mean()))
     lock.clear()
     raw = await _image_call(system, prompt + QUALITY_RULES, contents, tag, aspect)
     out = await run_in_threadpool(head_lock.finalize, raw, _snapshot(base))
@@ -195,4 +199,4 @@ async def render(system: str, prompt: str, contents: list, lock: dict, garments_
         out = await run_in_threadpool(head_lock.finalize, raw, _snapshot(base))
         del raw
     del base
-    return await run_in_threadpool(watermark, best)
+    return await run_in_threadpool(watermark, best, mark, pads)

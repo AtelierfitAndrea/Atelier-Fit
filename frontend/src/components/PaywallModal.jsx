@@ -93,27 +93,26 @@ export default function PaywallModal() {
               {processing === "single" ? t("sub.paywall.processing") : t("sub.paywall.singleCta")}
             </button>
           </div>
-          {/* Family */}
-          <div className="bg-white text-[#0A0A0A] p-8 flex flex-col" data-testid="plan-family">
+          {/* Free */}
+          <div className="bg-white text-[#0A0A0A] p-8 flex flex-col" data-testid="plan-free">
             <div className="flex items-center justify-between">
               <div className="label-caps">3</div>
               <Users size={22} weight="duotone" />
             </div>
-            <h3 className="font-serif text-2xl mt-6">{t("sub.paywall.familyTitle")}</h3>
-            <div className="font-serif text-4xl mt-2">{t("sub.paywall.familyPrice")}</div>
+            <h3 className="font-serif text-2xl mt-6">FREE</h3>
+            <div className="font-serif text-4xl mt-2">0 €</div>
             <ul className="mt-5 space-y-2 text-sm text-neutral-700">
-              {t("sub.paywall.familyPerks").map((p, i) => (
-                <li key={i} className="flex items-start gap-2"><Check size={14} weight="bold" className="mt-1 text-[#8C7355]" /> {p}</li>
+              {["3 prove al giorno, tornano a mezzanotte", "Foto con scritta \"Creato con My Atelier\"", "+5 prove bonus per ogni amica invitata"].map((p) => (
+                <li key={p} className="flex items-start gap-2"><Check size={14} weight="bold" className="mt-1 text-[#8C7355]" /> {p}</li>
               ))}
             </ul>
             <div className="flex-1" />
             <button
-              onClick={() => buy("family")}
-              disabled={!!processing}
-              className="mt-8 w-full border border-[#0A0A0A] bg-white text-[#0A0A0A] px-5 py-3 label-caps hover:bg-[#0A0A0A] hover:text-white transition-colors disabled:opacity-60"
-              data-testid="plan-family-cta"
+              onClick={() => { closePaywall(); setTimeout(() => document.getElementById("invite-friend")?.scrollIntoView({ behavior: "smooth", block: "center" }), 300); }}
+              className="mt-8 w-full border border-[#0A0A0A] bg-white text-[#0A0A0A] px-5 py-3 label-caps hover:bg-[#0A0A0A] hover:text-white transition-colors"
+              data-testid="plan-free-invite-cta"
             >
-              {processing === "family" ? t("sub.paywall.processing") : t("sub.paywall.familyCta")}
+              Invita un&apos;amica
             </button>
           </div>
         </div>

@@ -4,10 +4,14 @@ import { X } from "@phosphor-icons/react";
 import { fileUrl } from "@/lib/api";
 import { useAvatar } from "@/lib/avatar";
 import AvatarBox from "@/components/AvatarBox";
+import { ProBadge } from "@/components/TryonCounter";
+import { useSubscription } from "@/lib/subscription";
 
 // Small round profile photo (WhatsApp style); tap opens the photo full screen to change it.
 export default function AvatarBubble() {
   const { avatar } = useAvatar();
+  const { status } = useSubscription();
+  const pro = ["SINGLE", "FAMILY"].includes(status?.plan);
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
@@ -24,9 +28,10 @@ export default function AvatarBubble() {
 
   return (
     <>
+      {pro && <ProBadge plan={status.plan} small />}
       {avatar?.path && (
         <button onClick={() => setOpen(true)} title="La tua foto" data-testid="avatar-bubble"
-          className="w-9 h-9 rounded-full overflow-hidden ring-2 ring-white/70 hover:ring-[#D4AF37] transition-shadow duration-200 shrink-0">
+          className={`w-9 h-9 rounded-full overflow-hidden ring-2 ${pro ? "ring-[#D4AF37]" : "ring-white/70"} hover:ring-[#D4AF37] transition-shadow duration-200 shrink-0`}>
           <img src={`${fileUrl(avatar.path)}?thumb=128`} alt="La tua foto" className="w-full h-full object-cover object-top" />
         </button>
       )}

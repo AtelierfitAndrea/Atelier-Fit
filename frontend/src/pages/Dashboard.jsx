@@ -40,10 +40,13 @@ function FreeMonthLine({ status }) {
   const free = status.honeymoon_active && !["SINGLE", "FAMILY"].includes(status.plan);
   if (!free) return <div className="flex justify-center"><TryonCounter /></div>;
   return (
-    <p className="text-center text-xs md:text-sm font-semibold uppercase tracking-[0.22em] text-[#8C7355]" translate="no" data-testid="free-month-line">
+    <div className="text-center">
+    <p className="text-xs md:text-sm font-semibold uppercase tracking-[0.22em] text-[#8C7355]" translate="no" data-testid="free-month-line">
       Primo mese gratuito · Illimitato
       {status.days_left_honeymoon ? <span className="block mt-1 text-[11px] font-normal normal-case tracking-normal text-neutral-500">{status.days_left_honeymoon} giorni rimasti</span> : null}
     </p>
+    <p className="mt-1 text-[11px] text-neutral-500" data-testid="free-month-after">Poi 3 prove gratis al giorno, oppure PRO illimitato</p>
+    </div>
   );
 }
 

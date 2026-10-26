@@ -20,9 +20,9 @@ const SECTIONS = [
     "Per proteggere l'accuratezza dei suggerimenti, l'account può essere attivo su un solo dispositivo alla volta (fino a 4 con il piano Family): un nuovo accesso disconnette il dispositivo precedente. Con il piano Family ogni membro deve usare il proprio profilo.",
   ]],
   ["5. Abbonamenti, prova gratuita e pagamenti", [
-    "I primi 30 giorni dalla registrazione sono gratuiti e senza limiti. In seguito il piano gratuito include un numero limitato di prove virtuali al mese; prove aggiuntive o prove illimitate sono disponibili a pagamento.",
-    "Piani attuali: prova extra 0,99 €; Single Illimitato 2,99 €/mese (1 utente); Family Illimitato 4,99 €/mese (fino a 4 utenti, con foto, misure e armadi separati). I prezzi sono comprensivi di IVA, se dovuta, e sono sempre indicati nella pagina abbonamento prima del pagamento.",
-    "Gli abbonamenti si rinnovano automaticamente ogni mese fino a disdetta, che puoi effettuare in qualsiasi momento dalle Impostazioni. La disdetta ha effetto alla fine del periodo già pagato. Annullando il piano Family, i profili aggiuntivi restano salvati ma non sono accessibili fino a una nuova attivazione.",
+    "I primi 30 giorni dalla registrazione sono gratuiti e senza limiti. In seguito il piano FREE include 3 prove virtuali al giorno, che si azzerano ogni giorno a mezzanotte (ora di Roma) e non sono cumulabili; le foto generate con il piano FREE riportano la scritta \"Creato con My Atelier\". I bonus ottenuti invitando amiche non scadono.",
+    "Piani attuali: BOOST 0,99 € (3 prove extra valide solo nel giorno di acquisto); PRO 2,99 € per 30 giorni (prove illimitate, firma discreta myatelierapp.it). I piani Family già attivi restano validi fino alla loro scadenza. I prezzi sono comprensivi di IVA, se dovuta, e sono sempre indicati prima del pagamento.",
+    "Il PRO è un pagamento unico per 30 giorni, senza rinnovo automatico: alla scadenza torni al piano FREE e puoi riattivarlo quando vuoi. Alla scadenza di un piano Family, i profili aggiuntivi restano salvati ma non sono accessibili.",
   ]],
   ["6. Diritto di recesso", [
     "Se sei un consumatore hai diritto di recedere entro 14 giorni dall'acquisto ai sensi degli artt. 52 e ss. del Codice del Consumo (D.Lgs. 206/2005).",

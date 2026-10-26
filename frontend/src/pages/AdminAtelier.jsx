@@ -39,6 +39,31 @@ function HotCategory({ name, items }) {
   );
 }
 
+function TopReferrers({ rows }) {
+  return (
+    <div className="mt-6 border p-6" style={{ borderColor: `${GOLD}40` }} data-testid="admin-top-referrers">
+      {rows.length === 0 ? <p className="text-sm text-white/40" data-testid="admin-top-referrers-empty">Nessuna amica invitata questo mese</p> : (
+        <table className="w-full text-sm">
+          <thead><tr className="text-left text-[10px] tracking-[0.2em] text-white/40">
+            <th className="py-2 font-normal w-10">#</th><th className="font-normal">ATELIERISTA</th>
+            <th className="font-normal text-right">INVITATE</th><th className="font-normal text-right">HANNO PROVATO</th>
+          </tr></thead>
+          <tbody>
+            {rows.map((r, i) => (
+              <tr key={`${r.email}-${i}`} className="border-t border-white/10" data-testid={`admin-top-referrer-${i + 1}`}>
+                <td className="py-2" style={{ color: GOLD }}>{i + 1}</td>
+                <td>{r.name} <span className="text-white/40">{r.email}</span>{r.is_top && <span className="ml-2 text-[10px] tracking-[0.2em]" style={{ color: GOLD }}>TOP</span>}</td>
+                <td className="text-right">{num(r.invited)}</td>
+                <td className="text-right" style={{ color: GOLD }}>{num(r.qualified)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
 function SharesChart({ data, referrals }) {
   const rows = (data || []).map((d) => ({ ...d, label: d.date.slice(8, 10) + "/" + d.date.slice(5, 7) }));
   const total = rows.reduce((a, d) => a + d.count, 0);
@@ -197,6 +222,9 @@ export default function AdminAtelier() {
           <h2 className="mt-14 text-sm tracking-[0.4em]" style={{ color: GOLD }}>LOOK CONDIVISI E INVITI</h2>
           <p className="mt-1 text-xs text-white/40">Foto firmate condivise dagli utenti e amiche portate col link personale</p>
           <SharesChart data={stats.daily_shares} referrals={stats.referrals} />
+          <h2 className="mt-14 text-sm tracking-[0.4em]" style={{ color: GOLD }}>CLASSIFICA ATELIERISTE</h2>
+          <p className="mt-1 text-xs text-white/40">Le 10 persone che hanno portato più amiche questo mese</p>
+          <TopReferrers rows={stats.top_referrers || []} />
           <h2 className="mt-14 text-sm tracking-[0.4em]" style={{ color: GOLD }}>RIPROVE GRATUITE</h2>
           <p className="mt-1 text-xs text-white/40">Prove rigenerate senza credito e motivo indicato dall&apos;utente</p>
           <FreeRetries />

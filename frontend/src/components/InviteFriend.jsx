@@ -26,7 +26,7 @@ export default function InviteFriend() {
   };
 
   return (
-    <section className="border hairline bg-white p-6 md:p-8" data-testid="invite-friend">
+    <section id="invite-friend" className="border hairline bg-white p-6 md:p-8 scroll-mt-24" data-testid="invite-friend">
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div className="flex items-center gap-3">
           <Gift size={26} weight="duotone" className="text-[#8C7355]" />

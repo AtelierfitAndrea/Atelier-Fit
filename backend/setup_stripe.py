@@ -7,9 +7,9 @@ load_dotenv(Path(__file__).parent / ".env")
 stripe.api_key = os.environ["STRIPE_LIVE_SECRET_KEY"]
 
 CATALOG = [
-    {"emergent_product_id": "atelier_extra", "name": "My Atelier · 1 prova extra", "tax_code": "txcd_10103001",
+    {"emergent_product_id": "atelier_extra", "name": "My Atelier · BOOST 3 prove oggi", "tax_code": "txcd_10103001",
      "prices": [{"lookup_key": "atelier_extra_once", "amount": 99, "currency": "eur"}]},
-    {"emergent_product_id": "atelier_single", "name": "My Atelier · Single 30 giorni", "tax_code": "txcd_10103001",
+    {"emergent_product_id": "atelier_single", "name": "My Atelier · PRO 30 giorni", "tax_code": "txcd_10103001",
      "prices": [{"lookup_key": "atelier_single_30d", "amount": 299, "currency": "eur"}]},
     {"emergent_product_id": "atelier_family", "name": "My Atelier · Family 30 giorni", "tax_code": "txcd_10103001",
      "prices": [{"lookup_key": "atelier_family_30d", "amount": 499, "currency": "eur"}]},
@@ -19,6 +19,8 @@ CATALOG = [
 def get_or_create_product(entry):
     for p in stripe.Product.list(active=True).auto_paging_iter():
         if p.to_dict().get("metadata", {}).get("emergent_product_id") == entry["emergent_product_id"]:
+            if p.name != entry["name"]:
+                p = stripe.Product.modify(p.id, name=entry["name"])
             return p
     return stripe.Product.create(name=entry["name"], tax_code=entry["tax_code"],
                                  metadata={"managed_by": "emergent", "emergent_product_id": entry["emergent_product_id"]})

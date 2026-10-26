@@ -14,6 +14,7 @@ from pathlib import Path
 from pydantic import BaseModel, Field, ConfigDict
 from typing import List, Optional
 from datetime import datetime, timezone, timedelta
+from zoneinfo import ZoneInfo
 from emergentintegrations.llm.chat import LlmChat, UserMessage, ImageContent
 import httpx
 from bs4 import BeautifulSoup
@@ -471,7 +472,7 @@ async def require_owner(user: User = Depends(get_account_user)) -> User:
 
 
 _HOT_CATS = {"top": "Maglie", "dress": "Maglie", "bottom": "Pantaloni", "shoes": "Scarpe", "outerwear": "Giacche"}
-_OPTION_LABEL = {"extra": "Una Tantum", "single": "Single", "family": "Family"}
+_OPTION_LABEL = {"extra": "Boost", "single": "PRO", "family": "Family"}
 
 
 async def _owner_user_ids() -> list:
@@ -528,6 +529,7 @@ async def admin_stats(_: User = Depends(require_owner)):
         "hot_products": hot,
         "daily_revenue": await _daily_revenue(now, paid_q),
         "daily_shares": await _daily_shares(now, excl),
+        "top_referrers": await _top_referrers(month, excl),
         "referrals": {"invited": await db.referrals.count_documents({}), "qualified": await db.referrals.count_documents({"status": "qualified"}),
                       "paid": await db.referrals.count_documents({"paid_at": {"$exists": True}})},
     }
@@ -856,7 +858,18 @@ async def delete_weight_entry(entry_id: str, user: User = Depends(get_current_us
 
 # ----- Subscription / Honeymoon logic -----
 HONEYMOON_DAYS = 30
-FREE_MONTHLY_LIMIT = 5
+FREE_DAILY_LIMIT = 3
+BOOST_CREDITS = 3
+ROME = ZoneInfo("Europe/Rome")
+
+
+def _rome_day(now: datetime) -> str:
+    return now.astimezone(ROME).strftime("%Y-%m-%d")
+
+
+def _next_rome_midnight(now: datetime) -> datetime:
+    local = now.astimezone(ROME)
+    return datetime.combine(local.date() + timedelta(days=1), datetime.min.time(), tzinfo=ROME).astimezone(timezone.utc)
 
 def _parse_dt(v) -> Optional[datetime]:
     if not v:
@@ -888,33 +901,35 @@ async def get_subscription_status(user_id: str) -> dict:
         await db.users.update_one({"user_id": user_id}, {"$set": {"plan": "FREE"}})
     extra_credits = int(user_doc.get("extra_tryon_credits", 0) or 0)
 
-    # Monthly reset on the 1st of the month
-    current_month = now.strftime("%Y-%m")
-    monthly = user_doc.get("monthly_tryon_count") or {}
-    if monthly.get("month") != current_month:
-        monthly = {"month": current_month, "used": 0}
-        await db.users.update_one({"user_id": user_id}, {"$set": {"monthly_tryon_count": monthly}})
-
-    used = int(monthly.get("used", 0) or 0)
+    # FREE: 3 try-ons per day, reset at midnight Rome time (unused ones do not accumulate).
+    today = _rome_day(now)
+    daily = user_doc.get("daily_tryon_count") or {}
+    used = int(daily.get("used", 0) or 0) if daily.get("day") == today else 0
+    boost = user_doc.get("boost") or {}
+    boost_credits = int(boost.get("credits", 0) or 0) if boost.get("day") == today else 0
     if plan in ("SINGLE", "FAMILY") or honeymoon_active:
         limit = None
         remaining = None
         is_blocked = False
     else:
-        limit = FREE_MONTHLY_LIMIT
+        limit = FREE_DAILY_LIMIT
         remaining = max(0, limit - used)
-        is_blocked = remaining <= 0 and extra_credits <= 0
+        is_blocked = remaining <= 0 and boost_credits <= 0 and extra_credits <= 0
 
     return {
         "plan": plan,
         "honeymoon_active": honeymoon_active,
         "days_left_honeymoon": days_left_honeymoon,
+        "tryons_used_today": used,
         "tryons_used_this_month": used,
         "tryons_limit": limit,
         "tryons_remaining": remaining,
+        "boost_credits": boost_credits,
         "extra_credits": extra_credits,
         "is_blocked": is_blocked,
-        "current_month": current_month,
+        "resets_at": _next_rome_midnight(now).isoformat(),
+        "watermark": "pro" if plan in ("SINGLE", "FAMILY") else "free",
+        "current_month": now.strftime("%Y-%m"),
         "member_since": created_at.isoformat(),
         "plan_expires_at": user_doc.get("plan_expires_at") if plan in ("SINGLE", "FAMILY") else None,
     }
@@ -1026,6 +1041,20 @@ async def share_event(body: ShareEventIn, user: User = Depends(get_current_user)
     return {"ok": True}
 
 
+async def _top_referrers(month: str, excl: list) -> list:
+    # Classifica Atelieriste: friends who joined this month via the link (and how many already tried).
+    rows = await db.referrals.aggregate([
+        {"$match": {"created_at": {"$gte": month}, "inviter_id": {"$nin": excl}}},
+        {"$group": {"_id": "$inviter_id", "invited": {"$sum": 1}, "qualified": {"$sum": {"$cond": [{"$eq": ["$status", "qualified"]}, 1, 0]}}}},
+        {"$sort": {"qualified": -1, "invited": -1}}, {"$limit": 10},
+    ]).to_list(10)
+    users = {u["user_id"]: u async for u in db.users.find({"user_id": {"$in": [r["_id"] for r in rows]}}, {"_id": 0, "user_id": 1, "email": 1, "display_name": 1, "name": 1})}
+    total_q = {r["_id"]: await db.referrals.count_documents({"inviter_id": r["_id"], "status": "qualified"}) for r in rows}
+    return [{"name": (users.get(r["_id"]) or {}).get("display_name") or (users.get(r["_id"]) or {}).get("name") or "—",
+             "email": (users.get(r["_id"]) or {}).get("email", ""), "invited": r["invited"], "qualified": r["qualified"],
+             "is_top": total_q[r["_id"]] >= REF_TOP_AT} for r in rows]
+
+
 async def _daily_shares(now: datetime, excl: list, days: int = 30) -> list:
     since = (now - timedelta(days=days - 1)).strftime("%Y-%m-%d")
     rows = await db.share_events.aggregate([
@@ -1036,6 +1065,12 @@ async def _daily_shares(now: datetime, excl: list, days: int = 30) -> list:
     return [{"date": d, "count": by_day.get(d, 0)} for d in ((now - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(days - 1, -1, -1))]
 
 
+async def _mark_for(user_id: str) -> str:
+    # FREE photos get "Creato con My Atelier", PRO/Family a discreet myatelierapp.it (plan is per account).
+    doc = await db.users.find_one({"user_id": user_id}, {"_id": 0, "owner_id": 1}) or {}
+    return (await get_subscription_status(doc.get("owner_id") or user_id))["watermark"]
+
+
 async def consume_tryon_quota(user_id: str, status: dict):
     """After a successful try-on. Decrement credits/counter if applicable."""
     try:
@@ -1044,13 +1079,15 @@ async def consume_tryon_quota(user_id: str, status: dict):
         logger.error(f"referral reward failed for {user_id}: {e}")
     if status["plan"] in ("SINGLE", "FAMILY") or status["honeymoon_active"]:
         return
-    # FREE plan after honeymoon
-    user_doc = await db.users.find_one({"user_id": user_id}, {"_id": 0}) or {}
-    extra_credits = int(user_doc.get("extra_tryon_credits", 0) or 0)
-    if extra_credits > 0:
+    # FREE plan after honeymoon: today's 3 first, then today's BOOST, then permanent referral bonuses.
+    st = await get_subscription_status(user_id)
+    today = _rome_day(datetime.now(timezone.utc))
+    if (st["tryons_remaining"] or 0) > 0:
+        await db.users.update_one({"user_id": user_id}, {"$set": {"daily_tryon_count": {"day": today, "used": st["tryons_used_today"] + 1}}})
+    elif st["boost_credits"] > 0:
+        await db.users.update_one({"user_id": user_id}, {"$set": {"boost": {"day": today, "credits": st["boost_credits"] - 1}}})
+    elif st["extra_credits"] > 0:
         await db.users.update_one({"user_id": user_id}, {"$inc": {"extra_tryon_credits": -1}})
-    else:
-        await db.users.update_one({"user_id": user_id}, {"$inc": {"monthly_tryon_count.used": 1}})
 
 
 @api_router.get("/subscription/status")
@@ -1063,7 +1100,7 @@ class CheckoutRequest(BaseModel):
     origin_url: str
 
 
-STRIPE_LOOKUP = {"extra": "atelier_extra_once", "single": "atelier_single_30d", "family": "atelier_family_30d"}
+STRIPE_LOOKUP = {"extra": "atelier_extra_once", "single": "atelier_single_30d"}  # Family no longer sold; existing Family plans run until expiry
 PLAN_DAYS = 30
 
 
@@ -1137,7 +1174,9 @@ async def _apply_paid_session(session_id: str) -> None:
     uid, option = tx["user_id"], tx["option"]
     now = datetime.now(timezone.utc)
     if option == "extra":
-        await db.users.update_one({"user_id": uid}, {"$inc": {"extra_tryon_credits": 1}})
+        # BOOST: 3 extra try-ons valid only today (Rome day of purchase).
+        st = await get_subscription_status(uid)
+        await db.users.update_one({"user_id": uid}, {"$set": {"boost": {"day": _rome_day(now), "credits": st["boost_credits"] + BOOST_CREDITS}}})
         asyncio.create_task(_send_receipt(session_id))
         return
     doc = await db.users.find_one({"user_id": uid}, {"_id": 0, "plan": 1, "plan_expires_at": 1}) or {}
@@ -1724,7 +1763,7 @@ async def _render_single(user_id: str, person_path: str, garment_path: str, cate
     )
     try:
         out_bytes = await tryon_quality.render(system, prompt, [ImageContent(person_b64), ImageContent(garment_b64)], lock,
-                                               f"{category}: {name or category}", f"tryon-{user_id}")
+                                               f"{category}: {name or category}", f"tryon-{user_id}", await _mark_for(user_id))
     except Exception as e:
         logger.error(f"Try-on generation error: {e}")
         raise HTTPException(status_code=500, detail=f"Image generation failed: {str(e)}")
@@ -1898,7 +1937,7 @@ async def _render_copylook(user_id: str, person_path: str, model_path: str, item
     try:
         out_bytes = await tryon_quality.render(
             "You are a professional fashion virtual try-on generator. Re-dress the SAME person of IMAGE 1, never the model.",
-            prompt, contents, lock, "; ".join(f"{i['category']}: {i['name']}" for i in items), f"copylook-{user_id}")
+            prompt, contents, lock, "; ".join(f"{i['category']}: {i['name']}" for i in items), f"copylook-{user_id}", await _mark_for(user_id))
     except Exception as e:
         logger.error(f"copylook apply error: {e}")
         raise HTTPException(status_code=500, detail=f"Image generation failed: {str(e)}")
@@ -2694,7 +2733,7 @@ async def _compose_outfit(user: User, person_path: Optional[str], items: list, l
     try:
         out_bytes = await tryon_quality.render(system, prompt, file_contents, lock,
                                                "; ".join(f"{g.get('category','top')}: {(g.get('brand') or '')} {g.get('name') or ''}".strip() for g in items),
-                                               f"outfit-{user.user_id}")
+                                               f"outfit-{user.user_id}", await _mark_for(user.user_id))
     except Exception as e:
         logger.error(f"Outfit generation error: {e}")
         raise HTTPException(status_code=500, detail=f"Generazione outfit non riuscita: {e}")
