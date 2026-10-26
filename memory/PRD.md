@@ -359,3 +359,6 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 - Avatar: primo accesso riquadro grande con Conferma foto / Rifai foto; poi AvatarBubble rotondo nell'header (thumb ?thumb=128 su /api/files) → fullscreen "Vuoi cambiare foto?" con note privacy sempre visibili.
 - Prompt: _tuck_rule (top senza giacca = sempre fuori dai pantaloni) in tutte e 3 le modalità + controllo QC/fix.
 - Tested: iteration_43.
+
+## 2026-10-26 Pagina d'ingresso minimal luxury
+- Landing.jsx: fondo nero, "MY ATELIER" (Bodoni Moda), "by Andrea M." (Pinyon Script), bottone ovale ENTRA (login Emergent Google invariato), footer 9px #555 "Termini e Condizioni | Privacy" (/termini, /termini#privacy). Bottone WhatsApp nascosto solo su "/".

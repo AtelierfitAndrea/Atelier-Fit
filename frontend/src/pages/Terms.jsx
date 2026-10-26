@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { Link } from "react-router-dom";
 import { LockKey } from "@phosphor-icons/react";
 
@@ -58,6 +59,9 @@ const SECTIONS = [
 ];
 
 export default function Terms() {
+  useEffect(() => {
+    if (window.location.hash === "#privacy") setTimeout(() => document.getElementById("privacy")?.scrollIntoView(), 50);
+  }, []);
   return (
     <div className="min-h-screen bg-[#FDFDFD] flex flex-col" translate="no" data-testid="terms-page">
       <header className="px-6 md:px-12 py-5 border-b hairline">
@@ -74,7 +78,7 @@ export default function Terms() {
         <div className="mt-3 label-caps text-neutral-500" data-testid="terms-version">Versione 1.0 — giugno 2026</div>
 
         {SECTIONS.map(([title, paragraphs], i) => (
-          <section key={title} className="mt-10" data-testid={i === 3 ? "terms-personal-account" : `terms-section-${i + 1}`}>
+          <section key={title} id={title.startsWith("12.") ? "privacy" : undefined} className="mt-10 scroll-mt-6" data-testid={i === 3 ? "terms-personal-account" : `terms-section-${i + 1}`}>
             <h2 className="font-bold text-lg">{title}</h2>
             {paragraphs.map((p) => (
               <p key={p.slice(0, 24)} className="mt-2 text-sm md:text-base leading-relaxed text-neutral-700">{p}</p>

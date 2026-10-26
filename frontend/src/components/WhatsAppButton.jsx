@@ -1,9 +1,12 @@
+import { useLocation } from "react-router-dom";
+
 const NUMBER = process.env.REACT_APP_WHATSAPP_NUMBER;
 const HREF = `https://wa.me/${NUMBER}?text=${encodeURIComponent("Ciao My Atelier")}`;
 
-// Official WhatsApp floating button, fixed bottom-right on every page.
+// Official WhatsApp floating button, fixed bottom-right on every page except the minimal entry page.
 export default function WhatsAppButton() {
-  if (!NUMBER) return null;
+  const { pathname } = useLocation();
+  if (!NUMBER || pathname === "/") return null;
   return (
     <a href={HREF} target="_blank" rel="noopener noreferrer" aria-label="Scrivici su WhatsApp" title="Scrivici su WhatsApp"
       className="fixed bottom-5 right-5 md:bottom-6 md:right-6 z-[60] h-14 w-14 rounded-full bg-[#25D366] shadow-lg shadow-black/20 flex items-center justify-center transition-transform duration-200 hover:scale-110 active:scale-95"
