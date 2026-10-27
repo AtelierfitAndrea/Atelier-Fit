@@ -376,3 +376,9 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 ## 2026-06 — Borsa (bag) accessory
 - Added bag slot (5th) to OutfitGrid, AI auto-placement (hand/shoulder/crossbody) via _bag_rule; E2E tested (iteration_46) 100%. Bag slot centred in grid. Redeployed to myatelierapp.it.
 - Backlog: lock non-carrying hand when bag present; Security Audit; Claude AI features; refactor server.py.
+
+## 2026-06 — Tuck rule v2 + Studio semplificato
+- Suit (auto-detected) -> shirt tucked, tie inside jacket; grid with jacket -> natural; without jacket -> untucked. QC hint for suit.
+- /studio: removed Categoria/Nome/Taglia; AI classifies garment (_classify_garment, cached in garment_class).
+- head_lock: colour-matched head paste (no halo), hand/phone carved out of head mask (no ghost). Wardrobe labels Italian.
+- Tested iteration_47-49 (pass).

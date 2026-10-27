@@ -1989,7 +1989,7 @@ async def _render_copylook(user_id: str, person_path: str, model_path: str, item
         "• Garments not listed stay as they are in IMAGE 1. Exactly ONE person in the output.\n\n"
         f"{HANDS_RULE}{_tuck_rule(items)}{head_lock.HEAD_LOCK_RULE}{_measurements_desc(m_doc)}{extra}"
     )
-    canvas_bytes, lock = await run_in_threadpool(head_lock.prepare, person_bytes, any(head_lock.is_long(i["category"], i["name"]) for i in items), await _hand_boxes(person_path, person_bytes))
+    canvas_bytes, lock = await run_in_threadpool(head_lock.prepare, person_bytes, any(head_lock.is_long(i["category"], i["name"]) for i in items), await _hand_boxes(person_path, person_bytes), not any((i.get("category") or "").lower() == "bag" for i in items))
     contents = [ImageContent(base64.b64encode(canvas_bytes).decode()), ImageContent(base64.b64encode(model_bytes).decode())]
     del person_bytes, model_bytes, canvas_bytes
     try:

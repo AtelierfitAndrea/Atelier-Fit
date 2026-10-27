@@ -1,0 +1,34 @@
+{
+  "summary": "Retest of the HIGH bug from iteration_48 (phone-edge ghost bar and double lower lip). FIXED. A new black-suit render made through the /studio UI (tryon da455a89-12dc-421f-a8e0-b8e58501273b, auto category 'Abito completo') shows no ghost bar, no double lip and no halo when the chin and neck are inspected at full resolution. The face is identical to the avatar, the tie is inside the buttoned jacket and the shirt and tie sit cleanly. QC passed on the first attempt, with no 'quality check failed' line for this job. Visualising the mask on the owner avatar (cached hand boxes) shows the carve-out removes the area just below the lower lip down through the phone, so the eyes, nose and mouth stay locked. Regression: the bag-only grid outfit (photo-1584917865442) rendered on the owner avatar in 115 s. The orange bag is held naturally by its handle, the head is clean, and the phone hand stays in place. QC flagged fingers twice and passed on the third attempt. The final hand is acceptable but somewhat mitten-like. Wardrobe: the filters are TUTTI / TOP / PANTALONI / ABITI / GIACCHE / COMPLETO / SCARPE / BORSA. The active filter uses computed color rgb(255,255,255) on rgb(10,10,10). The cards show 'Capo senza nome' and 'Untitled' no longer appears.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "head_lock.prepare carve", "issue": "The carve-out cuts horizontally across the full chin width just below the lower lip (the phone box is about 216 px wide and the sides grow by 15%). The lower chin therefore comes from the model and looks slightly softer and smoother than the sharp pasted lips, with a faint lighter band at the chin. There is also a faint light rim along the left jaw and neck. Not objectionable in the current render."},
+      {"endpoint": "server.py:1992 (copy-look head_lock.prepare)", "issue": "This call still uses the default paste_hands=True even when the copied look contains a bag. The other two call sites skip hand paste for bags. Check whether this is intended."},
+      {"endpoint": "POST /api/outfit/generate-from-uploads (bag)", "issue": "QC rejected the hand holding the bag twice (fused or deformed fingers) before passing on attempt 3, so latency was about 115 s. The final grip hides the fingers and is acceptable."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "TryOnDetail 'TU' thumbnail", "issues": ["The full 3000x4000 avatar loads for a small thumbnail, so the panel stays blank for several seconds after navigation. Consider a downscaled thumbnail."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_head_mask_hand_carve.py", "/app/backend/tests/test_head_colour_match.py", "/app/test_reports/pytest/iter49.xml"],
+  "action_items": [
+    "Optional: make the hand carve narrower near the chin, for example limit the x-range to the phone box only or taper it, so less of the original chin is replaced by the model.",
+    "Optional: pass paste_hands=False at server.py:1992 when the copied look contains a bag, for consistency.",
+    "Optional: serve a downscaled avatar thumbnail in TryOnDetail."
+  ],
+  "critical_code_review_comments": [
+    "The carve logic is correct: y_keep = face_top + 0.6*face_h protects the eyes and nose (verified by unit test: the eye band mask is unchanged and no pixels are removed above y_keep). The mask is carved before GaussianBlur, which gives a soft edge.",
+    "With paste_hands=False the mask is identical to the one with paste_hands=True and meta['hands'] == [] (verified)."
+  ],
+  "updated_files": ["/app/backend/tests/test_head_mask_hand_carve.py"],
+  "success_rate": {"backend": "100% (10/10 pytest, 2/2 AI renders acceptable)", "frontend": "100% (studio flow, TryOnDetail, Wardrobe filters)"},
+  "seed_data_creation": "Owner: suit try-on da455a89-12dc-421f-a8e0-b8e58501273b (via UI) and bag outfit 616a84b1-34ee-4a3a-9121-60ab86f7c6da.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Owner token pending_test_tok. Owner avatar hand boxes cached: phone [278,545,375,686] and low hand [576,381,667,459]. /tmp/vis_mask.py overlays the head mask (saved as /app/test_reports/mask49.jpg). Crops: black49_head/neck/waist.jpg and bag49_*.jpg in /app/test_reports. /tmp/bag49.py runs the bag-only grid render on the avatar."
+}
