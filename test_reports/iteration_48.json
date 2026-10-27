@@ -1,0 +1,60 @@
+{
+  "summary": "Retest of the iteration_47 HEAD HALO bug. FIXED: a new black-suit render made through the /studio UI (tryon da1dc19b-d6f4-4866-b24d-a4e2c6602063) shows no bluish or grey oval. The wall around the head matches, the face is identical to the avatar, the shirt is tucked, the tie is straight inside the jacket and the jacket is buttoned. QC no longer reports a halo. NEW visible artifact on the same render: a translucent brown horizontal bar (a ghost of the phone's top edge) crosses the chin and neck, and there is a faint double lower lip. The model moved the phone lower and to the side, but the pasted original head ellipse still contains the phone edge that covered the chin in the avatar. QC caught it on attempt 1 ('brown artifact extending from phone across neck'), but the fix pass cannot remove it because finalize re-pastes the same head. The shirt-only regression (photo-1596755094514) is classified as top, untucked, has no halo and passed QC on the first try. Checked in the UI: TryOnDetail shows 'Abito completo'; the Wardrobe filter-suit 'COMPLETO' works (4 suit cards) and the cards are labelled 'COMPLETO'. /studio shows only upload, avatar, the included note and generate-tryon-btn, with no select or text inputs. Code review: the QC SUIT tucked hint is present (tryon_quality.render:174) and its marker matches the string from server._tuck_rule; Studio onFile resets category, name and chosenSize (Studio.jsx:115).",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "POST /api/tryon/generate (head_lock.finalize head paste)",
+        "issue": "Ghost of the phone's top edge plus a double lower lip across the chin and neck on the black-suit render da1dc19b. In the avatar, the phone covers the chin and neck. The head mask (0.95x face width ellipse) reaches down to include that phone edge. When the model moves the phone, the pasted original pixels leave a semi-transparent brown bar and a ghost of the chin. QC flagged it, but the fix passes cannot fix it because the same original head is re-pasted every time. Suggested fixes: clip the bottom of the mask at the original phone's top edge (or at the hand box), or check seam consistency along the lower mask edge and fall back to the model output or a tighter mask when the difference is large.",
+        "priority": "HIGH"
+      }
+    ],
+    "minor": [
+      {
+        "endpoint": "head_lock._match_head_colour",
+        "issue": "The gain is computed from the upper ring only, which is correct, and applied to the whole padded box including the face. That is fine for a white-balance shift. With a non-uniform background (for example a dark mirror frame next to the head), the median may be biased. The 0.75 to 1.33 clip limits the risk."
+      },
+      {
+        "endpoint": "shirt-only render",
+        "issue": "Faint lighter patch at the collar and neck just left of the phone, and a slightly translucent lower-left wrist where the hand paste blends. Small, and QC passed."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "Wardrobe filters and cards",
+        "issues": [
+          "Filter labels mix English (ALL, TOP, BOTTOM, DRESS, OUTERWEAR, SHOES) and Italian (COMPLETO, BORSA) in an Italian UI.",
+          "The active filter button text is dark grey on a black background, which is low contrast.",
+          "Card title shows the English 'Untitled', while TryOnDetail shows 'Capo senza nome'."
+        ]
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_head_colour_match.py",
+    "/app/test_reports/pytest/iter48.xml"
+  ],
+  "action_items": [
+    "Fix the phone-edge ghost and double chin on the head paste: keep the original phone and hand area out of the bottom of the head mask, or detect a seam mismatch at the lower mask edge and shrink the mask or skip the paste.",
+    "Optional: translate the Wardrobe filter labels and 'Untitled' to Italian, and fix the contrast of the active filter text."
+  ],
+  "critical_code_review_comments": [
+    "_match_head_colour is called before blendLinear and correctly uses the upper-half ring (verified by unit tests on synthetic images, including the gain clip and the no-op path).",
+    "The QC SUIT hint string 'SUIT — SHIRT TUCKED IN' matches the server._tuck_rule output exactly, so QC will now reject untucked suits.",
+    "head paste: the fix pass re-runs finalize on the same original head. Any artifact baked into the original head region (halo, phone edge) can never be fixed by MAX_FIXES. Consider dropping or shrinking the head paste on the fix attempt when QC reports an artifact near the neck or head."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_head_colour_match.py"
+  ],
+  "success_rate": {
+    "backend": "100% (7/7 tests). The halo is fixed visually, but a new HIGH phone-ghost artifact appeared.",
+    "frontend": "100% of the requested checks"
+  },
+  "seed_data_creation": "Owner try-ons: black suit da1dc19b-d6f4-4866-b24d-a4e2c6602063 (via UI) and one shirt-only try-on (via pytest).",
+  "retest_needed": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Owner token pending_test_tok. The test images are in /tmp (photo-1507679799987 is the black suit, photo-1596755094514 is the shirt). Inspect head crops at full resolution, around y=520-700 for the neck and phone region. Renders run sequentially and take about 40 s each; check the QC log lines in backend.err.log ('quality check failed')."
+}

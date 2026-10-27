@@ -6,7 +6,7 @@ import OutfitBuilder from "@/components/OutfitBuilder";
 import ModelLooks from "@/components/ModelLooks";
 
 const FILTERS = ["all", "top", "bottom", "dress", "outerwear", "suit", "shoes", "bag"];
-const LABEL = { bag: "borsa", suit: "completo" };
+const LABEL = { all: "tutti", top: "top", bottom: "pantaloni", dress: "abiti", outerwear: "giacche", shoes: "scarpe", bag: "borsa", suit: "completo" };
 
 export default function Wardrobe() {
   const [items, setItems] = useState([]);
@@ -40,7 +40,7 @@ export default function Wardrobe() {
               key={f}
               onClick={() => setFilter(f)}
               className={`px-3 py-2 label-caps border hairline transition-colors ${
-                filter === f ? "bg-[#0A0A0A] text-white border-[#0A0A0A]" : "hover:border-[#0A0A0A]"
+                filter === f ? "bg-[#0A0A0A] !text-white border-[#0A0A0A]" : "hover:border-[#0A0A0A]"
               }`}
               data-testid={`filter-${f}`}
             >
@@ -73,7 +73,7 @@ export default function Wardrobe() {
                   <span className="label-caps">{LABEL[t.garment_category] || t.garment_category || "piece"}</span>
                   <span className="label-caps text-[#8C7355]">{t.recommended_size || ""}</span>
                 </div>
-                <div className="font-serif text-base truncate mt-0.5">{t.garment_name || "Untitled"}</div>
+                <div className="font-serif text-base truncate mt-0.5">{t.garment_name || "Capo senza nome"}</div>
               </div>
             </Link>
           ))}

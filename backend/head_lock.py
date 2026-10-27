@@ -131,7 +131,7 @@ def _paste_hand(out: np.ndarray, canvas: np.ndarray, res: np.ndarray, box: tuple
     return True
 
 
-def prepare(person_bytes: bytes, long_garment: bool, hands: list = None) -> tuple:
+def prepare(person_bytes: bytes, long_garment: bool, hands: list = None, paste_hands: bool = True) -> tuple:
     """Returns (canvas_png_bytes, meta) with top safe margin and optional bottom extension."""
     im = np.array(_open_small(person_bytes, PERSON_OUT_SIDE).convert("RGB"))
     h, w = im.shape[:2]
@@ -152,6 +152,17 @@ def prepare(person_bytes: bytes, long_garment: bool, hands: list = None) -> tupl
         cv2.ellipse(mask, (int(fx + fw / 2), int((y_top + y_bot) / 2)), (int(fw * 0.95), int((y_bot - y_top) / 2)), 0, 0, 360, 255, -1)
     else:
         mask[: top + int(h * HEAD_SAFE_ZONE)] = 255
+    # Hand boxes (normalised 0-1000 [ymin, xmin, ymax, xmax] on the photo) -> canvas pixels.
+    hand_c = []
+    for b in hands or []:
+        y0, x0, y1, x1 = (max(0.0, min(1000.0, float(v))) / 1000 for v in b)
+        if x1 - x0 > 0.01 and y1 - y0 > 0.01:
+            hand_c.append((int(x0 * w), int(y0 * h) + top, int(x1 * w), int(y1 * h) + top))
+    # A hand/phone overlapping the chin must not be pasted back (the model may move it -> ghost bar): carve it out, eyes/nose stay locked.
+    y_keep = int(face[1] + top + face[3] * 0.6) if face else 0
+    for x0, y0, x1, y1 in hand_c:
+        bw, bh = x1 - x0, y1 - y0
+        mask[max(y_keep, int(y0 - bh * 0.8)):int(y1 + bh * 0.15), max(0, int(x0 - bw * 0.15)):int(x1 + bw * 0.15)] = 0
     mask = cv2.GaussianBlur(mask, (0, 0), max(4, h / 160))
     send = Image.fromarray(canvas)
     send.thumbnail((PERSON_MAX_SIDE, PERSON_MAX_SIDE), Image.LANCZOS)
@@ -159,15 +170,9 @@ def prepare(person_bytes: bytes, long_garment: bool, hands: list = None) -> tupl
     send.save(buf, "PNG")
     del send
     face_c = (face[0], face[1] + top, face[2], face[3]) if face else None
-    # Hand boxes (normalised 0-1000 [ymin, xmin, ymax, xmax] on the photo) -> canvas pixels.
-    hand_c = []
-    for b in hands or []:
-        y0, x0, y1, x1 = (max(0.0, min(1000.0, float(v))) / 1000 for v in b)
-        if x1 - x0 > 0.01 and y1 - y0 > 0.01:
-            hand_c.append((int(x0 * w), int(y0 * h) + top, int(x1 * w), int(y1 * h) + top))
     del im
     gc.collect()
-    return buf.getvalue(), {"canvas": canvas, "mask": mask, "face": face_c, "hands": hand_c}
+    return buf.getvalue(), {"canvas": canvas, "mask": mask, "face": face_c, "hands": hand_c if paste_hands else []}
 
 
 def _match_head_colour(canvas: np.ndarray, res: np.ndarray, mask: np.ndarray) -> np.ndarray:
