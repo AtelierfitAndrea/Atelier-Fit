@@ -173,6 +173,8 @@ async def render(system: str, prompt: str, contents: list, lock: dict, garments_
         garments_txt += " — the shirt/t-shirt must be worn UNTUCKED, hanging outside the trousers (tucked in = garments_ok false)"
     if "SUIT — SHIRT TUCKED IN" in prompt:
         garments_txt += " — complete suit: the shirt must be TUCKED INSIDE the trousers, tie straight inside the jacket (shirt hanging out = garments_ok false)"
+    if "SMARTPHONE REMOVAL" in prompt:
+        garments_txt += " — NO smartphone may remain in any hand or anywhere in the image; the former phone hand must be empty and relaxed (phone visible = garments_ok false)"
     aspect = _aspect(lock)
     base = _snapshot(lock)
     # Grey levels of the head_lock padding bands: only rows still showing exactly that pad get trimmed.

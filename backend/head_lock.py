@@ -131,7 +131,8 @@ def _paste_hand(out: np.ndarray, canvas: np.ndarray, res: np.ndarray, box: tuple
     return True
 
 
-def prepare(person_bytes: bytes, long_garment: bool, hands: list = None, paste_hands: bool = True) -> tuple:
+def prepare(person_bytes: bytes, long_garment: bool, hands: list = None, paste_hands=True) -> tuple:
+    """paste_hands: bool for all hands, or one bool per hand box (False = the model may redraw that hand)."""
     """Returns (canvas_png_bytes, meta) with top safe margin and optional bottom extension."""
     im = np.array(_open_small(person_bytes, PERSON_OUT_SIDE).convert("RGB"))
     h, w = im.shape[:2]
@@ -153,11 +154,14 @@ def prepare(person_bytes: bytes, long_garment: bool, hands: list = None, paste_h
     else:
         mask[: top + int(h * HEAD_SAFE_ZONE)] = 255
     # Hand boxes (normalised 0-1000 [ymin, xmin, ymax, xmax] on the photo) -> canvas pixels.
-    hand_c = []
-    for b in hands or []:
+    hand_c, paste_c = [], []
+    keep = paste_hands if isinstance(paste_hands, list) else [paste_hands] * len(hands or [])
+    for b, k in zip(hands or [], keep):
         y0, x0, y1, x1 = (max(0.0, min(1000.0, float(v))) / 1000 for v in b)
         if x1 - x0 > 0.01 and y1 - y0 > 0.01:
             hand_c.append((int(x0 * w), int(y0 * h) + top, int(x1 * w), int(y1 * h) + top))
+            if k:
+                paste_c.append(hand_c[-1])
     # A hand/phone overlapping the chin must not be pasted back (the model may move it -> ghost bar): carve it out, eyes/nose stay locked.
     y_keep = int(face[1] + top + face[3] * 0.6) if face else 0
     for x0, y0, x1, y1 in hand_c:
@@ -172,7 +176,7 @@ def prepare(person_bytes: bytes, long_garment: bool, hands: list = None, paste_h
     face_c = (face[0], face[1] + top, face[2], face[3]) if face else None
     del im
     gc.collect()
-    return buf.getvalue(), {"canvas": canvas, "mask": mask, "face": face_c, "hands": hand_c if paste_hands else []}
+    return buf.getvalue(), {"canvas": canvas, "mask": mask, "face": face_c, "hands": paste_c}
 
 
 def _match_head_colour(canvas: np.ndarray, res: np.ndarray, mask: np.ndarray) -> np.ndarray:

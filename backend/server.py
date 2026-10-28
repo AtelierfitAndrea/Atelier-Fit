@@ -1721,29 +1721,37 @@ async def files_delete(path: str, user: User = Depends(get_current_user)):
     return {"deleted": True}
 
 
-async def _hand_boxes(person_path: str, person_bytes: bytes) -> list:
-    # Hands are detected once per person photo (cached), then pasted back by head_lock when they stay in place.
-    cached = await db.hand_boxes.find_one({"path": person_path}, {"_id": 0, "boxes": 1})
-    if cached:
-        return cached["boxes"]
+async def _hand_info(person_path: str, person_bytes: bytes) -> dict:
+    # Hands are detected once per person photo (cached) -> {"boxes": [...], "phone": [bool per box]}.
+    cached = await db.hand_boxes.find_one({"path": person_path}, {"_id": 0, "boxes": 1, "phone": 1})
+    if cached and "phone" in cached:
+        return cached
     small = await run_in_threadpool(head_lock.downscale, person_bytes, head_lock.GARMENT_MAX_SIDE)
     chat = LlmChat(api_key=EMERGENT_KEY, session_id=f"hands-{uuid.uuid4().hex[:8]}", system_message="You are a precise hand detector. Reply with JSON only.")
     chat.with_model("gemini", "gemini-3.8-flash")
     prompt = ("Detect every visible hand of the person in this photo (including a hand holding a phone, and hands in a mirror reflection of that person). "
-              "Return ONLY JSON: {\"hands\": [{\"box_2d\": [ymin, xmin, ymax, xmax]}]} normalised 0-1000, each box tightly containing the whole hand "
-              "(fingers to wrist). Return {\"hands\": []} if no hand is clearly visible.")
+              "Return ONLY JSON: {\"hands\": [{\"box_2d\": [ymin, xmin, ymax, xmax], \"phone\": bool}]} normalised 0-1000, each box tightly containing the whole hand "
+              "(fingers to wrist); phone = true if that hand holds or touches a smartphone. Return {\"hands\": []} if no hand is clearly visible.")
     try:
         reply = await chat.send_message(UserMessage(text=prompt, file_contents=[ImageContent(base64.b64encode(small).decode())]))
         data = _extract_json(reply)
     except Exception as e:
         logger.warning(f"hand detection failed: {e}")
-        return []
+        return {"boxes": [], "phone": []}
     if not isinstance(data, dict):
-        return []
-    boxes = [h["box_2d"] for h in (data.get("hands") or [])[:4]
-             if isinstance(h, dict) and isinstance(h.get("box_2d"), list) and len(h["box_2d"]) == 4]
-    await db.hand_boxes.update_one({"path": person_path}, {"$set": {"boxes": boxes, "created_at": datetime.now(timezone.utc).isoformat()}}, upsert=True)
-    return boxes
+        return {"boxes": [], "phone": []}
+    hands = [h for h in (data.get("hands") or [])[:4] if isinstance(h, dict) and isinstance(h.get("box_2d"), list) and len(h["box_2d"]) == 4]
+    info = {"boxes": [h["box_2d"] for h in hands], "phone": [h.get("phone") is True for h in hands]}
+    await db.hand_boxes.update_one({"path": person_path}, {"$set": {**info, "created_at": datetime.now(timezone.utc).isoformat()}}, upsert=True)
+    return info
+
+
+async def _lock_hands(person_path: str, person_bytes: bytes, has_bag: bool, posed: bool) -> tuple:
+    """(boxes, paste flags, extra prompt). Posed photos: a phone-holding hand is redrawn empty by the model, never pasted back."""
+    info = await _hand_info(person_path, person_bytes)
+    phone = [posed and p for p in info["phone"]]
+    keep = [not has_bag and not p for p in phone]
+    return info["boxes"], keep, (PHONE_RULE if any(phone) else "")
 
 
 _TOP_WORDS = re.compile(r"\b(camici\w*|maglia|maglietta|t-?shirt|tee|shirt|polo|blusa|top|canotta|felpa)\b", re.I)
@@ -1902,13 +1910,25 @@ class TryOnRequest(BaseModel):
 
 
 POSE_RULE = (
-    "POSED PHOTO — PRESERVE POSE 100% (preserve_pose: true):\n"
+    "POSED PHOTO — FREE POSE TRY-ON (preserve_pose: true):\n"
     "• IMAGE 1 is a natural, in-motion / Instagram-style pose (e.g. hand on hip, crossed legs, weight on one leg, turned shoulders, walking). "
-    "Keep that EXACT pose: same body angle, limb positions, head tilt, hand gestures and leg crossing. Do NOT straighten the person, "
+    "Keep that EXACT pose skeleton: same body angle, limb positions, head tilt, hand gestures and leg crossing. Do NOT straighten the person, "
     "do NOT turn them into a front-facing mannequin, do NOT re-centre or re-frame.\n"
-    "• Keep the face, body shape, background, lighting and camera angle exactly as in IMAGE 1. Replace ONLY the clothes, draping and folding them "
-    "naturally around the pose (fabric follows bent arms and legs, tension where the body bends, correct occlusion of crossed limbs).\n"
-    "• NEGATIVE: stiff straight pose, symmetrical mannequin stance, changed arm or leg position, rotated body, new background.\n"
+    "• KEEP 100% IDENTICAL: face, hands with 5 fingers, body shape, pose, background, lighting and camera angle of IMAGE 1. "
+    "Replace ONLY the clothes, draping and folding them naturally on this same pose (fabric follows bent arms and legs, tension where the body bends, "
+    "correct occlusion of crossed limbs). The new clothes must NOT cover or alter the hands, the face or the neck.\n"
+    "• Output quality: photorealistic, Red Carpet editorial quality, 8k detail, sharp focus.\n"
+    "• NEGATIVE: stiff straight pose, symmetrical mannequin stance, changed arm or leg position, rotated body, new background, deformed hands, "
+    "6 fingers, extra fingers, extra limbs, deformed face, halo, blur.\n"
+)
+
+PHONE_RULE = (
+    "SMARTPHONE REMOVAL — MANDATORY:\n"
+    "• A hand in IMAGE 1 holds a smartphone. REMOVE the phone completely (no phone, no case, no screen glow, no reflection left anywhere). "
+    "Do NOT keep the gripping pose: redraw THAT hand only in a new, relaxed, elegant pose — resting softly on the hip or hanging naturally along the body, "
+    "fingers soft and slightly open. Exactly 5 fingers, anatomically perfect, clean photorealistic skin, no tattoos, no jewellery, no artifacts. "
+    "If the phone covered part of the body or the new clothes, reconstruct that area naturally. The OTHER hand stays exactly as in IMAGE 1.\n"
+    "• NEGATIVE: phone, smartphone, phone in hand, gripping fingers, 6 fingers, fused fingers, deformed hand.\n"
 )
 
 
@@ -1916,7 +1936,9 @@ async def _render_single(user_id: str, person_path: str, garment_path: str, cate
     # Load both images
     person_bytes, person_ct = get_object(person_path)
     garment_bytes, garment_ct = get_object(garment_path)
-    canvas_bytes, lock = await run_in_threadpool(head_lock.prepare, person_bytes, head_lock.is_long(category_in, name or ""), await _hand_boxes(person_path, person_bytes), (category_in or "").lower() != "bag")
+    boxes, keep, phone_txt = await _lock_hands(person_path, person_bytes, (category_in or "").lower() == "bag", POSE_RULE in extra)
+    extra += phone_txt
+    canvas_bytes, lock = await run_in_threadpool(head_lock.prepare, person_bytes, head_lock.is_long(category_in, name or ""), boxes, keep)
     garment_bytes = await run_in_threadpool(head_lock.downscale, garment_bytes, head_lock.GARMENT_MAX_SIDE)
     person_b64 = base64.b64encode(canvas_bytes).decode('utf-8')
     garment_b64 = base64.b64encode(garment_bytes).decode('utf-8')
@@ -2132,7 +2154,8 @@ async def _render_copylook(user_id: str, person_path: str, model_path: str, item
         "• Garments not listed stay as they are in IMAGE 1. Exactly ONE person in the output.\n\n"
         f"{HANDS_RULE}{_tuck_rule(items)}{head_lock.HEAD_LOCK_RULE}{_measurements_desc(m_doc)}{extra}"
     )
-    canvas_bytes, lock = await run_in_threadpool(head_lock.prepare, person_bytes, any(head_lock.is_long(i["category"], i["name"]) for i in items), await _hand_boxes(person_path, person_bytes), not any((i.get("category") or "").lower() == "bag" for i in items))
+    boxes, keep, _ = await _lock_hands(person_path, person_bytes, any((i.get("category") or "").lower() == "bag" for i in items), False)
+    canvas_bytes, lock = await run_in_threadpool(head_lock.prepare, person_bytes, any(head_lock.is_long(i["category"], i["name"]) for i in items), boxes, keep)
     contents = [ImageContent(base64.b64encode(canvas_bytes).decode()), ImageContent(base64.b64encode(model_bytes).decode())]
     del person_bytes, model_bytes, canvas_bytes
     try:
@@ -2893,7 +2916,9 @@ async def _compose_outfit(user: User, person_path: Optional[str], items: list, l
         raise HTTPException(status_code=400, detail="Crea prima il tuo Avatar nella Home")
     # Build the multi-image prompt
     person_bytes, _ = get_object(person_path)
-    canvas_bytes, lock = await run_in_threadpool(head_lock.prepare, person_bytes, any(head_lock.is_long(g.get("category"), g.get("name") or "") for g in items), await _hand_boxes(person_path, person_bytes), not any((g.get("category") or "").lower() == "bag" for g in items))
+    boxes, keep, phone_txt = await _lock_hands(person_path, person_bytes, any((g.get("category") or "").lower() == "bag" for g in items), POSE_RULE in extra if extra else False)
+    extra += phone_txt
+    canvas_bytes, lock = await run_in_threadpool(head_lock.prepare, person_bytes, any(head_lock.is_long(g.get("category"), g.get("name") or "") for g in items), boxes, keep)
     file_contents = [ImageContent(base64.b64encode(canvas_bytes).decode("utf-8"))]
     del person_bytes, canvas_bytes
     layer_lines = []
