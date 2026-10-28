@@ -400,3 +400,9 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 - preserve_pose flag on /tryon/generate and /outfit/generate-from-uploads -> POSE_RULE appended to prompt (no extra AI call).
 - Header overflow fixed (nav labels only >=1680px, name/email block removed).
 - Tested iteration_51.
+
+## 2026-10-28 — FREE_POSE_TRYON
+- Kept Gemini engine; POSE_RULE extended (Red Carpet/8k/negatives, clothes not touching hands/face/neck). _hand_info detects phone per hand (cache field phone); in pose mode phone hands not pasted + PHONE_RULE (remove phone, relaxed 5-finger hand).
+- QC: phone_present veto, retry once, fail-closed in phone mode; fix prompt never copies phone/clothes from original; missing-garment detection; grid items get AI desc (_garment_info cached).
+- head_lock: hand paste similarity gate (no skin patch), scene drift metric -> tight face paste + one SCENE_RULE regen; pad band trim for re-tinted pads. preserve_pose stored on docs and reused on free retry.
+- Tested iterations 52-55.

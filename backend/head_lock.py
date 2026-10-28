@@ -277,6 +277,7 @@ def finalize(result_bytes: bytes, meta: dict) -> bytes:
     drift = 0.0
     if mask.any():
         canvas, drift = _match_head_colour(canvas, res, mask)
+        logger.info("head_lock: background drift around head %.1f", drift)
         if drift > DRIFT_MAX and head_at:
             # Background around the head changed: paste only a tight face oval so no old scene shows as a halo.
             fx, fy, fw, fh = head_at

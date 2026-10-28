@@ -1,0 +1,34 @@
+{
+  "summary": "Retest of the iteration_54 HIGH items. Unit tests: 29 passed, 1 skipped, including 3 new tests in test_scene_drift.py (drift metric low for the same scene and high for a new scene, plus render SCENE_RULE/DRIFT_MAX wiring). I ran 4 REAL renders, one after another, with the same inputs as iteration 54. (1) AVATAR + white tee, 41s: HIGH #1 FIXED. There is no rectangular skin patch. Both hands were restored (match 0.91/0.95, seam 22.7/7.7, shift 6,-14 / 6,-35), the tee below the phone hand is clean and the hands look natural. At 3x zoom only a faint, soft-edged tonal blotch is left of the wrist, which is invisible at normal size. (2) POSE SINGLE, hotel mirror selfie + white tee, 41s: PASS. The phone was removed, the scene is identical, the jacket is gone, and the wallet/hat hand was kept. However, the QC call FAILED with Gemini 400 INVALID_ARGUMENT ('qc failed, accepting image'), so this result was accepted WITHOUT QC. Also, the tee is partly tucked at the front and the watch moved from the phone-hand wrist to the hat-hand wrist. (3) FREE RETRY mani_viso, 66s: HIGH #2 PASS on output. There is NO phone (the QC veto caught a phone on attempt 1 and the fix pass removed it), the background/mirror/sculpture/hat/scene are the same as the original, there is no elliptical halo, and the tee is untucked. However, drift never exceeded DRIFT_MAX, so neither the tight-face paste nor the SCENE_RULE regeneration fired live: those paths are only covered by unit tests. Minor: a flat 21px brown pad band was left at the BOTTOM of the retry image (row std 0.7), the same slight watch-wrist swap, and a faint smudge on the door frame next to the hair. (4) POSE GRID, tee + denim shorts, 46s: PASS. The garments were applied, the tee is untucked, the jacket was removed, and the pose, face, shoes and background were kept. The background pedestrians were removed again (minor). Cleanup: 2 tryons were deleted via the API (200) and the outfit via mongo (DELETE /api/outfits/{id} still returns 404).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "tryon_quality._qc", "issue": "Gemini QC call returned 400 INVALID_ARGUMENT once (model gemini-3.8-flash), and _qc fails OPEN (ok=True, score 8). In phone-removal mode, a QC error therefore accepts an unchecked image that may still contain a phone. Suggest retrying the QC once on an exception and not failing open when phone=True (or giving it a low score)."},
+      {"endpoint": "tryon_quality._trim_pad_bands", "issue": "A flat 21px bottom pad band (brown, std<1) is still left on the pose retry result."},
+      {"endpoint": "pose single/retry", "issue": "The watch moved from the former phone-hand wrist to the other wrist (it was correct in iteration 54). The tee is partially tucked at the front in the single result."},
+      {"endpoint": "tryon_quality.render", "issue": "The second _image_call (SCENE_RULE regeneration) is not wrapped in try/except. If it raises, the whole render fails even though the first 'out' is usable. Wrap it and keep out on failure."},
+      {"endpoint": "head_lock drift path", "issue": "Not exercised live (drift < 28 on all runs). Consider logging the drift value on every finalize so it can be tuned."},
+      {"endpoint": "/api/outfits/{id}", "issue": "There is still no DELETE endpoint (returns 404)."}
+    ]
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": ["/app/backend/tests/test_scene_drift.py", "/app/backend/tests/test_phone_veto_grid_desc.py", "/app/backend/tests/test_head_colour_match.py", "/app/backend/tests/run_pose_retry_render.py", "/app/backend/tests/run_pose_phone_render.py", "/app/test_reports/pytest/pytest_results.xml", "/app/test_reports/iteration_55_imgs/"],
+  "action_items": [
+    "Make _qc retry once on exception and not fail open in phone-removal mode",
+    "Trim the remaining bottom pad band in _trim_pad_bands",
+    "Wrap the SCENE_RULE regeneration call in try/except (keep the first result)",
+    "Optional: log drift each finalize; add DELETE /api/outfits/{id}"
+  ],
+  "critical_code_review_comments": [
+    "_paste_hand similarity gate (<38, open 5x5, core >=45%) plus the smaller ellipse fixed the rectangular patch live",
+    "_match_head_colour drift uses the median abs diff on the upper ring after the gain: sensible. The ring excludes the lower half, so it is fine for garment changes",
+    "In render, the drift regeneration applies only to the first generation; fix-pass outputs are not drift-checked (acceptable)",
+    "The mask ellipse at radii 0.40 with sigma 0.08 still leaves ~0.1 weight at the short-side box border, but the 'near' gate hides it"
+  ],
+  "updated_files": ["/app/backend/tests/test_scene_drift.py"],
+  "success_rate": {"backend": "100% unit (29/29); live renders 4/4 acceptable, with minor issues", "frontend": "not tested"},
+  "seed_data_creation": "None persistent. 2 tryons were deleted via the API and 1 outfit via mongo.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Same scripts as iteration 54 (export REACT_APP_BACKEND_URL first, token pending_test_tok): run_pose_retry_render.py single | retry <id> mani_viso ; run_pose_phone_render.py grid | avatar. Inputs are in /tmp. Side-by-sides are in iteration_55_imgs (s55_1 single, s55_2 retry, s55_2hh head, s55_2b bottom band, s55_3 grid, s55_4/4z avatar). The drift>28 path was not triggered live. Do not edit backend files during a render (the WatchFiles reload kills the job)."
+}

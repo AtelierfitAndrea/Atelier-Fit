@@ -118,9 +118,21 @@ async def _qc(person_b64: str, result: bytes, garments_txt: str, phone: bool = F
     chat = LlmChat(api_key=os.environ["EMERGENT_LLM_KEY"], session_id=f"qc-{uuid.uuid4().hex[:8]}",
                    system_message="You are a strict photo quality inspector. Reply with JSON only.")
     chat.with_model("gemini", QC_MODEL)
+    files = [ImageContent(person_b64), ImageContent(base64.b64encode(small).decode())]
     try:
-        reply = await chat.send_message(UserMessage(text=prompt, file_contents=[ImageContent(person_b64), ImageContent(base64.b64encode(small).decode())]))
+        try:
+            reply = await chat.send_message(UserMessage(text=prompt, file_contents=files))
+        except Exception as e:
+            logger.warning(f"qc call failed, retrying once: {e}")
+            chat = LlmChat(api_key=os.environ["EMERGENT_LLM_KEY"], session_id=f"qc-{uuid.uuid4().hex[:8]}",
+                           system_message="You are a strict photo quality inspector. Reply with JSON only.")
+            chat.with_model("gemini", QC_MODEL)
+            reply = await chat.send_message(UserMessage(text=prompt, file_contents=files))
     except Exception as e:
+        if phone:
+            # Unchecked image in phone-removal mode might still show the phone: never accept it blindly.
+            logger.warning(f"qc failed twice in phone mode: {e}")
+            return {"ok": False, "score": 0, "issues": "smartphone may still be visible — remove it"}
         logger.warning(f"qc failed, accepting image: {e}")
         return {"ok": True, "score": 8, "issues": ""}
     d = _extract(reply)
@@ -147,8 +159,11 @@ def _trim_pad_bands(im: Image.Image, pads=None) -> Image.Image:
                 break
             n += 1
         return n
-    top = run(list(range(int(sh * 0.08))), pads[0] if pads else None)
-    bot = run(list(range(sh - 1, sh - 1 - int(sh * 0.18), -1)), pads[1] if pads else None)
+    # The model may re-tint the pad: a perfectly flat edge band (std < 1.2) is trimmed whatever its colour.
+    top = max(run(list(range(int(sh * 0.08))), pads[0] if pads else None),
+              run(list(range(int(sh * 0.08))), means[0] if small[0].std() < 1.2 else None))
+    bot = max(run(list(range(sh - 1, sh - 1 - int(sh * 0.18), -1)), pads[1] if pads else None),
+              run(list(range(sh - 1, sh - 1 - int(sh * 0.18), -1)), means[-1] if small[-1].std() < 1.2 else None))
     if top < 3 and bot < 3:
         return im
     k = H / sh
@@ -208,12 +223,16 @@ async def render(system: str, prompt: str, contents: list, lock: dict, garments_
         # The model invented a new scene: one fresh generation that must keep IMAGE 1's background.
         logger.info(f"{tag}: background drift {snap['drift']:.1f}, regenerating once")
         del raw
-        raw = await _image_call(system, prompt + SCENE_RULE + QUALITY_RULES, contents, f"{tag}-scene", aspect)
-        snap2 = _snapshot(base)
-        out2 = await run_in_threadpool(head_lock.finalize, raw, snap2)
-        if snap2.get("drift", 0) < snap["drift"]:
-            out = out2
-        del out2
+        try:
+            raw = await _image_call(system, prompt + SCENE_RULE + QUALITY_RULES, contents, f"{tag}-scene", aspect)
+            snap2 = _snapshot(base)
+            out2 = await run_in_threadpool(head_lock.finalize, raw, snap2)
+            if snap2.get("drift", 0) < snap["drift"]:
+                out = out2
+            del out2
+        except Exception as e:
+            logger.warning(f"{tag}: scene regeneration failed, keeping first result: {e}")
+            raw = None
     del raw, contents
     best, best_score = out, -2
     for attempt in range(MAX_FIXES + 1):
