@@ -93,6 +93,10 @@ def _bg_color(rows: np.ndarray) -> tuple:
 HAND_MATCH_MIN = 0.5
 
 
+def _skin(a: np.ndarray) -> np.ndarray:
+    return cv2.inRange(cv2.cvtColor(np.ascontiguousarray(a), cv2.COLOR_RGB2YCrCb), (0, 133, 77), (255, 173, 127))
+
+
 def _paste_hand(out: np.ndarray, canvas: np.ndarray, res: np.ndarray, box: tuple) -> bool:
     """Put the ORIGINAL hand back if the generated one sits in the same place (template match with context)."""
     H, W = out.shape[:2]
@@ -126,6 +130,13 @@ def _paste_hand(out: np.ndarray, canvas: np.ndarray, res: np.ndarray, box: tuple
     if seam > 28:
         logger.info("head_lock: surroundings of the hand changed (seam %.1f), keeping generated hand", seam)
         return False
+    # Paste only where BOTH images show skin: never drag original body/clothes pixels (e.g. bare chest) over the new garment.
+    both = _skin(canvas[y0:y1, x0:x1]) & _skin(out[ty0:ty1, tx0:tx1])
+    if both[m > 0.5].mean() < 0.6 * (_skin(canvas[y0:y1, x0:x1])[m > 0.5].mean() + 1e-3):
+        logger.info("head_lock: generated hand area is no longer skin-matched, keeping generated hand")
+        return False
+    both = cv2.GaussianBlur(cv2.dilate(both, np.ones((5, 5), np.uint8)), (0, 0), max(1.5, min(bw, bh) * 0.03)).astype(np.float32) * (1 / 255)
+    m = m * both
     out[ty0:ty1, tx0:tx1] = cv2.blendLinear(canvas[y0:y1, x0:x1], out[ty0:ty1, tx0:tx1], m, 1 - m)
     logger.info("head_lock: original hand restored (match %.2f, seam %.1f, shift %d,%d)", score, seam, dx, dy)
     return True

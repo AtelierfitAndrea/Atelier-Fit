@@ -37,16 +37,20 @@ QUALITY_RULES = (
     "hide it naturally (in a pocket, behind the body or the garment) — a hidden hand is better than a wrong hand.\n"
 )
 
-FIX_SYSTEM = ("You are a retoucher for virtual try-on photos. You make minimal, local corrections to face and hands only, "
-              "and never change, add or remove any clothing.")
+FIX_SYSTEM = ("You are a retoucher for virtual try-on photos. You make minimal, local corrections to face and hands, "
+              "and change clothing only when the FIX list explicitly names a clothing defect.")
 
 
-def _fix_prompt(issues: str, garments_txt: str) -> str:
+def _fix_prompt(issues: str, garments_txt: str, phone: bool = False) -> str:
+    phone_txt = ("• IMAGE 2 shows the person holding a smartphone: use IMAGE 2 ONLY as the face identity reference. NEVER copy the phone, that hand's grip "
+                 "or any clothing from IMAGE 2. The output must contain NO smartphone: that hand stays empty, relaxed, 5 fingers.\n") if phone else ""
     return (
         "IMAGE 1 is a virtual try-on result. IMAGE 2 is the original photo of the SAME person. Edit IMAGE 1 minimally.\n"
-        "KEEP EXACTLY AS IN IMAGE 1 (do not touch):\n"
-        f"• Every clothing item currently worn — {garments_txt} — plus any other clothing visible in IMAGE 1, INCLUDING the trousers/pants/"
-        "skirt, shoes and outerwear: same items, colours, logos, patterns, fit, length and folds. Never remove, add or swap a garment.\n"
+        "IMAGE 2 is a reference for the face only: never copy clothing from IMAGE 2.\n"
+        f"{phone_txt}"
+        "KEEP EXACTLY AS IN IMAGE 1 (do not touch), unless the FIX list below names that item:\n"
+        f"• The requested clothing — {garments_txt} — plus any other clothing visible in IMAGE 1, INCLUDING the trousers/pants/"
+        "skirt, shoes and outerwear: same items, colours, logos, patterns, fit, length and folds. Never invent new garments or shoes.\n"
         "• Background, lighting, pose, body, framing and image size.\n"
         f"FIX ONLY: {issues or 'face and hands'}.\n"
         "• If the issues mention a tucked-in shirt/t-shirt, pull it OUT so its hem hangs outside the trousers.\n"
@@ -94,12 +98,13 @@ def _extract(text: str) -> dict:
         return {}
 
 
-async def _qc(person_b64: str, result: bytes, garments_txt: str) -> dict:
+async def _qc(person_b64: str, result: bytes, garments_txt: str, phone: bool = False) -> dict:
     small = await run_in_threadpool(head_lock.downscale, result, head_lock.GARMENT_MAX_SIDE)
     prompt = (
         "IMAGE 1 is the original photo of a person. IMAGE 2 is an AI virtual try-on of that person. Inspect IMAGE 2 very strictly.\n"
         f"Expected garments worn in IMAGE 2: {garments_txt}.\n"
-        "Return ONLY JSON: {\"face_same\": bool, \"hands_ok\": bool, \"garments_ok\": bool, \"issues\": \"short English list of defects\"}\n"
+        "Return ONLY JSON: {\"face_same\": bool, \"hands_ok\": bool, \"garments_ok\": bool, \"phone_present\": bool, \"issues\": \"short English list of defects\"}\n"
+        "phone_present: a smartphone is visible anywhere in IMAGE 2.\n"
         "face_same: same person with the same facial features as IMAGE 1, exactly one face, no ghost/second face, no halo, not blurred.\n"
         "hands_ok: every visible hand has exactly 5 well-formed fingers, no fused/extra/missing fingers (true if no hand is visible).\n"
         "garments_ok: every expected garment is worn with its colour, logo and pattern intact and no expected garment is missing. "
@@ -116,7 +121,11 @@ async def _qc(person_b64: str, result: bytes, garments_txt: str) -> dict:
         return {"ok": True, "score": 8, "issues": ""}
     d = _extract(reply)
     face, hands, garments = (d.get(k) is not False for k in ("face_same", "hands_ok", "garments_ok"))
-    return {"ok": face and hands and garments, "score": 3 * garments + 3 * face + 2 * hands, "issues": str(d.get("issues") or "")[:400]}
+    issues = str(d.get("issues") or "")[:400]
+    if phone and d.get("phone_present") is True:
+        # Phone removal requested: a candidate still showing a phone is never acceptable.
+        return {"ok": False, "score": -1, "issues": ("smartphone still visible — remove it; " + issues)[:400]}
+    return {"ok": face and hands and garments, "score": 3 * garments + 3 * face + 2 * hands, "issues": issues}
 
 
 def _trim_pad_bands(im: Image.Image, pads=None) -> Image.Image:
@@ -179,7 +188,8 @@ async def render(system: str, prompt: str, contents: list, lock: dict, garments_
         garments_txt += " — the shirt/t-shirt must be worn UNTUCKED, hanging outside the trousers (tucked in = garments_ok false)"
     if "SUIT — SHIRT TUCKED IN" in prompt:
         garments_txt += " — complete suit: the shirt must be TUCKED INSIDE the trousers, tie straight inside the jacket (shirt hanging out = garments_ok false)"
-    if "SMARTPHONE REMOVAL" in prompt:
+    phone = "SMARTPHONE REMOVAL" in prompt
+    if phone:
         garments_txt += " — NO smartphone may remain in any hand or anywhere in the image; the former phone hand must be empty and relaxed (phone visible = garments_ok false)"
     aspect = _aspect(lock)
     base = _snapshot(lock)
@@ -192,7 +202,7 @@ async def render(system: str, prompt: str, contents: list, lock: dict, garments_
     del raw, contents
     best, best_score = out, -1
     for attempt in range(MAX_FIXES + 1):
-        qc = await _qc(person_b64, out, garments_txt)
+        qc = await _qc(person_b64, out, garments_txt, phone)
         if qc["score"] > best_score:
             best, best_score = out, qc["score"]
         if qc["ok"] or attempt == MAX_FIXES:
@@ -200,7 +210,7 @@ async def render(system: str, prompt: str, contents: list, lock: dict, garments_
         logger.info(f"{tag}: quality check failed (attempt {attempt + 1}): {qc['issues']} — fix pass")
         src = await run_in_threadpool(head_lock.downscale, out, head_lock.PERSON_MAX_SIDE)
         try:
-            raw = await _image_call(FIX_SYSTEM, _fix_prompt(qc["issues"], garments_txt),
+            raw = await _image_call(FIX_SYSTEM, _fix_prompt(qc["issues"], garments_txt, phone),
                                     [ImageContent(base64.b64encode(src).decode()), ImageContent(person_b64)], f"{tag}-fix", aspect)
         except Exception as e:
             logger.warning(f"{tag}: fix pass failed: {e}")

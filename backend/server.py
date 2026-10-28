@@ -1779,29 +1779,36 @@ def _tuck_rule(items: list) -> str:
 _GARMENT_CATS = ("top", "bottom", "dress", "outerwear", "shoes", "bag", "suit")
 
 
-async def _classify_garment(garment_path: str, fallback: Optional[str]) -> str:
-    # The user no longer picks a category: AI reads it from the product photo.
-    cached = await db.garment_class.find_one({"path": garment_path}, {"_id": 0, "category": 1})
-    if cached:
-        return cached["category"]
+async def _garment_info(garment_path: str) -> dict:
+    # One cached AI look at the product photo -> {"category", "desc"} (the user no longer picks a category).
+    cached = await db.garment_class.find_one({"path": garment_path}, {"_id": 0, "category": 1, "desc": 1})
+    if cached and cached.get("desc"):
+        return cached
     try:
         raw, _ = get_object(garment_path)
         small = await run_in_threadpool(head_lock.downscale, raw, head_lock.GARMENT_MAX_SIDE)
         chat = LlmChat(api_key=EMERGENT_KEY, session_id=f"cls-{uuid.uuid4().hex[:8]}", system_message="You are a fashion product classifier. Reply with JSON only.")
         chat.with_model("gemini", "gemini-3.8-flash")
-        prompt = ("Classify the product in this image. Return ONLY JSON {\"category\": \"...\"} with one of: "
+        prompt = ("Classify the product in this image. Return ONLY JSON {\"category\": \"...\", \"desc\": \"...\"}. category is one of: "
                   "suit (complete suit / tailleur: jacket AND matching trousers or skirt shown together, often with shirt/tie), "
                   "top (shirt, t-shirt, polo, sweater, blouse), bottom (trousers, jeans, shorts, skirt), dress (dress, jumpsuit), "
-                  "outerwear (jacket, blazer, coat alone), shoes, bag (handbag, backpack, clutch).")
+                  "outerwear (jacket, blazer, coat alone), shoes, bag (handbag, backpack, clutch). "
+                  "desc is a short precise English description of the item with colour, material, cut and LENGTH "
+                  "(e.g. 'light-blue ripped denim shorts, mid-thigh length').")
         reply = await chat.send_message(UserMessage(text=prompt, file_contents=[ImageContent(base64.b64encode(small).decode())]))
-        cat = ((_extract_json(reply) or {}).get("category") or "").lower().strip()
+        d = _extract_json(reply) or {}
     except Exception as e:
         logger.warning(f"garment classification failed: {e}")
-        return fallback or "top"
-    if cat not in _GARMENT_CATS:
-        return fallback or "top"
-    await db.garment_class.update_one({"path": garment_path}, {"$set": {"category": cat}}, upsert=True)
-    return cat
+        return {}
+    cat = (d.get("category") or "").lower().strip()
+    info = {"category": cat if cat in _GARMENT_CATS else None, "desc": str(d.get("desc") or "")[:120]}
+    if info["category"]:
+        await db.garment_class.update_one({"path": garment_path}, {"$set": info}, upsert=True)
+    return info
+
+
+async def _classify_garment(garment_path: str, fallback: Optional[str]) -> str:
+    return (await _garment_info(garment_path)).get("category") or fallback or "top"
 
 
 def _bag_rule(items: list) -> str:
@@ -3058,8 +3065,9 @@ async def _outfit_generate_from_uploads(req: GridOutfitRequest, user: User):
     status = await get_subscription_status(user.account_id)
     if status["is_blocked"]:
         raise HTTPException(status_code=402, detail="Quota esaurita — sblocca o attiva un piano")
+    descs = {k: (await _garment_info(slots[k])).get("desc") for k in slots}
     items = [{
-        "slot": k, "image_path": slots[k], "category": _GRID_SLOTS[k][0], "name": _GRID_SLOTS[k][1], "brand": None,
+        "slot": k, "image_path": slots[k], "category": _GRID_SLOTS[k][0], "name": descs[k] or _GRID_SLOTS[k][1], "brand": None,
     } for k in _GRID_ORDER if k in slots]
     person_path, result_path = await _compose_outfit(user, req.person_path, items, _GRID_LAYER_TEXT, POSE_RULE if req.preserve_pose else "")
     doc = {
@@ -3376,6 +3384,12 @@ async def tryon_retry(tryon_id: str, body: RetryIn, user: User = Depends(get_cur
     return await _start_render_job(user, _tryon_retry(tryon_id, body, user))
 
 
+def _retry_extra(doc: dict, reason: str) -> str:
+    if not doc.get("preserve_pose"):
+        return RETRY_REASONS[reason]
+    return POSE_RULE + RETRY_REASONS[reason].replace(" and grip as IMAGE 1 (phone held as in IMAGE 1)", " as IMAGE 1")
+
+
 async def _tryon_retry(tryon_id: str, body: RetryIn, user: User):
     doc = await db.tryons.find_one({"id": tryon_id, "user_id": user.user_id}, {"_id": 0})
     if not doc:
@@ -3388,7 +3402,7 @@ async def _tryon_retry(tryon_id: str, body: RetryIn, user: User):
     if not lock.modified_count:
         raise HTTPException(status_code=409, detail="Riprova gratuita già usata")
     m_doc = await _get_measurements(user.user_id)
-    extra = (POSE_RULE if doc.get("preserve_pose") else "") + RETRY_REASONS[body.reason]
+    extra = _retry_extra(doc, body.reason)
     try:
         if doc.get("garment_category") == "look":
             items = [{"name": i["name"], "category": i["category"]} for i in doc.get("copied_items", [])]
@@ -3421,7 +3435,7 @@ async def _outfit_retry(outfit_id: str, body: RetryIn, user: User):
     items = sorted(doc["items"], key=lambda g: _LAYER_ORDER.get((g.get("category") or "top").lower(), 2))
     text = _GRID_LAYER_TEXT if doc.get("source") == "grid" else _DEFAULT_LAYER_TEXT
     try:
-        _p, new_path = await _compose_outfit(user, doc["person_path"], items, text, (POSE_RULE if doc.get("preserve_pose") else "") + RETRY_REASONS[body.reason])
+        _p, new_path = await _compose_outfit(user, doc["person_path"], items, text, _retry_extra(doc, body.reason))
     except Exception:
         await db.outfits.update_one({"id": outfit_id}, {"$unset": {"retry_used": ""}})
         raise

@@ -83,3 +83,29 @@ def test_qc_hint_present():
     src = inspect.getsource(tryon_quality.render)
     assert '"SMARTPHONE REMOVAL" in prompt' in src and "NO smartphone" in src
     assert server.PHONE_RULE.startswith("SMARTPHONE REMOVAL")
+
+
+# Retry (iteration 53): preserve_pose stored on docs and POSE_RULE re-prepended on free retry
+def test_retry_prepends_pose_rule_source():
+    import inspect
+    t = inspect.getsource(server._tryon_retry)
+    o = inspect.getsource(server._outfit_retry)
+    assert "_retry_extra(doc, body.reason)" in t and "_retry_extra(doc, body.reason)" in o
+    assert server.POSE_RULE in server._retry_extra({"preserve_pose": True}, "mani_viso")
+    assert "phone held" not in server._retry_extra({"preserve_pose": True}, "mani_viso")
+    assert server.POSE_RULE not in server._retry_extra({}, "mani_viso")
+    assert '"preserve_pose": req.preserve_pose' in inspect.getsource(server._tryon_generate)
+    assert '"preserve_pose": req.preserve_pose' in inspect.getsource(server._outfit_generate_from_uploads)
+
+
+# PHONE_RULE says it overrides other phone-keeping instructions
+def test_phone_rule_overrides_header():
+    assert "overrides every other instruction" in server.PHONE_RULE.split("\n")[0]
+
+
+# Fix prompt allows replacing a missing garment / pulling out tuck / removing phone; QC flags missing garment
+def test_fix_prompt_and_qc_missing_garment():
+    import inspect
+    fp = tryon_quality._fix_prompt("missing garment: shorts", "bottom: shorts")
+    assert "missing or not applied" in fp and "pull it OUT" in fp and "smartphone" in fp
+    assert "missing garment" in inspect.getsource(tryon_quality._qc)
