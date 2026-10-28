@@ -6,3 +6,11 @@ crons:
     endpoint: "{{BASE_URL}}/api/cron/support-poll"
     method: POST
     enabled: true
+  - name: check-renewals
+    description: "Ogni giorno alle 9 (Roma) invia il promemoria email ai PRO che scadono tra 3 giorni"
+    cron: "0 9 * * *"
+    timezone: "Europe/Rome"
+    # Cron endpoints must ack 2xx immediately; enqueue/background the actual work.
+    endpoint: "{{BASE_URL}}/api/cron/check-renewals"
+    method: POST
+    enabled: true

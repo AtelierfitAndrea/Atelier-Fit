@@ -23,7 +23,9 @@ export default function AuthCallback() {
     (async () => {
       try {
         // Owner login from the Coming Soon page lands on the homepage preview.
-        const target = window.location.pathname === "/" ? "/" : "/dashboard";
+        const after = sessionStorage.getItem("atelier_after_login");
+        sessionStorage.removeItem("atelier_after_login");
+        const target = after || (window.location.pathname === "/" ? "/" : "/dashboard");
         await api.post("/auth/session", { session_id: sid }, { timeout: 20000 });
         window.history.replaceState(null, "", target);
         await refresh();

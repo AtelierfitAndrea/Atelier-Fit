@@ -23,6 +23,7 @@ import AdminAtelier from "@/pages/AdminAtelier";
 import AdminSupport from "@/pages/AdminSupport";
 import Support from "@/pages/Support";
 import PaymentResult from "@/pages/PaymentResult";
+import Renew from "@/pages/Renew";
 import SessionRevokedNotice from "@/components/SessionRevokedNotice";
 import "@/App.css";
 
@@ -35,7 +36,10 @@ function Protected({ children }) {
       </div>
     );
   }
-  if (!user) return <Navigate to="/" replace />;
+  if (!user) {
+    if (window.location.pathname === "/rinnova") sessionStorage.setItem("atelier_after_login", "/rinnova");
+    return <Navigate to="/" replace />;
+  }
   return <AppShell>{children}</AppShell>;
 }
 
@@ -67,6 +71,7 @@ function AppRouter() {
       <Route path="/stanza" element={user?.is_owner ? <AdminAtelier /> : <Navigate to="/dashboard" replace />} />
       <Route path="/stanza/assistenza" element={user?.is_owner ? <AdminSupport /> : <Navigate to="/dashboard" replace />} />
       <Route path="/assistenza" element={<Protected><Support /></Protected>} />
+      <Route path="/rinnova" element={<Protected><Renew /></Protected>} />
       <Route path="/payment/success" element={<Protected><PaymentResult /></Protected>} />
       <Route path="/payment/cancel" element={<Protected><PaymentResult /></Protected>} />
       <Route path="*" element={<Navigate to="/" replace />} />

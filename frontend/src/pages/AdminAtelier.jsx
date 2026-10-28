@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "@/lib/api";
+import { PaymentsLog } from "@/components/PaymentsLog";
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid } from "recharts";
 
 const GOLD = "#D4AF37";
@@ -219,6 +220,7 @@ export default function AdminAtelier() {
           <h2 className="mt-14 text-sm tracking-[0.4em]" style={{ color: GOLD }}>PAGAMENTI STRIPE</h2>
           <RevenueChart data={stats.daily_revenue} />
           <Payments byPlan={stats.by_plan} last={stats.last_payments} />
+          <PaymentsLog />
           <h2 className="mt-14 text-sm tracking-[0.4em]" style={{ color: GOLD }}>LOOK CONDIVISI E INVITI</h2>
           <p className="mt-1 text-xs text-white/40">Foto firmate condivise dagli utenti e amiche portate col link personale</p>
           <SharesChart data={stats.daily_shares} referrals={stats.referrals} />

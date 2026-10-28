@@ -23,11 +23,13 @@ from cryptography.fernet import Fernet, InvalidToken
 from body_measure import brand_sizes, shoe_size
 import head_lock
 import receipt
+import payments_log
 import hem as hem_mod
 import size_fallback
 import tryon_quality
 from pymongo.errors import DuplicateKeyError
 import re
+import hmac
 import stripe
 
 ROOT_DIR = Path(__file__).parent
@@ -259,6 +261,9 @@ async def startup():
     await db.users.create_index("referral_code", unique=True, partialFilterExpression={"referral_code": {"$type": "string"}})
     await db.referrals.create_index("invitee_id", unique=True)
     await db.share_events.create_index("day")
+    await db.payments.create_index([("id", 1), ("status", 1)], unique=True)
+    await db.payments.create_index("createdAt")
+    await db.renewal_reminders.create_index("key", unique=True)
     if STRIPE_LIVE_KEYS:
         try:
             import setup_stripe
@@ -1175,6 +1180,8 @@ async def _apply_paid_session(session_id: str) -> None:
         return
     uid, option = tx["user_id"], tx["option"]
     now = datetime.now(timezone.utc)
+    if tx.get("livemode"):
+        asyncio.create_task(_log_paid(tx))
     if option == "extra":
         # BOOST: 3 extra try-ons valid only today (Rome day of purchase).
         st = await get_subscription_status(uid)
@@ -1195,6 +1202,33 @@ async def _apply_paid_session(session_id: str) -> None:
     except Exception as e:
         logger.error(f"referral payment reward failed for {uid}: {e}")
     asyncio.create_task(_send_receipt(session_id))
+
+
+async def _log_paid(tx: dict) -> None:
+    try:
+        u = await db.users.find_one({"user_id": tx["user_id"]}, {"_id": 0, "email": 1}) or {}
+        ptype = "BOOST" if tx["option"] == "extra" else "PRO"
+        if await payments_log.record(db, tx["session_id"], u.get("email"), tx.get("amount"), "success", ptype):
+            await payments_log.alert_owner(f"💰 NUOVO {ptype}: {u.get('email') or '—'} - {payments_log.fmt_eur(tx.get('amount'))}")
+    except Exception as e:
+        logger.exception(f"payment log/alert failed for {tx.get('session_id')}: {e}")
+
+
+async def _log_failed(obj: dict, t: str) -> None:
+    email = obj.get("receipt_email") or obj.get("customer_email") or (obj.get("customer_details") or {}).get("email")
+    if not email and obj.get("customer"):
+        email = ((await db.users.find_one({"stripe_customer_id": obj["customer"]}, {"_id": 0, "email": 1})) or {}).get("email")
+    if not email and t.startswith("payment_intent."):
+        try:
+            ss = await run_in_threadpool(lambda: stripe.checkout.Session.list(payment_intent=obj["id"], limit=1).data)
+            if ss:
+                email = (ss[0].get("customer_details") or {}).get("email") or (ss[0].get("metadata") or {}).get("email")
+        except stripe.error.StripeError as e:
+            logger.warning(f"stripe webhook: session lookup for {obj['id']} failed: {e}")
+    cents = obj.get("amount") or obj.get("amount_due") or obj.get("amount_total") or 0
+    reason = (obj.get("last_payment_error") or {}).get("message") or (obj.get("last_finalization_error") or {}).get("message") or t
+    if await payments_log.record(db, obj["id"], email, cents / 100.0, "failed", t, reason):
+        await payments_log.alert_owner(f"❌ PAGAMENTO FALLITO: {email or '—'} - {reason}")
 
 
 async def _send_receipt(session_id: str) -> None:
@@ -1248,7 +1282,7 @@ async def payment_status(session_id: str):
 
 STRIPE_WEBHOOK_EVENTS = [
     "checkout.session.completed", "checkout.session.async_payment_succeeded", "checkout.session.async_payment_failed",
-    "checkout.session.expired", "charge.refunded", "invoice.paid", "invoice.payment_failed",
+    "checkout.session.expired", "charge.refunded", "invoice.paid", "invoice.payment_failed", "payment_intent.payment_failed",
     "customer.subscription.created", "customer.subscription.updated", "customer.subscription.deleted",
 ]
 
@@ -1275,10 +1309,18 @@ async def stripe_webhook(request: Request):
             st = "failed" if t.endswith("failed") else "expired"
             await db.payment_transactions.update_one({"session_id": obj["id"], "payment_status": {"$ne": "paid"}},
                                                      {"$set": {"status": st, "payment_status": st}})
+            if st == "failed":
+                await _log_failed(obj, t)
+        elif t in ("payment_intent.payment_failed", "invoice.payment_failed"):
+            await _log_failed(obj, t)
         elif t == "charge.refunded":
             await db.payment_transactions.update_one({"stripe_payment_intent_id": obj.get("payment_intent")},
                                                      {"$set": {"status": "refunded", "payment_status": "refunded"}})
-        elif t in ("invoice.paid", "invoice.payment_failed") or t.startswith("customer.subscription."):
+            await payments_log.record(db, obj["id"], obj.get("billing_details", {}).get("email") or obj.get("receipt_email"),
+                                      (obj.get("amount_refunded") or 0) / 100.0, "refunded", t)
+        if t == "invoice.paid":
+            await payments_log.record(db, obj["id"], obj.get("customer_email"), (obj.get("amount_paid") or 0) / 100.0, "success", t)
+        if t in ("invoice.paid", "invoice.payment_failed") or t.startswith("customer.subscription."):
             # Plans are 30-day one-time payments; recurring objects are only recorded for the owner's reference.
             await db.stripe_events.update_one({"event_id": event["id"]}, {"$set": {
                 "event_id": event["id"], "type": t, "object_id": obj.get("id"), "customer": obj.get("customer"),
@@ -1287,6 +1329,61 @@ async def stripe_webhook(request: Request):
         # Never make Stripe retry because of our own processing errors: log and acknowledge.
         logger.exception(f"stripe webhook: error handling {t} {event.get('id')}: {e}")
     return {"received": True, "status": "ok", "type": t}
+
+
+@api_router.get("/admin/payments")
+async def admin_payments(status: Optional[str] = None, _: User = Depends(require_owner)):
+    q = {"status": status} if status in ("success", "failed", "refunded") else {}
+    rows = await db.payments.find(q, {"_id": 0}).sort("createdAt", -1).limit(50).to_list(50)
+    return {"payments": rows}
+
+
+RENEW_REMINDER_DAYS = 3
+
+
+async def _check_renewals() -> None:
+    now = datetime.now(timezone.utc)
+    lo, hi = (now + timedelta(days=RENEW_REMINDER_DAYS - 1)).isoformat(), (now + timedelta(days=RENEW_REMINDER_DAYS)).isoformat()
+    link = f"{os.environ['PUBLIC_APP_URL'].rstrip('/')}/rinnova"
+    sent = 0
+    async for u in db.users.find({"plan": {"$in": ["SINGLE", "FAMILY"]}, "plan_expires_at": {"$gt": lo, "$lte": hi}, "email": {"$nin": [None, ""]}},
+                                 {"_id": 0, "user_id": 1, "email": 1, "display_name": 1, "name": 1, "plan_expires_at": 1}):
+        key = f"{u['user_id']}:{u['plan_expires_at']}"
+        try:
+            await db.renewal_reminders.insert_one({"key": key, "user_id": u["user_id"], "email": u["email"], "sent_at": now.isoformat()})
+        except DuplicateKeyError:
+            continue
+        try:
+            msg = payments_log.renewal_email(u.get("display_name") or (u.get("name") or "").split(" ")[0], _parse_dt(u["plan_expires_at"]), link)
+            await run_in_threadpool(receipt.send, u["email"], msg)
+            sent += 1
+        except Exception as e:
+            logger.error(f"renewal reminder to {u['email']} failed: {e}")
+            await db.renewal_reminders.delete_one({"key": key})
+    logger.info(f"check-renewals: {sent} reminder(s) sent")
+
+
+@api_router.post("/cron/check-renewals")
+async def cron_check_renewals(request: Request):
+    # Cron endpoints must ack 2xx immediately; enqueue/background the actual work.
+    auth = request.headers.get("authorization") or ""
+    token = auth[7:] if auth.lower().startswith("bearer ") else ""
+    if not token or not hmac.compare_digest(token, os.environ["WEBHOOK_CRON_SECRET"]):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    try:
+        env = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid body")
+    if not isinstance(env, dict):
+        raise HTTPException(status_code=400, detail="Invalid body")
+    run_id = request.headers.get("x-webhook-id") or env.get("run_id") or str(uuid.uuid4())
+    if await db.cron_runs.find_one({"run_id": f"renewals:{run_id}"}):
+        return {"status": "duplicate"}
+    await db.cron_runs.insert_one({"run_id": f"renewals:{run_id}", "name": "check-renewals", "at": datetime.now(timezone.utc).isoformat()})
+    task = asyncio.create_task(_check_renewals())
+    _render_tasks.add(task)
+    task.add_done_callback(_render_tasks.discard)
+    return {"status": "accepted"}
 
 
 @api_router.post("/subscription/cancel")
