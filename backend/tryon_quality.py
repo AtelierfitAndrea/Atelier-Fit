@@ -41,6 +41,10 @@ FIX_SYSTEM = ("You are a retoucher for virtual try-on photos. You make minimal, 
               "and change clothing only when the FIX list explicitly names a clothing defect.")
 
 
+SCENE_RULE = ("\n\nSCENE — STRICT: keep EXACTLY the same background, room, objects, props held in the hands, pose, framing and camera angle "
+              "as IMAGE 1. Change ONLY the requested clothes.")
+
+
 def _fix_prompt(issues: str, garments_txt: str, phone: bool = False) -> str:
     phone_txt = ("• IMAGE 2 shows the person holding a smartphone: use IMAGE 2 ONLY as the face identity reference. NEVER copy the phone, that hand's grip "
                  "or any clothing from IMAGE 2. The output must contain NO smartphone: that hand stays empty, relaxed, 5 fingers.\n") if phone else ""
@@ -198,9 +202,20 @@ async def render(system: str, prompt: str, contents: list, lock: dict, garments_
     pads = (float((base["canvas"][0] @ lum).mean()), float((base["canvas"][-1] @ lum).mean()))
     lock.clear()
     raw = await _image_call(system, prompt + QUALITY_RULES, contents, tag, aspect)
-    out = await run_in_threadpool(head_lock.finalize, raw, _snapshot(base))
+    snap = _snapshot(base)
+    out = await run_in_threadpool(head_lock.finalize, raw, snap)
+    if snap.get("drift", 0) > head_lock.DRIFT_MAX:
+        # The model invented a new scene: one fresh generation that must keep IMAGE 1's background.
+        logger.info(f"{tag}: background drift {snap['drift']:.1f}, regenerating once")
+        del raw
+        raw = await _image_call(system, prompt + SCENE_RULE + QUALITY_RULES, contents, f"{tag}-scene", aspect)
+        snap2 = _snapshot(base)
+        out2 = await run_in_threadpool(head_lock.finalize, raw, snap2)
+        if snap2.get("drift", 0) < snap["drift"]:
+            out = out2
+        del out2
     del raw, contents
-    best, best_score = out, -1
+    best, best_score = out, -2
     for attempt in range(MAX_FIXES + 1):
         qc = await _qc(person_b64, out, garments_txt, phone)
         if qc["score"] > best_score:

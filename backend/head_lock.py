@@ -93,6 +93,9 @@ def _bg_color(rows: np.ndarray) -> tuple:
 HAND_MATCH_MIN = 0.5
 
 
+DRIFT_MAX = 28.0
+
+
 def _skin(a: np.ndarray) -> np.ndarray:
     return cv2.inRange(cv2.cvtColor(np.ascontiguousarray(a), cv2.COLOR_RGB2YCrCb), (0, 133, 77), (255, 173, 127))
 
@@ -121,8 +124,8 @@ def _paste_hand(out: np.ndarray, canvas: np.ndarray, res: np.ndarray, box: tuple
     if tx0 < 0 or ty0 < 0 or tx1 > W or ty1 > H:
         return False
     m = np.zeros((bh, bw), np.uint8)
-    cv2.ellipse(m, (bw // 2, bh // 2), (int(bw * 0.47), int(bh * 0.47)), 0, 0, 360, 255, -1)
-    m = cv2.GaussianBlur(m, (0, 0), max(2, min(bw, bh) * 0.12)).astype(np.float32) * (1 / 255)
+    cv2.ellipse(m, (bw // 2, bh // 2), (int(bw * 0.40), int(bh * 0.40)), 0, 0, 360, 255, -1)
+    m = cv2.GaussianBlur(m, (0, 0), max(2, min(bw, bh) * 0.08)).astype(np.float32) * (1 / 255)
     # Seam check: if what surrounds the hand changed (e.g. new garment under it), a pasted patch would show edges.
     src, dst = canvas[y0:y1, x0:x1].astype(np.int16), out[ty0:ty1, tx0:tx1].astype(np.int16)
     ring = (m > 0.05) & (m < 0.5)
@@ -130,13 +133,14 @@ def _paste_hand(out: np.ndarray, canvas: np.ndarray, res: np.ndarray, box: tuple
     if seam > 28:
         logger.info("head_lock: surroundings of the hand changed (seam %.1f), keeping generated hand", seam)
         return False
-    # Paste only where BOTH images show skin: never drag original body/clothes pixels (e.g. bare chest) over the new garment.
-    both = _skin(canvas[y0:y1, x0:x1]) & _skin(out[ty0:ty1, tx0:tx1])
-    if both[m > 0.5].mean() < 0.6 * (_skin(canvas[y0:y1, x0:x1])[m > 0.5].mean() + 1e-3):
-        logger.info("head_lock: generated hand area is no longer skin-matched, keeping generated hand")
+    # Paste only where the model kept roughly the same pixel (the hand): never drag original body pixels over a new garment.
+    near = (np.abs(src - dst).mean(axis=2) < 38).astype(np.uint8) * 255
+    core = m > 0.5
+    if near[core].mean() / 255 < 0.45:
+        logger.info("head_lock: generated hand area differs from the original, keeping generated hand")
         return False
-    both = cv2.GaussianBlur(cv2.dilate(both, np.ones((5, 5), np.uint8)), (0, 0), max(1.5, min(bw, bh) * 0.03)).astype(np.float32) * (1 / 255)
-    m = m * both
+    near = cv2.GaussianBlur(cv2.morphologyEx(near, cv2.MORPH_OPEN, np.ones((5, 5), np.uint8)), (0, 0), max(1.5, min(bw, bh) * 0.03))
+    m = m * near.astype(np.float32) * (1 / 255)
     out[ty0:ty1, tx0:tx1] = cv2.blendLinear(canvas[y0:y1, x0:x1], out[ty0:ty1, tx0:tx1], m, 1 - m)
     logger.info("head_lock: original hand restored (match %.2f, seam %.1f, shift %d,%d)", score, seam, dx, dy)
     return True
@@ -201,15 +205,18 @@ def _match_head_colour(canvas: np.ndarray, res: np.ndarray, mask: np.ndarray) ->
     ring = m < 8
     ring[(y0 + y1) // 2 - Y0:] = False  # upper half only: below the chin the garment changed
     if ring.sum() < 400:
-        return canvas
+        return canvas, 0.0
     c = canvas[Y0:Y1, X0:X1]
-    gain = (np.median(res[Y0:Y1, X0:X1][ring], 0) + 1) / (np.median(c[ring], 0) + 1)
+    r = res[Y0:Y1, X0:X1][ring].astype(np.float32)
+    gain = (np.median(r, 0) + 1) / (np.median(c[ring], 0) + 1)
     gain = np.clip(gain, 0.75, 1.33)
+    # Scene drift: how different the background around the head still is after the colour match (new scene -> halo risk).
+    drift = float(np.median(np.abs(c[ring].astype(np.float32) * gain - r).mean(axis=1)))
     if np.abs(gain - 1).max() < 0.02:
-        return canvas
+        return canvas, drift
     canvas = canvas.copy()
     canvas[Y0:Y1, X0:X1] = np.clip(c.astype(np.float32) * gain, 0, 255).astype(np.uint8)
-    return canvas
+    return canvas, drift
 
 
 def finalize(result_bytes: bytes, meta: dict) -> bytes:
@@ -267,8 +274,17 @@ def finalize(result_bytes: bytes, meta: dict) -> bytes:
         # Pasting the original head onto a misplaced generated one would create a double face: keep the model output.
         logger.warning("head_lock: generated head not aligned with original %s, skipping head paste", head_at)
         mask = np.zeros_like(mask)
+    drift = 0.0
     if mask.any():
-        canvas = _match_head_colour(canvas, res, mask)
+        canvas, drift = _match_head_colour(canvas, res, mask)
+        if drift > DRIFT_MAX and head_at:
+            # Background around the head changed: paste only a tight face oval so no old scene shows as a halo.
+            fx, fy, fw, fh = head_at
+            tight = np.zeros_like(mask)
+            cv2.ellipse(tight, (int(fx + fw / 2), int(fy + fh * 0.52)), (int(fw * 0.6), int(fh * 0.78)), 0, 0, 360, 255, -1)
+            tight = cv2.GaussianBlur(tight, (0, 0), max(3, fw / 14))
+            mask = np.minimum(mask, tight)
+            logger.info("head_lock: scene drift %.1f around the head, tight face paste only", drift)
     # Per-pixel blend on uint8 images with single-channel weights (no full-size float32 RGB copies).
     w = mask.astype(np.float32) * (1 / 255)
     out = cv2.blendLinear(canvas, res, w, 1 - w)
@@ -279,6 +295,7 @@ def finalize(result_bytes: bytes, meta: dict) -> bytes:
         _paste_hand(out, canvas, res, box)
     del w, res, canvas, mask
     meta.clear()
+    meta["drift"] = drift
     buf = io.BytesIO()
     Image.fromarray(out).save(buf, "PNG")
     del out
