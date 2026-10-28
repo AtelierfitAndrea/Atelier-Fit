@@ -19,7 +19,8 @@ export function useBook() {
       await api.delete(`/book/${p.id}`);
       window.dispatchEvent(new Event(BOOK_EVENT));
       toast.success("Foto eliminata dal Book");
-    } catch { toast.error("Eliminazione non riuscita"); }
+      return true;
+    } catch { toast.error("Eliminazione non riuscita"); return false; }
   };
   return { photos, remove };
 }

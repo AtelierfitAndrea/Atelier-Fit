@@ -1616,8 +1616,11 @@ async def book_list(user: User = Depends(get_current_user)):
 
 @api_router.post("/book")
 async def book_add(req: BookAddRequest, user: User = Depends(get_current_user)):
-    if _path_owner(req.path) != user.user_id:
+    if _path_owner(req.path) != user.user_id or not await db.files.find_one(
+            {"storage_path": req.path, "user_id": user.user_id, "kind": "person", "is_deleted": {"$ne": True}}, {"_id": 1}):
         raise HTTPException(status_code=403, detail="Accesso negato")
+    if req.path == ((await db.users.find_one({"user_id": user.user_id}, {"_id": 0, "avatar_path": 1})) or {}).get("avatar_path"):
+        raise HTTPException(status_code=400, detail="L'Avatar resta fisso: non va nel Book")
     doc = {"id": str(uuid.uuid4()), "user_id": user.user_id, "path": req.path, "created_at": datetime.now(timezone.utc).isoformat()}
     await db.pose_book.update_one({"user_id": user.user_id, "path": req.path}, {"$setOnInsert": doc}, upsert=True)
     return await db.pose_book.find_one({"user_id": user.user_id, "path": req.path}, {"_id": 0})

@@ -63,7 +63,7 @@ export default function PersonSource({ mode, setMode, posePath, setPosePath, upl
     try { await api.post("/book", { path: p }); window.dispatchEvent(new Event(BOOK_EVENT)); toast.success("Salvata nel tuo Book"); }
     catch { toast.error("Salvataggio non riuscito"); }
   };
-  const removeBook = async (p) => { await remove(p); if (p.path === posePath) setPosePath(null); };
+  const removeBook = async (p) => { if (await remove(p) && p.path === posePath) setPosePath(null); };
 
   return (
     <section className="space-y-5" data-testid="person-source">

@@ -393,3 +393,10 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 - Cron check-renewals daily 09:00 Europe/Rome -> SINGLE expiring in 2-3 days, email link PUBLIC_APP_URL/rinnova (Renew.jsx -> checkout single), dedupe db.renewal_reminders.
 - Tested iteration_50 + tests/test_payments_alerts_renewals.py (10/10).
 - Note: Stripe endpoint must also subscribe to payment_intent.payment_failed.
+
+## 2026-10-28 — Foto in Posa + Il Mio Book
+- Studio: PersonSource (Usa il mio Avatar / Usa Foto in Posa -> Scatta Foto PoseCamera rear cam + silhouette + 5s timer, Carica da Galleria JPG/PNG). One pose photo shared by Prova Singola + Multibrand; CopyLook keeps avatar.
+- After capture ask "Vuoi salvarla nel tuo Book?"; db.pose_book, GET/POST/DELETE /api/book (POST only own kind=person files, not avatar). Header BookButton before AvatarBubble.
+- preserve_pose flag on /tryon/generate and /outfit/generate-from-uploads -> POSE_RULE appended to prompt (no extra AI call).
+- Header overflow fixed (nav labels only >=1680px, name/email block removed).
+- Tested iteration_51.

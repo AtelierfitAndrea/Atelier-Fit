@@ -1,0 +1,38 @@
+{
+  "summary": "Foto in Posa + Il Mio Book tested end-to-end. Backend: test_pose_book.py 7/7 pass (auth 401 on GET/POST/DELETE, CRUD + idempotent POST, foreign path 403, other user's DELETE 404, file 404 after delete, list isolation, quota unchanged). One REAL single try-on with preserve_pose:true (unsplash full-body street pose, hands on hood, wide stance + bomber jacket): done in 62s. The pose, face, background, light and framing were kept 100% and only the jacket was added. UI (desktop 1920 + mobile 390): the person-source toggle works (avatar is the default and unchanged), the pose panel and both big boxes work, webp is rejected with a toast, the jpg/png upload shows book-save-ask, No uses the photo without saving and Yes POSTs to /book and shows it in studio-book-grid and in the header modal. The modal X with confirm DELETEs it and both grids update. pose-camera with the Chromium fake stream: video, silhouette, shutter, close and the timer all work, the 5s countdown runs and the capture leads to book-save-ask. The intercepted payloads were preserve_pose:true for /tryon/generate and /outfit/generate-from-uploads, both with the pose path. Mobile header order: crown, ?, Book, Avatar, Logout. CopyLook gets avatarPath (code). One header layout bug was found (pre-existing, made worse by the new Book icon).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/book", "issue": "The only check is that the path prefix is the user's. It does not check that the file exists or is kind=person, so any own path (e.g. vfit/avatar/... or a tryon result) can be added. DELETE /book/{id} then marks that file is_deleted, so /api/files returns 404 for it (an API caller could break their own Avatar). Restrict to db.files kind=person, is_deleted false."},
+      {"endpoint": "DELETE /api/book/{id}", "issue": "This only soft-flags db.files and does not delete the object from storage, while the brief says 'delete permanently'. Also, if the same photo is the person_path of past try-ons, those original images become 404."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "AppShell header (owner)", "issue": "The header row overflows horizontally. At 1920px: scrollWidth 1957, logout-btn right edge at 1957 (off-screen). At 1366px: scrollWidth 1490, book-btn at x=1358 (barely visible) and logout off-screen. At 390/360px: scrollWidth 392 (logout clipped 2px). Mostly pre-existing (owner crown + name/email block), but the new Book icon adds to it. Fix: tighten gaps, or hide name/email below ~1600px.", "selector": "[data-testid=logout-btn], [data-testid=book-btn]", "priority": "HIGH"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Studio header copy", "issues": ["In pose mode the subtitle still says 'Carica il capo: usiamo il tuo Avatar…'. Make it depend on the mode."]},
+      {"screen": "PersonSource", "issues": ["removeBook clears posePath even when DELETE fails (remove() swallows the error).", "After 'No, solo ora' the photo is lost on reload. Expected, but there is no hint."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_pose_book.py", "/app/backend/tests/run_pose_render.py", "/app/test_reports/pytest/pytest_pose_book.xml"],
+  "action_items": [
+    "Fix header horizontal overflow at 1366/1920 (logout and Book icon off-screen) and the 2px overflow at 390px",
+    "POST /api/book: only accept db.files kind=person entries owned by the user (not avatar/tryon paths)",
+    "Optional: delete the storage object on Book delete if 'permanent' is required; make the Studio subtitle depend on the mode"
+  ],
+  "critical_code_review_comments": [
+    "POSE_RULE is appended only when preserve_pose is true, in both _render_single and _compose_outfit (extra param). Correct.",
+    "Grid endpoint checks _path_owner == user_id, while tryon uses _require_account_paths (family-aware). This is inconsistent for family profiles (pre-existing).",
+    "The 'No' answer still leaves the uploaded person file in storage/db.files (not in the Book). Acceptable."
+  ],
+  "updated_files": ["/app/backend/tests/test_pose_book.py", "/app/backend/tests/run_pose_render.py"],
+  "success_rate": {"backend": "100%", "frontend": "92%"},
+  "seed_data_creation": "Temporary user test-book-other + session test_book_other_tok (deleted). All pose_book entries deleted. One real try-on record d0b4839a-ad9b-4f1a-b9de-98d33e44a5c2 is left in the owner's history.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Owner cookie pending_test_tok. The Chromium fake camera works in browser_automation after context.grant_permissions(['camera']). Intercept /api/tryon/generate and /api/outfit/generate-from-uploads with page.route to check preserve_pose without paying for renders. Test images: /tmp/pose.jpg (unsplash photo-1515886657613-9f3515b0c78f) and /tmp/garment.jpg (photo-1591047139829-d91aecb6caea).",
+  "rca of the issue": "Header overflow: the AppShell right-side flex row has no shrink/hide rules for owner extras. The crown, Book icon, avatar bubble, red initial, 2xl name/email block and logout together are wider than the space left after the nav links."
+}
