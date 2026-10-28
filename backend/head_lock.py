@@ -133,7 +133,7 @@ def _paste_hand(out: np.ndarray, canvas: np.ndarray, res: np.ndarray, box: tuple
 
 def prepare(person_bytes: bytes, long_garment: bool, hands: list = None, paste_hands=True) -> tuple:
     """paste_hands: bool for all hands, or one bool per hand box (False = the model may redraw that hand)."""
-    """Returns (canvas_png_bytes, meta) with top safe margin and optional bottom extension."""
+    # Returns (canvas_png_bytes, meta) with top safe margin and optional bottom extension.
     im = np.array(_open_small(person_bytes, PERSON_OUT_SIDE).convert("RGB"))
     h, w = im.shape[:2]
     top = max(TOP_PAD_MIN_PX, int(h * TOP_PAD_RATIO))

@@ -1,0 +1,43 @@
+{
+  "summary": "FREE_POSE_TRYON phone rule tested. Unit tests: new test_phone_hand_rule.py 6/6 pass (_lock_hands flags in pose/avatar/bag modes, PHONE_RULE only when posed and a phone is present, head_lock.prepare with a per-hand paste list and the bool form, QC 'NO smartphone' hint present). Regression: test_pose_book, test_copylook (non-render) and test_head_mask_hand_carve pass (25/25). I ran 4 REAL renders one after another. (1) Pose single try-on through the UI (/studio > Usa Foto in Posa > Carica da Galleria > No, solo ora), using a Wikimedia hotel mirror selfie (a man with the phone in his right hand at face height, a wallet and a straw hat in his left hand, a dark jacket) and a white t-shirt. Payload had preserve_pose:true and the result appeared after 116s. db.hand_boxes = phone [true,false]. The PHONE IS COMPLETELY REMOVED, with no glow or reflection. The right hand is redrawn hanging relaxed along the body with plausible fingers and no 6-finger problem; the face is now fully visible and consistent. Background, framing and stance are unchanged, with no halo or blur. Problems: the OTHER hand is NOT identical (head_lock did not paste it: 'hand moved or covered (match 0.50)' and seam 46-60). The wallet it held disappeared, the shoulder-bag strap is gone, and the wristwatch moved from the phone hand to the other wrist. The t-shirt is TUCKED IN although the UNTUCKED rule applies: QC flagged it twice, but the fixes are face/hands only. (2) Pose Multibrand grid (top = white tee, bottom = denim shorts) on an Unsplash street pose (one hand on her head, one on her hip, no phone): 77s. phone [false,false], so no PHONE_RULE. Pose, background, face and hands were kept (one hand restored, match 0.89). BUT THE DENIM SHORTS WERE NOT APPLIED: she still wears her long jeans. The tee is tucked, and her denim jacket was kept over the tee (QC called it a 'leftover jacket sleeve'). (3) Avatar-mode single try-on regression: 51s. The phone stays in the hand and both hands were pasted back (match 0.92/0.99), so this works as before. (4) Copy-look apply on the avatar: done and unaffected (posed=False). No book entries were created; the 3 test tryons and 1 outfit were deleted after the images were saved.",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "POST /api/tryons/{id}/retry + outfits retry (server.py ~3388-3422)", "issue": "Free retry and 'Mani o volto strani' on a pose try-on call _render_single/_compose_outfit with extra=RETRY_REASONS only. POSE_RULE is lost because preserve_pose is not stored on the tryon/outfit doc, so _lock_hands(posed=False) pastes the phone hand back and there is no PHONE_RULE. Retrying a phone selfie brings the phone back and drops the pose rules. Fix: store preserve_pose on the doc and pass POSE_RULE + extra on retry.", "priority": "HIGH"}
+    ],
+    "minor": [
+      {"endpoint": "_render_single / _compose_outfit prompt", "issue": "The prompts contradict each other when PHONE_RULE is active. HANDS_RULE says 'if the person holds a phone, it is held correctly as in IMAGE 1'. The single prompt says 'Keep the shape, pose, fingers ... of the hands as in IMAGE 1' and 'Do NOT alter ... hands'. _bag_rule says 'never the hand holding a phone'. Drop or condition these lines when PHONE_RULE is present."},
+      {"endpoint": "pose mode — other hand", "issue": "PHONE_RULE says the OTHER hand stays exactly as in IMAGE 1, but it is only restored if template match >=0.5 and seam <=28. In gen 1 it was not restored: the wallet held in that hand vanished and the watch migrated to it."},
+      {"endpoint": "POST /api/outfit/generate-from-uploads (pose)", "issue": "The bottom garment (denim shorts) was ignored and the original long jeans were kept. QC did not report the missing garment and only flagged the tuck and the jacket sleeve. The outerwear the person already wore was kept, although only top+bottom were requested (ambiguous)."},
+      {"endpoint": "tryon_quality.render fixes", "issue": "In both pose renders the tee came out TUCKED although the UNTUCKED rule applies. QC caught it on 2 attempts, but the fix pass is 'face/hands only', so garment errors are never corrected and the final image still violates the rule."},
+      {"endpoint": "head_lock.prepare", "issue": "It has two consecutive docstrings; the second is a no-op string expression. Cosmetic."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": ["/app/backend/tests/test_phone_hand_rule.py", "/app/backend/tests/run_pose_phone_render.py", "/app/backend/tests/test_copylook.py", "/app/backend/tests/test_pose_book.py", "/app/test_reports/pytest/pytest_results.xml", "/app/test_reports/iteration_52_imgs/"],
+  "action_items": [
+    "Persist preserve_pose on tryon/outfit docs and re-apply POSE_RULE (and therefore the phone logic) in the free retry and the hands/face retry",
+    "Remove or condition the phone-keeping clauses (HANDS_RULE 'phone held correctly', 'keep hand pose', the bag-rule phone clause) when PHONE_RULE is active",
+    "Investigate the pose grid ignoring the bottom garment (shorts kept as jeans); have QC fail when a requested garment is missing",
+    "Consider letting the QC fix pass correct garment errors (the tuck), or re-render, instead of fixing face/hands only",
+    "Optional: protect the other hand's held objects (wallet) and accessories (the watch moved hands) in phone removal"
+  ],
+  "critical_code_review_comments": [
+    "_hand_info re-detects when old cache docs have no 'phone' field (correct). Only the first 4 hands are kept; phone is a strict bool True.",
+    "_lock_hands: keep = not has_bag and not phone. With a bag, nothing is pasted (pre-existing behaviour) while PHONE_RULE is still added (OK).",
+    "copylook passes posed=False, so it is unaffected (verified with a real render).",
+    "The 'SMARTPHONE REMOVAL' QC hint is appended to garments_txt correctly.",
+    "server.py is 3454 lines; it should be split into modules."
+  ],
+  "updated_files": ["/app/backend/tests/test_phone_hand_rule.py (new)", "/app/backend/tests/run_pose_phone_render.py (new)", "/app/backend/tests/test_copylook.py (apply tests now poll /render-jobs; they were outdated after async jobs)"],
+  "success_rate": {"backend": "100% of automated tests (31/31 incl. unit); real renders 4/4 completed; phone removal OK; 2 of 4 had quality defects (other hand changed, shorts ignored)", "frontend": "100% (pose upload to generate to result flow)"},
+  "test_credentials": "Bearer / cookie session_token=pending_test_tok (owner user_389c87aaadc6). test_pose_book needs session test_book_other_tok (I created it temporarily and deleted it afterwards). test_copylook needs OWNER_TEST_TOKEN=pending_test_tok and /tmp/model.jpg.",
+  "seed_data_creation": "None persistent. The test tryons (3) and outfit (1) were deleted; no book entries.",
+  "retest_needed": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Test images are in /app/test_reports/iteration_52_imgs (phone_selfie.jpg = Wikimedia 'Selfie at a mirror of the hotel', pose_hip.jpg = Unsplash 1762343944518; tee and shorts are Unsplash). Usage: python tests/run_pose_phone_render.py grid|avatar (needs /tmp/pose_hip.jpg, /tmp/tee.jpg, /tmp/shorts.jpg). WARNING: uvicorn WatchFiles watches /app/backend/tests too, so editing any file there during a render reloads the backend and kills the job ('Generazione interrotta'). Run renders one at a time.",
+  "rca of the issue": "Retry phone regression: tryon_retry/outfit_retry rebuild extra from RETRY_REASONS only, and the docs lack preserve_pose. As a result POSE_RULE is not in extra, posed is False in _lock_hands, the phone hand gets keep=True and there is no PHONE_RULE. Repro: pose try-on with a phone selfie, then click 'Riprova gratis'. Mitigation: save preserve_pose in the doc and pass (POSE_RULE if doc.preserve_pose else '') + RETRY_REASONS[...]."
+}

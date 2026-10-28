@@ -1923,7 +1923,7 @@ POSE_RULE = (
 )
 
 PHONE_RULE = (
-    "SMARTPHONE REMOVAL — MANDATORY:\n"
+    "SMARTPHONE REMOVAL — MANDATORY (overrides every other instruction above about keeping the phone or keeping that hand as in IMAGE 1):\n"
     "• A hand in IMAGE 1 holds a smartphone. REMOVE the phone completely (no phone, no case, no screen glow, no reflection left anywhere). "
     "Do NOT keep the gripping pose: redraw THAT hand only in a new, relaxed, elegant pose — resting softly on the hip or hanging naturally along the body, "
     "fingers soft and slightly open. Exactly 5 fingers, anatomically perfect, clean photorealistic skin, no tattoos, no jewellery, no artifacts. "
@@ -2018,6 +2018,7 @@ async def _tryon_generate(req: TryOnRequest, user: User):
         "id": tryon_id,
         "user_id": user.user_id,
         "person_path": req.person_path,
+        "preserve_pose": req.preserve_pose,
         "garment_path": req.garment_path,
         "result_path": result_path,
         "garment_name": req.garment_name,
@@ -3065,6 +3066,7 @@ async def _outfit_generate_from_uploads(req: GridOutfitRequest, user: User):
         "id": str(uuid.uuid4()),
         "user_id": user.user_id,
         "person_path": person_path,
+        "preserve_pose": req.preserve_pose,
         "result_path": result_path,
         "items": [{
             "garment_id": None, "slot": g["slot"], "image_path": g["image_path"], "name": g["name"], "brand": None,
@@ -3386,7 +3388,7 @@ async def _tryon_retry(tryon_id: str, body: RetryIn, user: User):
     if not lock.modified_count:
         raise HTTPException(status_code=409, detail="Riprova gratuita già usata")
     m_doc = await _get_measurements(user.user_id)
-    extra = RETRY_REASONS[body.reason]
+    extra = (POSE_RULE if doc.get("preserve_pose") else "") + RETRY_REASONS[body.reason]
     try:
         if doc.get("garment_category") == "look":
             items = [{"name": i["name"], "category": i["category"]} for i in doc.get("copied_items", [])]
@@ -3419,7 +3421,7 @@ async def _outfit_retry(outfit_id: str, body: RetryIn, user: User):
     items = sorted(doc["items"], key=lambda g: _LAYER_ORDER.get((g.get("category") or "top").lower(), 2))
     text = _GRID_LAYER_TEXT if doc.get("source") == "grid" else _DEFAULT_LAYER_TEXT
     try:
-        _p, new_path = await _compose_outfit(user, doc["person_path"], items, text, RETRY_REASONS[body.reason])
+        _p, new_path = await _compose_outfit(user, doc["person_path"], items, text, (POSE_RULE if doc.get("preserve_pose") else "") + RETRY_REASONS[body.reason])
     except Exception:
         await db.outfits.update_one({"id": outfit_id}, {"$unset": {"retry_used": ""}})
         raise

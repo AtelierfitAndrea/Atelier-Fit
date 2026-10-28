@@ -10,6 +10,19 @@ RUN_APPLY = os.environ.get("RUN_APPLY") == "1"
 state = {}
 
 
+def _final_status(s, r):
+    # apply is an async render job: validation errors surface when polling /render-jobs/{id}
+    import time
+    if r.status_code != 200 or "job_id" not in r.json():
+        return r.status_code
+    for _ in range(20):
+        time.sleep(1.5)
+        j = s.get(f"{BASE_URL}/api/render-jobs/{r.json()['job_id']}", timeout=30)
+        if j.status_code != 200 or j.json()["status"] != "running":
+            return j.status_code
+    return 200
+
+
 @pytest.fixture(scope="module")
 def s():
     if not TOKEN:
@@ -56,17 +69,17 @@ def test_extract_unauth_401():
 
 def test_apply_empty_items_400(s):
     r = s.post(f"{BASE_URL}/api/copylook/apply", json={"model_path": state["model_path"], "items": []}, timeout=30)
-    assert r.status_code == 400
+    assert _final_status(s, r) == 400
 
 
 def test_apply_invalid_category_400(s):
     r = s.post(f"{BASE_URL}/api/copylook/apply", json={"model_path": state["model_path"], "items": [{"name": "x", "category": "hat"}]}, timeout=30)
-    assert r.status_code == 400
+    assert _final_status(s, r) == 400
 
 
 def test_apply_other_user_403(s):
     r = s.post(f"{BASE_URL}/api/copylook/apply", json={"model_path": "vfit/garment/other_user_x/a.jpg", "items": [{"name": "x", "category": "top"}]}, timeout=30)
-    assert r.status_code == 403
+    assert _final_status(s, r) == 403
 
 
 def test_save_garment(s):
@@ -94,7 +107,14 @@ def test_apply_real(s):
     before = s.get(f"{BASE_URL}/api/subscription/status", timeout=30).json()
     r = s.post(f"{BASE_URL}/api/copylook/apply", json={"model_path": state["model_path"], "items": chosen}, timeout=180)
     assert r.status_code == 200, r.text
-    d = r.json()
+    import time
+    for _ in range(60):
+        time.sleep(4)
+        j = s.get(f"{BASE_URL}/api/render-jobs/{r.json()['job_id']}", timeout=30)
+        if j.status_code != 200 or j.json()["status"] != "running":
+            break
+    assert j.status_code == 200 and j.json()["status"] == "done", j.text
+    d = j.json()["result"]
     assert d["garment_category"] == "look"
     assert len(d["copied_items"]) == len(chosen)
     assert "·" in d["recommended_size"] or len(chosen) == 1

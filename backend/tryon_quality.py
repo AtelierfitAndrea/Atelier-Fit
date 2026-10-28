@@ -49,7 +49,11 @@ def _fix_prompt(issues: str, garments_txt: str) -> str:
         "skirt, shoes and outerwear: same items, colours, logos, patterns, fit, length and folds. Never remove, add or swap a garment.\n"
         "• Background, lighting, pose, body, framing and image size.\n"
         f"FIX ONLY: {issues or 'face and hands'}.\n"
-        "• If the issues mention a tucked-in shirt/t-shirt, pull it OUT so its hem hangs outside the trousers — the only garment change allowed.\n"
+        "• If the issues mention a tucked-in shirt/t-shirt, pull it OUT so its hem hangs outside the trousers.\n"
+        "• If the issues mention a requested garment that is missing or not applied (e.g. the old trousers still worn instead of the new shorts), "
+        "replace that item with the requested garment from the list above; if they mention a leftover old garment layer, remove it. "
+        "These are the only garment changes allowed.\n"
+        "• If the issues mention a smartphone, remove it completely and leave that hand empty and relaxed with 5 fingers.\n"
         "• Face: identical to IMAGE 2 (same person, same features, skin tone and hair), a single face, no ghost face, no halo.\n"
         "• Hands: exactly 5 natural, well-formed fingers per hand, no fused or extra fingers. If a hand cannot be made perfect, "
         "hide it naturally (in a pocket, behind the body or the garment).\n"
@@ -98,7 +102,9 @@ async def _qc(person_b64: str, result: bytes, garments_txt: str) -> dict:
         "Return ONLY JSON: {\"face_same\": bool, \"hands_ok\": bool, \"garments_ok\": bool, \"issues\": \"short English list of defects\"}\n"
         "face_same: same person with the same facial features as IMAGE 1, exactly one face, no ghost/second face, no halo, not blurred.\n"
         "hands_ok: every visible hand has exactly 5 well-formed fingers, no fused/extra/missing fingers (true if no hand is visible).\n"
-        "garments_ok: every expected garment is worn with its colour, logo and pattern intact and no expected garment is missing."
+        "garments_ok: every expected garment is worn with its colour, logo and pattern intact and no expected garment is missing. "
+        "False if IMAGE 2 still shows the ORIGINAL garment of IMAGE 1 where an expected garment should be (e.g. old long jeans instead of the expected shorts) — "
+        "name it in issues as 'missing garment: ...'."
     )
     chat = LlmChat(api_key=os.environ["EMERGENT_LLM_KEY"], session_id=f"qc-{uuid.uuid4().hex[:8]}",
                    system_message="You are a strict photo quality inspector. Reply with JSON only.")
@@ -191,7 +197,7 @@ async def render(system: str, prompt: str, contents: list, lock: dict, garments_
             best, best_score = out, qc["score"]
         if qc["ok"] or attempt == MAX_FIXES:
             break
-        logger.info(f"{tag}: quality check failed (attempt {attempt + 1}): {qc['issues']} — fixing face/hands only")
+        logger.info(f"{tag}: quality check failed (attempt {attempt + 1}): {qc['issues']} — fix pass")
         src = await run_in_threadpool(head_lock.downscale, out, head_lock.PERSON_MAX_SIDE)
         try:
             raw = await _image_call(FIX_SYSTEM, _fix_prompt(qc["issues"], garments_txt),
