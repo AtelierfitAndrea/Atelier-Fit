@@ -122,7 +122,7 @@ function RevenueChart({ data }) {
   );
 }
 
-function Payments({ byPlan, last }) {
+function Payments({ byPlan }) {
   return (
     <div className="mt-6 grid grid-cols-1 lg:grid-cols-3 gap-4">
       <div className="border p-6" style={{ borderColor: `${GOLD}40` }} data-testid="admin-by-plan">
@@ -132,22 +132,6 @@ function Payments({ byPlan, last }) {
             <span>{p.label}</span><span className="text-white/60">{num(p.count)} · <span style={{ color: GOLD }}>{eur(p.total)}</span></span>
           </div>
         ))}
-      </div>
-      <div className="lg:col-span-2 border p-6" style={{ borderColor: `${GOLD}40` }} data-testid="admin-last-payments">
-        <div className="text-xs tracking-[0.3em]" style={{ color: GOLD }}>ULTIMI 10 PAGAMENTI</div>
-        {last.length === 0 ? <p className="mt-4 text-sm text-white/40">Nessun pagamento ancora</p> : (
-          <table className="mt-4 w-full text-sm">
-            <tbody>
-              {last.map((x, i) => (
-                <tr key={i} className="border-t border-white/10">
-                  <td className="py-2 text-white/50">{new Date(x.date).toLocaleString("it-IT", { dateStyle: "short", timeStyle: "short" })}</td>
-                  <td>{x.email}</td><td>{x.plan}</td>
-                  <td className="text-right" style={{ color: GOLD }}>{eur(x.amount)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
       </div>
     </div>
   );
@@ -219,7 +203,7 @@ export default function AdminAtelier() {
           </div>
           <h2 className="mt-14 text-sm tracking-[0.4em]" style={{ color: GOLD }}>PAGAMENTI STRIPE</h2>
           <RevenueChart data={stats.daily_revenue} />
-          <Payments byPlan={stats.by_plan} last={stats.last_payments} />
+          <Payments byPlan={stats.by_plan} />
           <PaymentsLog />
           <h2 className="mt-14 text-sm tracking-[0.4em]" style={{ color: GOLD }}>LOOK CONDIVISI E INVITI</h2>
           <p className="mt-1 text-xs text-white/40">Foto firmate condivise dagli utenti e amiche portate col link personale</p>

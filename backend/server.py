@@ -1226,7 +1226,9 @@ async def _log_failed(obj: dict, t: str) -> None:
         except stripe.error.StripeError as e:
             logger.warning(f"stripe webhook: session lookup for {obj['id']} failed: {e}")
     cents = obj.get("amount") or obj.get("amount_due") or obj.get("amount_total") or 0
-    reason = (obj.get("last_payment_error") or {}).get("message") or (obj.get("last_finalization_error") or {}).get("message") or t
+    reason = ((obj.get("last_payment_error") or {}).get("message") or (obj.get("last_finalization_error") or {}).get("message")
+              or {"invoice.payment_failed": "Pagamento fattura non riuscito", "checkout.session.async_payment_failed": "Pagamento differito non riuscito"}.get(t)
+              or "Pagamento non riuscito")
     if await payments_log.record(db, obj["id"], email, cents / 100.0, "failed", t, reason):
         await payments_log.alert_owner(f"❌ PAGAMENTO FALLITO: {email or '—'} - {reason}")
 
@@ -1346,7 +1348,7 @@ async def _check_renewals() -> None:
     lo, hi = (now + timedelta(days=RENEW_REMINDER_DAYS - 1)).isoformat(), (now + timedelta(days=RENEW_REMINDER_DAYS)).isoformat()
     link = f"{os.environ['PUBLIC_APP_URL'].rstrip('/')}/rinnova"
     sent = 0
-    async for u in db.users.find({"plan": {"$in": ["SINGLE", "FAMILY"]}, "plan_expires_at": {"$gt": lo, "$lte": hi}, "email": {"$nin": [None, ""]}},
+    async for u in db.users.find({"plan": "SINGLE", "plan_expires_at": {"$gt": lo, "$lte": hi}, "email": {"$nin": [None, ""]}},
                                  {"_id": 0, "user_id": 1, "email": 1, "display_name": 1, "name": 1, "plan_expires_at": 1}):
         key = f"{u['user_id']}:{u['plan_expires_at']}"
         try:

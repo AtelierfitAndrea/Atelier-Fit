@@ -385,3 +385,11 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 
 ## 2026-10-28 — Stripe webhook always 200
 - /api/stripe/webhook (FastAPI) returns 200 on every path; invalid signature logged + not processed; invoice.payment_failed recorded. Verified with signed local events. Redeployed.
+
+## 2026-10-28 — Payments ledger, alerts, renewals
+- payments_log.py: db.payments (id,email,amount,status,type,reason,createdAt; unique id+status), owner alerts WhatsApp (WHATSAPP_OWNER_NUMBER) + always email copy to first OWNER_EMAILS.
+- Webhook: success via _apply_paid_session (once), failures via payment_intent.payment_failed / invoice.payment_failed / async_payment_failed, refunds.
+- GET /api/admin/payments (?status=), Admin Room PaymentsLog table (replaced old "ultimi 10" card).
+- Cron check-renewals daily 09:00 Europe/Rome -> SINGLE expiring in 2-3 days, email link PUBLIC_APP_URL/rinnova (Renew.jsx -> checkout single), dedupe db.renewal_reminders.
+- Tested iteration_50 + tests/test_payments_alerts_renewals.py (10/10).
+- Note: Stripe endpoint must also subscribe to payment_intent.payment_failed.

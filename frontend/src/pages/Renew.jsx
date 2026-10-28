@@ -1,10 +1,13 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "@/lib/api";
 
 export default function Renew() {
   const [error, setError] = useState(null);
+  const started = useRef(false);
   useEffect(() => {
+    if (started.current) return;
+    started.current = true;
     api.post("/subscription/checkout", { option: "single", origin_url: window.location.origin })
       .then(({ data }) => { window.location.href = data.checkout_url; })
       .catch((e) => setError(e?.response?.data?.detail || "Pagamento non disponibile, riprova."));

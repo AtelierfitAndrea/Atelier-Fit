@@ -1,0 +1,40 @@
+{
+  "summary": "Tested the Stripe webhook, payments ledger, owner alerts, Admin Room payments table, the renewal cron and the /rinnova page. Backend: 10/10 pytest pass. Unsigned or bad-signature requests return 200 {received:false}. Test-mode events are ignored. A signed checkout.session.completed sent twice set the user to SINGLE (+30d) and created exactly 1 success/PRO payments row. payment_intent.payment_failed and invoice.payment_failed each created exactly 1 failed row with email and reason, even when resent. /api/admin/payments: owner 200, last 50 sorted desc, success/failed filters work, non-owner 403, anonymous 401. Cron check-renewals: no or wrong Bearer 401, correct Bearer accepted, a repeated X-Webhook-Id returns duplicate. The user expiring in 2.5 days got 1 renewal_reminders row and a second run did not send again. The user expiring in 10 days got nothing. Exactly 3 owner alerts were sent, each on both WhatsApp and email (logs confirm). Frontend: /stanza table shows rows with a green RIUSCITO badge (rgb 34,197,94) and red FALLITO badges (rgb 239,68,68), and the TUTTI/RIUSCITI/FALLITI filters work. /rinnova shows renew-error 409 for an active PRO (>3 days) and the back button goes to /dashboard. A FREE user is redirected to checkout.stripe.com (the Stripe navigation was blocked; nothing was paid). A logged-out user goes to / with sessionStorage atelier_after_login=/rinnova. crons.yml is valid.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/stripe/webhook invoice.payment_failed", "issue": "The reason falls back to the event type 'invoice.payment_failed', so the owner alert reads '❌ PAGAMENTO FALLITO: x - invoice.payment_failed'. Invoices carry no last_payment_error. Use the charge/payment_intent error, or a human-readable Italian fallback such as 'Pagamento fattura non riuscito'."},
+      {"endpoint": "_check_renewals + /rinnova", "issue": "FAMILY users get the reminder too ('RINNOVA PRO · 2,99 €'), but Renew.jsx always posts option 'single'. Within 3 days of expiry a FAMILY user is sent to a SINGLE checkout. _apply_paid_session then sets plan=SINGLE starting now (plans differ), which downgrades them and loses their remaining FAMILY days. Pass the user's current plan (e.g. /rinnova?plan=family, or read it from /auth/me) and adapt the email price."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "Renew.jsx", "issue": "Under React.StrictMode the useEffect runs twice, so every /rinnova visit made 2 POST /api/subscription/checkout calls and created 2 live Stripe sessions (confirmed: 2 cs_live rows). Add a useRef guard as AuthCallback does.", "selector": "[data-testid=renew-loading]", "priority": "MEDIUM"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/stanza payments log", "issues": ["The table has no header row (Data/Email/Tipo/Motivo/Importo/Stato), and column widths shift when switching filters", "The older 'ULTIMI 10 PAGAMENTI' card still says 'Nessun pagamento ancora' while the new ledger has rows. The two sources are inconsistent and confusing."]},
+      {"screen": "App header at 1920px", "issues": ["The user name/email on the far right is clipped ('Andrea Mont…' runs off-screen). This was there before this feature."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_payments_alerts_renewals.py", "/app/test_reports/pytest/pytest_payments_alerts.xml"],
+  "action_items": [
+    "Add a useRef run-once guard in Renew.jsx so it does not create duplicate Stripe checkout sessions",
+    "Renewal for FAMILY users: send them to a FAMILY checkout (not 'single') and fix the email price/label",
+    "Give a readable reason for invoice.payment_failed alerts",
+    "Optional: add a header row to the PaymentsLog table; reconcile or remove the 'ULTIMI 10 PAGAMENTI' card"
+  ],
+  "critical_code_review_comments": [
+    "payments_log.record uses a unique (id,status) index plus an upsert, so it is idempotent and alerts fire once. Good.",
+    "renewal_reminders has a unique key user_id:plan_expires_at, so renewing (new expiry) re-arms the reminder. Good. If the send fails the row is deleted, so the reminder is retried the next day only while still inside the 2-3 day window.",
+    "_check_renewals compares plan_expires_at as ISO strings. This only works when every value uses the same '+00:00' format. A value stored with a 'Z' suffix or as a BSON Date would be missed.",
+    "invoice.paid records a success row but sends no owner alert. That is consistent with the spec (alert on paid checkout), but note it.",
+    "server.py is 3383 lines; split the payments/stripe routes into their own module."
+  ],
+  "updated_files": ["/app/backend/tests/test_payments_alerts_renewals.py"],
+  "success_rate": {"backend": "100%", "frontend": "100% of requested flows (1 medium bug: duplicate checkout sessions)"},
+  "seed_data_creation": "All cleaned up: TEST_ users, sessions, payment_transactions, payments rows (cs_/pi_/in_TEST_*, TEST_ui_*), renewal_reminders, cron_runs, stripe_events. The owner plan was temporarily set to SINGLE+10d and restored to FREE with no plan_expires_at. The 2 live Stripe checkout sessions created by /rinnova were expired via the API and their payment_transactions rows deleted. pi_selftest_1 was left as is.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Use test_payments_alerts_renewals.py for regression. Each run sends 3 REAL owner alerts (WhatsApp + email), so don't run it too often. The UI was tested with the owner cookie pending_test_tok. When testing /rinnova, block *.stripe.com, and expire and delete the cs_live sessions afterwards."
+}

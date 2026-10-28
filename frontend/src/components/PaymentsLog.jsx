@@ -32,6 +32,13 @@ export const PaymentsLog = () => {
       ) : (
         <div className="mt-4 overflow-x-auto">
           <table className="w-full text-sm">
+            <thead>
+              <tr className="text-[10px] tracking-[0.25em] text-white/40 text-left">
+                <th className="pb-2 pr-3 font-normal">DATA</th><th className="pb-2 pr-3 font-normal">EMAIL</th>
+                <th className="pb-2 pr-3 font-normal">TIPO</th><th className="pb-2 pr-3 font-normal">MOTIVO</th>
+                <th className="pb-2 pr-3 font-normal text-right">IMPORTO</th><th className="pb-2 font-normal text-right">STATO</th>
+              </tr>
+            </thead>
             <tbody>
               {rows.map((p) => {
                 const [label, color] = STATUS[p.status] || [p.status, "#999"];
