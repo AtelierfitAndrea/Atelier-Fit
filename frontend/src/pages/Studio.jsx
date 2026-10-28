@@ -10,6 +10,7 @@ import { CloudArrowUp, ArrowRight } from "@phosphor-icons/react";
 import PrivacyBox from "@/components/PrivacyBox";
 import AccountPersonalBox from "@/components/AccountPersonalBox";
 import OutfitGrid from "@/components/OutfitGrid";
+import PersonSource from "@/components/PersonSource";
 import IncludedNote from "@/components/IncludedNote";
 import CopyLook from "@/components/CopyLook";
 import TryOnProgress from "@/components/TryOnProgress";
@@ -23,7 +24,11 @@ export default function Studio() {
   const location = useLocation();
   const preset = location.state?.preset || null;
   const { avatar } = useAvatar();
-  const personPath = avatar?.path || null;
+  const avatarPath = avatar?.path || null;
+  const [personMode, setPersonMode] = useState("avatar");
+  const [posePath, setPosePath] = useState(null);
+  const posed = personMode === "pose";
+  const personPath = posed ? posePath : avatarPath;
   const [garmentPath, setGarmentPath] = useState(preset?.garment_path || null);
   const [garmentPreview, setGarmentPreview] = useState(preset?.garment_path ? fileUrl(preset.garment_path) : null);
   const [category, setCategory] = useState(preset?.category || null);
@@ -63,7 +68,7 @@ export default function Studio() {
 
   const generate = async () => {
     if (!personPath || !garmentPath) {
-      toast.error(personPath ? "Carica prima il capo" : "Crea prima il tuo Avatar nella Home");
+      toast.error(personPath ? "Carica prima il capo" : (posed ? "Scatta o carica prima la tua foto in posa" : "Crea prima il tuo Avatar nella Home"));
       return;
     }
     if (subStatus?.is_blocked) { openPaywall(); return; }
@@ -75,6 +80,7 @@ export default function Studio() {
         garment_category: category,
         garment_name: name || null,
         chosen_size: chosenSize || null,
+        preserve_pose: posed,
       });
       pending.markDone();
       notifyTabReady();
@@ -104,6 +110,8 @@ export default function Studio() {
         <TryonCounter />
       </header>
 
+      <PersonSource mode={personMode} setMode={setPersonMode} posePath={posePath} setPosePath={setPosePath} uploadFile={uploadFile} />
+
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         <UploadBox
           title="Il capo"
@@ -121,7 +129,7 @@ export default function Studio() {
           testid="upload-garment"
           className="lg:col-span-6"
         />
-        <AvatarPanel path={personPath} />
+        <AvatarPanel path={personPath} posed={posed} />
       </div>
 
       <section className="border hairline p-6 md:p-8 bg-white" data-testid="tryon-action">
@@ -140,9 +148,9 @@ export default function Studio() {
 
       <TryOnProgress active={generating} testid="generating-indicator" />
 
-      <CopyLook personPath={personPath} uploadFile={uploadFile} />
+      <CopyLook personPath={avatarPath} uploadFile={uploadFile} />
 
-      <OutfitGrid personPath={personPath} uploadFile={uploadFile} restoreItems={restoreItems}
+      <OutfitGrid personPath={personPath} preservePose={posed} uploadFile={uploadFile} restoreItems={restoreItems}
         onItemsChange={setGridItems} onGenerated={pending.markDone} />
       <PendingOutfitModal draft={pending.draft} onResume={pending.resume} onDiscard={pending.discard} />
 
@@ -154,14 +162,18 @@ export default function Studio() {
   );
 }
 
-function AvatarPanel({ path }) {
+function AvatarPanel({ path, posed }) {
   return (
     <div className="upload-zone p-6 min-h-[380px] flex flex-col lg:col-span-6" data-testid="studio-avatar">
-      <div className="label-caps">Il Mio Avatar</div>
-      <p className="text-xs text-neutral-500 mt-1">La tua foto unica, usata per tutte le prove.</p>
+      <div className="label-caps">{posed ? "La tua Foto in Posa" : "Il Mio Avatar"}</div>
+      <p className="text-xs text-neutral-500 mt-1">{posed ? "Manteniamo la tua posa: cambiamo solo i vestiti." : "La tua foto unica, usata per tutte le prove."}</p>
       <div className="flex-1 mt-6 relative overflow-hidden" style={{ aspectRatio: "4/5" }}>
         {path ? (
           <img src={fileUrl(path)} alt="" className="absolute inset-0 w-full h-full object-cover" data-testid="studio-avatar-photo" />
+        ) : posed ? (
+          <div className="absolute inset-0 flex flex-col items-center justify-center text-neutral-500 text-center px-6" data-testid="studio-pose-empty">
+            <span className="font-serif text-lg">Scatta o carica la tua foto in posa</span>
+          </div>
         ) : (
           <Link to="/dashboard#il-mio-avatar" className="absolute inset-0 flex flex-col items-center justify-center text-neutral-500 text-center px-6" data-testid="studio-avatar-create">
             <span className="font-serif text-lg">Crea il tuo Avatar</span>

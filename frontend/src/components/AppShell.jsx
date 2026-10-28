@@ -9,6 +9,7 @@ import TermsGate from "@/components/TermsGate";
 import OnboardingGate from "@/components/OnboardingGate";
 import ReminderPopup from "@/components/ReminderPopup";
 import AvatarBubble from "@/components/AvatarBubble";
+import BookButton from "@/components/PoseBook";
 import { SignOut, House, User as UserIcon, TShirt, Sparkle, GearSix, MagnifyingGlass, Crown, Question } from "@phosphor-icons/react";
 
 function useSupportPending() {
@@ -84,6 +85,7 @@ export default function AppShell({ children }) {
             )}
             <Link to="/assistenza" className="md:hidden" title="Assistenza" data-testid="nav-support-mobile"><Question size={22} weight="duotone" /></Link>
             <FamilySwitcher />
+            <BookButton />
             <AvatarBubble />
             {user?.picture && (
               <img src={user.picture} alt="" className="hidden 2xl:block w-8 h-8 object-cover" style={{ borderRadius: 2 }} />

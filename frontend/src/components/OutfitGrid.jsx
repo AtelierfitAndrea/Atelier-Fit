@@ -142,7 +142,7 @@ export function OutfitTotal({ used, saved, prefix = "grid", title = "Totale outf
   );
 }
 
-export default function OutfitGrid({ personPath, uploadFile, restoreItems, onItemsChange, onGenerated }) {
+export default function OutfitGrid({ personPath, preservePose = false, uploadFile, restoreItems, onItemsChange, onGenerated }) {
   const { status, openPaywall, refresh } = useSubscription();
   const [items, setItems] = useState({});
 
@@ -178,7 +178,7 @@ export default function OutfitGrid({ personPath, uploadFile, restoreItems, onIte
   const busy = SLOTS.some((s) => items[s.k]?.uploading);
 
   const generate = async () => {
-    if (!personPath) { toast.error("Crea prima il tuo Avatar nella Home"); return; }
+    if (!personPath) { toast.error(preservePose ? "Scatta o carica prima la tua foto in posa" : "Crea prima il tuo Avatar nella Home"); return; }
     if (!ready.length) { toast.error("Carica almeno 1 capo"); return; }
     if (status?.is_blocked) { openPaywall(); return; }
     setGenerating(true);
@@ -186,6 +186,7 @@ export default function OutfitGrid({ personPath, uploadFile, restoreItems, onIte
     try {
       const { data } = await postRender("/outfit/generate-from-uploads", {
         person_path: personPath,
+        preserve_pose: preservePose,
         items: ready.map((s) => ({ slot: s.k, image_path: items[s.k].path })),
       });
       setResult({ ...data, used: ready.map((s) => ({ slot: s, item: items[s.k] })) });

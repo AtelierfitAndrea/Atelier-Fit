@@ -1604,6 +1604,34 @@ async def upload(kind: str = Query(..., regex="^(person|garment)$"), file: Uploa
     return {"path": result["path"]}
 
 
+class BookAddRequest(BaseModel):
+    path: str
+
+
+@api_router.get("/book")
+async def book_list(user: User = Depends(get_current_user)):
+    rows = await db.pose_book.find({"user_id": user.user_id}, {"_id": 0}).sort("created_at", -1).to_list(200)
+    return {"photos": rows}
+
+
+@api_router.post("/book")
+async def book_add(req: BookAddRequest, user: User = Depends(get_current_user)):
+    if _path_owner(req.path) != user.user_id:
+        raise HTTPException(status_code=403, detail="Accesso negato")
+    doc = {"id": str(uuid.uuid4()), "user_id": user.user_id, "path": req.path, "created_at": datetime.now(timezone.utc).isoformat()}
+    await db.pose_book.update_one({"user_id": user.user_id, "path": req.path}, {"$setOnInsert": doc}, upsert=True)
+    return await db.pose_book.find_one({"user_id": user.user_id, "path": req.path}, {"_id": 0})
+
+
+@api_router.delete("/book/{photo_id}")
+async def book_delete(photo_id: str, user: User = Depends(get_current_user)):
+    doc = await db.pose_book.find_one_and_delete({"id": photo_id, "user_id": user.user_id})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Foto non trovata")
+    await db.files.update_many({"storage_path": doc["path"], "user_id": user.user_id}, {"$set": {"is_deleted": True}})
+    return {"deleted": True}
+
+
 async def _account_owner_ids(account: User) -> set:
     subs = await db.users.find({"owner_id": account.user_id, "is_family_profile": True}, {"_id": 0, "user_id": 1}).to_list(10)
     return {account.user_id, *[x["user_id"] for x in subs]}
@@ -1867,6 +1895,18 @@ class TryOnRequest(BaseModel):
     notes: Optional[str] = None
     chosen_size: Optional[str] = None
     garment_id: Optional[str] = None
+    preserve_pose: bool = False
+
+
+POSE_RULE = (
+    "POSED PHOTO — PRESERVE POSE 100% (preserve_pose: true):\n"
+    "• IMAGE 1 is a natural, in-motion / Instagram-style pose (e.g. hand on hip, crossed legs, weight on one leg, turned shoulders, walking). "
+    "Keep that EXACT pose: same body angle, limb positions, head tilt, hand gestures and leg crossing. Do NOT straighten the person, "
+    "do NOT turn them into a front-facing mannequin, do NOT re-centre or re-frame.\n"
+    "• Keep the face, body shape, background, lighting and camera angle exactly as in IMAGE 1. Replace ONLY the clothes, draping and folding them "
+    "naturally around the pose (fabric follows bent arms and legs, tension where the body bends, correct occlusion of crossed limbs).\n"
+    "• NEGATIVE: stiff straight pose, symmetrical mannequin stance, changed arm or leg position, rotated body, new background.\n"
+)
 
 
 async def _render_single(user_id: str, person_path: str, garment_path: str, category_in: Optional[str], name: Optional[str], m_doc: dict, extra: str = "") -> str:
@@ -1943,7 +1983,7 @@ async def _tryon_generate(req: TryOnRequest, user: User):
         raise HTTPException(status_code=402, detail="Quota exhausted — subscribe or buy an extra try-on.")
     m_doc = await _get_measurements(user.user_id)
     req.garment_category = await _classify_garment(req.garment_path, req.garment_category)
-    result_path = await _render_single(user.user_id, req.person_path, req.garment_path, req.garment_category, req.garment_name, m_doc)
+    result_path = await _render_single(user.user_id, req.person_path, req.garment_path, req.garment_category, req.garment_name, m_doc, POSE_RULE if req.preserve_pose else "")
 
     rec_size = recommend_size(m_doc, "top" if req.garment_category == "suit" else req.garment_category)
     tryon_id = str(uuid.uuid4())
@@ -2971,6 +3011,7 @@ class GridItem(BaseModel):
 class GridOutfitRequest(BaseModel):
     person_path: Optional[str] = None
     items: List[GridItem]
+    preserve_pose: bool = False
 
 
 @api_router.post("/outfit/generate-from-uploads")
@@ -2991,7 +3032,7 @@ async def _outfit_generate_from_uploads(req: GridOutfitRequest, user: User):
     items = [{
         "slot": k, "image_path": slots[k], "category": _GRID_SLOTS[k][0], "name": _GRID_SLOTS[k][1], "brand": None,
     } for k in _GRID_ORDER if k in slots]
-    person_path, result_path = await _compose_outfit(user, req.person_path, items, _GRID_LAYER_TEXT)
+    person_path, result_path = await _compose_outfit(user, req.person_path, items, _GRID_LAYER_TEXT, POSE_RULE if req.preserve_pose else "")
     doc = {
         "id": str(uuid.uuid4()),
         "user_id": user.user_id,
