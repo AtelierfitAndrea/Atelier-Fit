@@ -382,3 +382,6 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 - /studio: removed Categoria/Nome/Taglia; AI classifies garment (_classify_garment, cached in garment_class).
 - head_lock: colour-matched head paste (no halo), hand/phone carved out of head mask (no ghost). Wardrobe labels Italian.
 - Tested iteration_47-49 (pass).
+
+## 2026-10-28 — Stripe webhook always 200
+- /api/stripe/webhook (FastAPI) returns 200 on every path; invalid signature logged + not processed; invoice.payment_failed recorded. Verified with signed local events. Redeployed.
