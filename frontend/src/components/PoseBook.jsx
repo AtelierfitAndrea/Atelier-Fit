@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { X, Images, UserCircle } from "@phosphor-icons/react";
+import { X, Images, UserCircle, Trash } from "@phosphor-icons/react";
 import { api, fileUrl } from "@/lib/api";
 import ShareLook from "@/components/ShareLook";
 
@@ -14,7 +14,7 @@ const POSE_KEY = "atelier_use_pose";
 export const askBook = (kind, refId) => window.dispatchEvent(new CustomEvent(ASK_EVENT, { detail: { kind, ref_id: refId } }));
 export const takePoseForStudio = () => { const p = sessionStorage.getItem(POSE_KEY); sessionStorage.removeItem(POSE_KEY); return p; };
 
-function useList(url, key) {
+function useList(url, key, deletedMsg = "Foto eliminata") {
   const [rows, setRows] = useState([]);
   const load = useCallback(() => api.get(url).then(({ data }) => setRows(data[key])).catch(() => {}), [url, key]);
   useEffect(() => {
@@ -26,7 +26,7 @@ function useList(url, key) {
     try {
       await api.delete(`${url}/${id}`);
       window.dispatchEvent(new Event(BOOK_EVENT));
-      toast.success("Foto eliminata");
+      toast.success(deletedMsg);
       return true;
     } catch { toast.error("Eliminazione non riuscita"); return false; }
   };
@@ -34,7 +34,7 @@ function useList(url, key) {
 }
 
 export function useBook() {
-  const { rows, remove } = useList("/book", "photos");
+  const { rows, remove } = useList("/book", "photos", "Foto eliminata da Le mie Pose");
   return { photos: rows, remove: (p) => remove(p.id) };
 }
 
@@ -62,25 +62,31 @@ export function BookGrid({ photos, onRemove, onPick, selected, testid = "book-gr
   );
 }
 
-function Card({ path, onRemove, children, testid }) {
+function Card({ path, onRemove, children, testid, what }) {
   return (
     <div className="bg-white border hairline" data-testid={testid}>
       <div className="relative aspect-[3/4] overflow-hidden bg-neutral-100">
         <img src={`${fileUrl(path)}?thumb=640`} alt="" className="w-full h-full object-cover" />
-        <DeleteX onClick={onRemove} />
       </div>
-      <div className="p-2 space-y-2">{children}<ShareLook path={path} /></div>
+      <div className="p-2 space-y-2">
+        {children}
+        <ShareLook path={path} label="Ripubblica" />
+        <button onClick={() => { if (window.confirm(`Eliminare definitivamente questo ${what}?`)) onRemove(); }} data-testid="book-item-delete-btn"
+          className="w-full inline-flex items-center justify-center gap-2 border border-red-700 text-red-700 px-5 py-3 text-xs font-semibold uppercase tracking-[0.18em] hover:bg-red-700 hover:text-white transition-colors duration-300">
+          <Trash size={15} /> Elimina
+        </button>
+      </div>
     </div>
   );
 }
 
 function OutfitsTab() {
-  const { rows, remove } = useList("/outfit-book", "outfits");
+  const { rows, remove } = useList("/outfit-book", "outfits", "Outfit eliminato dal Book");
   if (!rows.length) return <p className="text-sm text-neutral-500" data-testid="outfit-book-empty">Nessun outfit salvato: a fine prova scegli "Salva nel Book"</p>;
   return (
     <div className="grid grid-cols-2 sm:grid-cols-3 gap-3" data-testid="outfit-book-grid">
       {rows.map((o) => (
-        <Card key={o.id} path={o.result_path} onRemove={() => remove(o.id)} testid="outfit-book-item">
+        <Card key={o.id} path={o.result_path} onRemove={() => remove(o.id)} testid="outfit-book-item" what="outfit">
           <div className="text-[10px] tracking-[0.2em] text-neutral-500">{new Date(o.created_at).toLocaleDateString("it-IT")}</div>
         </Card>
       ))}
@@ -94,7 +100,7 @@ function PosesTab({ onUse }) {
   return (
     <div className="grid grid-cols-2 sm:grid-cols-3 gap-3" data-testid="pose-book-grid">
       {photos.map((p) => (
-        <Card key={p.id} path={p.path} onRemove={() => remove(p)} testid="pose-book-item">
+        <Card key={p.id} path={p.path} onRemove={() => remove(p)} testid="pose-book-item" what="foto in posa">
           <button onClick={() => onUse(p)} className="btn-primary w-full !py-2.5 !text-[11px]" data-testid="pose-book-use-btn">
             <UserCircle size={16} /> Usa come Avatar
           </button>

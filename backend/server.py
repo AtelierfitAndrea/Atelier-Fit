@@ -1661,7 +1661,9 @@ async def book_delete(photo_id: str, user: User = Depends(get_current_user)):
     doc = await db.pose_book.find_one_and_delete({"id": photo_id, "user_id": user.user_id})
     if not doc:
         raise HTTPException(status_code=404, detail="Foto non trovata")
-    await db.files.update_many({"storage_path": doc["path"], "user_id": user.user_id}, {"$set": {"is_deleted": True}})
+    in_use = await db.tryons.find_one({"person_path": doc["path"]}, {"_id": 1}) or await db.outfits.find_one({"person_path": doc["path"]}, {"_id": 1})
+    if not in_use:  # keep the file if past try-ons still show it as "Tu"
+        await db.files.update_many({"storage_path": doc["path"], "user_id": user.user_id}, {"$set": {"is_deleted": True}})
     return {"deleted": True}
 
 
@@ -1738,6 +1740,8 @@ async def photos_delete_all(user: User = Depends(get_current_user)):
                 paths.add(d[k])
     await _mark_files_deleted(sorted(paths), uid)
     await db.tryons.delete_many({"user_id": uid})
+    await db.book_outfits_my_atelier.delete_many({"user_id": uid})
+    await db.pose_book.delete_many({"user_id": uid})
     await db.outfits.delete_many({"user_id": uid})
     await db.users.update_one({"user_id": uid}, {"$unset": {"avatar_path": "", "avatar_at": ""}})
     return {"deleted_photos": len(paths), "deleted_tryons": len(tryons), "deleted_outfits": len(outfits)}

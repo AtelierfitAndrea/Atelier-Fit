@@ -1,0 +1,34 @@
+{
+  "summary": "Tested the two books (Book = AI outfits only, Le mie Pose = pose photos) on the backend and frontend, desktop 1920 and mobile 390. Backend: 10/10 pytest pass. All 3 endpoints need auth (401 without it). POST works for tryon and outfit records. A tryon id sent as kind=outfit, another user's id or a missing id all return 404. Invalid kind or a raw path returns 422. Saving the same result_path twice gives back the same entry. DELETE then GET confirms removal, a second DELETE returns 404 and the source try-on stays in history. Frontend: book-btn opens book-modal with book-tab-outfits active by default. The outfit-book-ask popup appears once after a fresh /tryon navigation, and not on plain visit, reload or back/forward (history state is cleared). Scarta sends no request. Salva sends POST {kind:'tryon', ref_id} and the item shows in outfit-book-grid. Ripubblica (share-look-btn) opens the share menu. book-photo-delete asks for confirmation: dismiss keeps the item, accept sends DELETE and shows the empty state. In Le mie Pose, pose-book-use-btn opens /studio with person-source-pose active and the photo selected (gold ring, main photo set), also when already on /studio after switching to Avatar. The 'Dalle mie Pose' label shows; the pose delete with confirm works on mobile. One real pose try-on was run from the UI (owner pose photo with sunglasses, denim shorts, legs bare): done in ~55s, the popup appeared and the save worked. Result: pose, face and sunglasses kept, no invented leg/arm tattoos, photorealistic. One real FreeRetry ('Mani o volto strani') ran in ~40s on mobile, the popup appeared and Salva created a second Book entry (new result_path). OutfitGrid, OutfitBuilder and CopyLook were checked by code review only (askBook('outfit', data.id) is called after generation; CopyLook navigates with state fresh), with no real render for them. The popup is mounted globally in AppShell, which stays mounted across Protected routes, so client-side navigation works.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/photos/delete-all", "issue": "Does not remove book_outfits_my_atelier (or pose_book) entries, but marks their result files deleted. After 'delete all photos' the Book shows broken images (GET /api/files returns 404 for is_deleted files). Fix: delete_many on book_outfits_my_atelier and pose_book for the user in photos_delete_all and in any account purge."},
+      {"endpoint": "DELETE /api/book/{id}", "issue": "Deleting a pose also marks the underlying person file is_deleted, so older try-ons that used that pose show a broken 'Tu'/'Prima' image. This behaviour existed before; flagging it because the pose is now a reusable avatar source."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Book / Le mie Pose cards", "issues": ["The spec says 'RIPUBBLICA', but the share button reads 'Condividi il look'. Consider renaming it to 'Ripubblica' inside the Book modal.", "The spec says Elimina is an explicit action, but it is only a small X icon over the image. Consider adding an 'Elimina' text button next to [Usa come Avatar] [Ripubblica].", "The delete toast says 'Foto eliminata' and the confirm says 'Eliminare definitivamente questa foto?' for Outfit Book items too. Use outfit wording, e.g. 'Outfit eliminato dal Book'."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_outfit_book.py", "/app/test_reports/pytest/iteration56_outfit_book.xml"],
+  "action_items": [
+    "photos_delete_all (and account deletion, if any) should also purge book_outfits_my_atelier and pose_book for the user",
+    "Optional UX: label the share button 'Ripubblica' in the Book modal, add an explicit 'Elimina' button, use outfit-specific delete toast/confirm text"
+  ],
+  "critical_code_review_comments": [
+    "The POSE_RULE IDENTITY fixed rules (face, no added beard, shaved head kept, glasses exact) and 'SKIN — NO INVENTED TATTOOS' with negatives are present. tryon_quality.render adds the tattoo/beard QC hint when 'NO INVENTED TATTOOS' is in the prompt. _retry_extra also prepends POSE_RULE for preserve_pose retries. The rule only applies to preserve_pose renders (as specified), not to Avatar-mode or CopyLook renders.",
+    "TryOnDetail fires askBook in a child effect. That works on client navigation because AppShell/BookAsk persists, but the event would be lost if TryOnDetail mounted in the same commit as AppShell (e.g. a hard load with state fresh). This is not reachable in normal flows.",
+    "Studio keeps location.state.posePath after use, so reloading /studio re-selects that pose. Minor and arguably fine.",
+    "BookAsk save failures only show a generic toast; the popup has no loading state, which is fine because it closes immediately."
+  ],
+  "updated_files": ["/app/backend/tests/test_outfit_book.py"],
+  "success_rate": {"backend": "100%", "frontend": "100% of the tested flows"},
+  "seed_data_creation": "Temporarily added a pose_book entry for the owner (person f77c8ca7…jpg), later deleted through the UI; the file's is_deleted flag was restored to false. Created 1 real tryon (297c5036…, quota consumed) plus its free retry, then deleted that tryon and all owner book_outfits_my_atelier entries. Temporary TEST_ tryon for another user was removed.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Owner token pending_test_tok (Bearer or cookie session_token). To simulate a fresh try-on navigation without rendering, run history.pushState({usr:{fresh:true},key:'k',idx:1},'','/tryon/<id>') and dispatch a PopStateEvent; a hard reload with that state does NOT show the popup because of child-first effect order. Deleting a pose through the UI marks its file is_deleted, so restore it in Mongo if it is the owner's real photo. Real pose render takes ~55s, free retry ~40s."
+}

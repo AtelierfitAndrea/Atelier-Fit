@@ -406,3 +406,9 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 - QC: phone_present veto, retry once, fail-closed in phone mode; fix prompt never copies phone/clothes from original; missing-garment detection; grid items get AI desc (_garment_info cached).
 - head_lock: hand paste similarity gate (no skin patch), scene drift metric -> tight face paste + one SCENE_RULE regen; pad band trim for re-tinted pads. preserve_pose stored on docs and reused on free retry.
 - Tested iterations 52-55.
+
+## 2026-10-29 — Doppio Book
+- Book (outfit AI only): db.book_outfits_my_atelier, GET/POST/DELETE /api/outfit-book (POST by kind tryon|outfit + ref_id, result_path snapshot). Global BookAsk popup after every try-on end (Studio single, CopyLook via /tryon state fresh, OutfitGrid, OutfitBuilder, FreeRetry). Scarta = not saved, try-on stays in history. Cards: Ripubblica (ShareLook) + Elimina with confirm.
+- Le mie Pose = former pose_book: Usa come Avatar (-> /studio pose mode), Ripubblica, Elimina (file kept if used by past try-ons).
+- POSE_RULE: fixed identity rules (no beard added, hair/shaved head, glasses), no invented arm/leg tattoos, natural light/no filter; QC hint. delete-all purges both books.
+- Tested iteration_56.
