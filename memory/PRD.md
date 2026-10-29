@@ -412,3 +412,8 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 - Le mie Pose = former pose_book: Usa come Avatar (-> /studio pose mode), Ripubblica, Elimina (file kept if used by past try-ons).
 - POSE_RULE: fixed identity rules (no beard added, hair/shaved head, glasses), no invented arm/leg tattoos, natural light/no filter; QC hint. delete-all purges both books.
 - Tested iteration_56.
+
+## 2026-10-29 — FACE LOCK pose (PREVIEW ONLY, awaiting APPROVA)
+- head_lock: _pose_composite (original pixels everywhere, model pixels only where clothes changed; head + zone above chin always original; pads from model), _align_pose (ORB+RANSAC registers model output onto original), face_check credit saver (YuNet, FACE_MIN_CONF 0.75 + brightness/sharpness/size), pose_fail -> regenerate once -> 422 no credit. Fixed dropped elif in finalize.
+- /api/pose/check + server guard; SaveBookBar thin bar under result (no modal).
+- Foto in Posa hidden for non-owners (Studio PersonSource + Le mie Pose tab). NOT deployed.

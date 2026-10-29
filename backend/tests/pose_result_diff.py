@@ -36,13 +36,13 @@ if dx == 0 and dy >= 0 and out.shape[1] == orig.shape[1]:
           "side bg diff", round(float(np.concatenate([d[:, : w // 8], d[:, -w // 8:]], 1).mean()), 2))
     # ring around head (halo check): pixels just outside head ellipse
     m = np.zeros(d.shape, np.uint8)
-    cv2.ellipse(m, (int(fx + fw / 2), int(fy + fh * 0.38)), (int(fw * 0.82), int(fh * 0.98)), 0, 0, 360, 255, -1)
+    cv2.ellipse(m, (int(fx + fw / 2), int(fy + fh * 0.30)), (int(fw * 0.78), int(fh * 0.80)), 0, 0, 360, 255, -1)
     ring = cv2.dilate(m, np.ones((25, 25), np.uint8)) - m
     print("diff in 12px ring outside head lock", round(float(d[ring > 0].mean()), 2))
 side = np.concatenate([cv2.resize(orig, (400, int(400 * orig.shape[0] / orig.shape[1]))), cv2.resize(out, (400, int(400 * orig.shape[0] / orig.shape[1])))], 1)
-Image.fromarray(side).save(f"/app/test_reports/fl57/cmp_{sys.argv[1][:8]}.png")
+Image.fromarray(side).save(f"/app/test_reports/fl58/cmp_{sys.argv[1][:8]}.png")
 hc = (slice(max(0, fy - fh), min(orig.shape[0], fy + 2 * fh)), slice(max(0, fx - fw), min(orig.shape[1], fx + 2 * fw)))
 hco = (slice(max(0, fy - fh + dy), min(out.shape[0], fy + 2 * fh + dy)), slice(max(0, fx - fw + dx), min(out.shape[1], fx + 2 * fw + dx)))
 a, c = orig[hc], out[hco]
 c = cv2.resize(c, (a.shape[1], a.shape[0]))
-Image.fromarray(np.concatenate([a, c], 1)).save(f"/app/test_reports/fl57/head_{sys.argv[1][:8]}.png")
+Image.fromarray(np.concatenate([a, c], 1)).save(f"/app/test_reports/fl58/head_{sys.argv[1][:8]}.png")

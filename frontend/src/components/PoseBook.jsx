@@ -143,7 +143,7 @@ export function SaveBookBar({ kind, refId }) {
 
 const TABS = [["outfits", "Book"], ["poses", "Le mie Pose"]];
 
-export default function BookButton() {
+export default function BookButton({ showPoses = true }) {
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState("outfits");
   const navigate = useNavigate();
@@ -165,14 +165,14 @@ export default function BookButton() {
               <button onClick={() => setOpen(false)} aria-label="Chiudi" data-testid="book-modal-close"><X size={26} /></button>
             </div>
             <div className="flex gap-2 mb-6">
-              {TABS.map(([k, l]) => (
+              {TABS.filter(([k]) => showPoses || k !== "poses").map(([k, l]) => (
                 <button key={k} onClick={() => setTab(k)} data-testid={`book-tab-${k}`}
                   className={`px-4 py-2 label-caps border transition-colors ${tab === k ? "bg-[#0A0A0A] !text-white border-[#0A0A0A]" : "hairline hover:border-[#0A0A0A]"}`}>
                   {l}
                 </button>
               ))}
             </div>
-            {tab === "outfits" ? <OutfitsTab /> : <PosesTab onUse={pickPose} />}
+            {tab === "outfits" || !showPoses ? <OutfitsTab /> : <PosesTab onUse={pickPose} />}
           </div>
         </div>,
         document.body,

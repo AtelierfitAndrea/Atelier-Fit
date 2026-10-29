@@ -11,6 +11,7 @@ import PrivacyBox from "@/components/PrivacyBox";
 import AccountPersonalBox from "@/components/AccountPersonalBox";
 import OutfitGrid from "@/components/OutfitGrid";
 import PersonSource from "@/components/PersonSource";
+import { useAuth } from "@/lib/auth";
 import { takePoseForStudio } from "@/components/PoseBook";
 import IncludedNote from "@/components/IncludedNote";
 import CopyLook from "@/components/CopyLook";
@@ -33,7 +34,9 @@ export default function Studio() {
     const p = location.state?.posePath;
     if (p) { takePoseForStudio(); setPersonMode("pose"); setPosePath(p); }
   }, [location.state]);
-  const posed = personMode === "pose";
+  const { user } = useAuth();
+  const poseAllowed = !!user?.is_owner;
+  const posed = poseAllowed && personMode === "pose";
   const personPath = posed ? posePath : avatarPath;
   const [garmentPath, setGarmentPath] = useState(preset?.garment_path || null);
   const [garmentPreview, setGarmentPreview] = useState(preset?.garment_path ? fileUrl(preset.garment_path) : null);
@@ -116,7 +119,7 @@ export default function Studio() {
         <TryonCounter />
       </header>
 
-      <PersonSource mode={personMode} setMode={setPersonMode} posePath={posePath} setPosePath={setPosePath} uploadFile={uploadFile} />
+      {poseAllowed && <PersonSource mode={personMode} setMode={setPersonMode} posePath={posePath} setPosePath={setPosePath} uploadFile={uploadFile} />}
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         <UploadBox
