@@ -2071,6 +2071,8 @@ async def _render_single(user_id: str, person_path: str, garment_path: str, cate
     try:
         out_bytes = await tryon_quality.render(system, prompt, [ImageContent(person_b64), ImageContent(garment_b64)], lock,
                                                f"{category}: {name or category}", f"tryon-{user_id}", await _mark_for(user_id))
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Try-on generation error: {e}")
         raise HTTPException(status_code=500, detail=f"Image generation failed: {str(e)}")
@@ -2250,6 +2252,8 @@ async def _render_copylook(user_id: str, person_path: str, model_path: str, item
         out_bytes = await tryon_quality.render(
             "You are a professional fashion virtual try-on generator. Re-dress the SAME person of IMAGE 1, never the model.",
             prompt, contents, lock, "; ".join(f"{i['category']}: {i['name']}" for i in items), f"copylook-{user_id}", await _mark_for(user_id))
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"copylook apply error: {e}")
         raise HTTPException(status_code=500, detail=f"Image generation failed: {str(e)}")
@@ -3048,6 +3052,8 @@ async def _compose_outfit(user: User, person_path: Optional[str], items: list, l
         out_bytes = await tryon_quality.render(system, prompt, file_contents, lock,
                                                "; ".join(f"{g.get('category','top')}: {(g.get('brand') or '')} {g.get('name') or ''}".strip() for g in items),
                                                f"outfit-{user.user_id}", await _mark_for(user.user_id))
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Outfit generation error: {e}")
         raise HTTPException(status_code=500, detail=f"Generazione outfit non riuscita: {e}")
@@ -3146,6 +3152,8 @@ async def _outfit_generate_from_uploads(req: GridOutfitRequest, user: User):
     if status["is_blocked"]:
         raise HTTPException(status_code=402, detail="Quota esaurita — sblocca o attiva un piano")
     if req.preserve_pose:
+        if not req.person_path:
+            raise HTTPException(status_code=400, detail="Scatta o carica prima la tua foto in posa")
         await _require_pose_face(user, req.person_path)
     descs = {k: (await _garment_info(slots[k])).get("desc") for k in slots}
     items = [{

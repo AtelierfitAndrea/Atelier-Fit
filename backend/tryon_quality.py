@@ -224,7 +224,7 @@ async def render(system: str, prompt: str, contents: list, lock: dict, garments_
     out = await run_in_threadpool(head_lock.finalize, raw, snap)
     if snap.get("drift", 0) > head_lock.DRIFT_MAX or snap.get("pose_fail"):
         # The model invented a new scene: one fresh generation that must keep IMAGE 1's background.
-        logger.info(f"{tag}: background drift {snap['drift']:.1f}, regenerating once")
+        logger.info(f"{tag}: {'pose lock failed (scene/face changed)' if snap.get('pose_fail') else 'background drift %.1f' % snap['drift']}, regenerating once")
         del raw
         try:
             raw = await _image_call(system, prompt + SCENE_RULE + QUALITY_RULES, contents, f"{tag}-scene", aspect)
@@ -256,7 +256,13 @@ async def render(system: str, prompt: str, contents: list, lock: dict, garments_
             logger.warning(f"{tag}: fix pass failed: {e}")
             break
         del src
-        out = await run_in_threadpool(head_lock.finalize, raw, _snapshot(base))
+        fsnap = _snapshot(base)
+        fixed = await run_in_threadpool(head_lock.finalize, raw, fsnap)
         del raw
+        if fsnap.get("pose_fail"):
+            # FACE LOCK: a fix output that lost the original head is discarded, never delivered.
+            logger.info(f"{tag}: fix pass broke the pose lock, discarded")
+            break
+        out = fixed
     del base
     return await run_in_threadpool(watermark, best, mark, pads)

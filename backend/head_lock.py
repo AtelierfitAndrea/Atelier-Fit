@@ -66,8 +66,10 @@ def _faces(rgb: np.ndarray) -> list:
     _ok, faces = det.detect(cv2.cvtColor(small, cv2.COLOR_RGB2BGR))
     if faces is None:
         return []
-    boxes = [tuple(int(v) for v in f[:4] / scale) for f in faces]
-    return sorted(boxes, key=lambda b: b[2] * b[3], reverse=True)
+    # The person is the most CONFIDENT sizeable face (a big faded poster face in the background must not win on area).
+    big = max(f[2] * f[3] for f in faces)
+    faces = sorted([f for f in faces if f[2] * f[3] >= 0.15 * big], key=lambda f: f[14], reverse=True)
+    return [tuple(int(v) for v in f[:4] / scale) for f in faces]
 
 
 FACE_MIN_CONF = 0.75  # YuNet score: clear real photos measure 0.80-0.95
@@ -83,7 +85,8 @@ def face_check(person_bytes: bytes) -> tuple:
     _ok, faces = det.detect(cv2.cvtColor(small, cv2.COLOR_RGB2BGR))
     if faces is None:
         return False, 0.0, "no_face"
-    f = max(faces, key=lambda r: r[2] * r[3])
+    big = max(r[2] * r[3] for r in faces)
+    f = max((r for r in faces if r[2] * r[3] >= 0.15 * big), key=lambda r: r[14])
     x, y, fw, fh = (f[:4] / scale).astype(int)
     conf = float(f[14])
     side = int(max(fw, fh) * 3)
@@ -96,7 +99,7 @@ def face_check(person_bytes: bytes) -> tuple:
         det2 = cv2.FaceDetectorYN.create(_FACE_MODEL, "", (c2.shape[1], c2.shape[0]), 0.5)
         _ok, f2 = det2.detect(cv2.cvtColor(c2, cv2.COLOR_RGB2BGR))
         if f2 is not None:
-            conf = max(conf, float(max(f2, key=lambda r: r[2] * r[3])[14]))
+            conf = max(conf, float(max(f2, key=lambda r: r[14])[14]))
     face = cv2.cvtColor(rgb[max(0, y):y + fh, max(0, x):x + fw], cv2.COLOR_RGB2GRAY)
     bright = float(face.mean()) if face.size else 0.0
     sharp = float(cv2.Laplacian(cv2.resize(face, (128, 128)), cv2.CV_64F).var()) if face.size else 0.0
@@ -111,7 +114,7 @@ def face_check(person_bytes: bytes) -> tuple:
     return True, conf, ""
 
 
-def _pose_composite(canvas: np.ndarray, res: np.ndarray, face: tuple):
+def _pose_composite(canvas: np.ndarray, res: np.ndarray, face: tuple, pads: tuple = (0, 0)):
     """FACE LOCK for posed photos: original pixels everywhere, generated pixels ONLY where the clothes changed.
     Head (hair, ears, glasses, face) is never taken from the model. Returns (image, changed_fraction)."""
     H, W = canvas.shape[:2]
@@ -133,14 +136,54 @@ def _pose_composite(canvas: np.ndarray, res: np.ndarray, face: tuple):
     ch = cv2.dilate(ch, np.ones((3, 3), np.uint8))
     ch = cv2.resize(ch, (W, H), interpolation=cv2.INTER_LINEAR)
     fx, fy, fw, fh = face
-    # Whole head down to the chin (hair, ears, glasses) always stays original; collar/neck below the chin may change.
+    cx = int(fx + fw / 2)
+    # Head (hair, ears, glasses, face) down to the chin always stays original; hoods/collars/neck below the chin come from the model.
     head = np.zeros((H, W), np.uint8)
-    cv2.ellipse(head, (int(fx + fw / 2), int(fy + fh * 0.38)), (int(fw * 0.82), int(fh * 0.98)), 0, 0, 360, 255, -1)
-    ch[head > 0] = 0
+    cv2.ellipse(head, (cx, int(fy + fh * 0.30)), (int(fw * 0.78), int(fh * 0.80)), 0, 0, 360, 255, -1)
+    # Around the head ABOVE the chin, changes are the model's misplaced head/hair (ghost silhouette): keep the original there too.
+    zone = np.zeros((H, W), np.uint8)
+    cv2.ellipse(zone, (cx, int(fy + fh * 0.30)), (int(fw * 1.15), int(fh * 1.15)), 0, 0, 360, 255, -1)
+    zone[int(fy + fh * 1.0):] = 0
+    ch[(head > 0) | (zone > 0)] = 0
+    # Top/bottom pad bands are not part of the photo: always the model's continuation of the scene.
+    if pads[0]:
+        ch[:pads[0]] = 255
+    if pads[1]:
+        ch[H - pads[1]:] = 255
     w = cv2.GaussianBlur(ch, (0, 0), 2.0).astype(np.float32) * (1 / 255)
     out = cv2.blendLinear(res, canvas, w, 1 - w)
-    del w, ch, head
+    del w, ch, head, zone
     return out, frac
+
+
+def _align_pose(canvas: np.ndarray, res: np.ndarray) -> np.ndarray:
+    """Register the generated image onto the original by matching background features (similarity transform, RANSAC)."""
+    H, W = canvas.shape[:2]
+    s = 0.5
+    g1 = cv2.cvtColor(cv2.resize(canvas, (int(W * s), int(H * s))), cv2.COLOR_RGB2GRAY)
+    g2 = cv2.cvtColor(cv2.resize(res, (int(W * s), int(H * s))), cv2.COLOR_RGB2GRAY)
+    orb = cv2.ORB_create(2000)
+    k1, d1 = orb.detectAndCompute(g1, None)
+    k2, d2 = orb.detectAndCompute(g2, None)
+    if d1 is None or d2 is None:
+        return res
+    m = sorted(cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True).match(d2, d1), key=lambda x: x.distance)[:500]
+    if len(m) < 30:
+        return res
+    src = np.float32([k2[x.queryIdx].pt for x in m])
+    dst = np.float32([k1[x.trainIdx].pt for x in m])
+    M, inl = cv2.estimateAffinePartial2D(src, dst, ransacReprojThreshold=3.0)
+    if M is None or inl is None or int(inl.sum()) < 20:
+        return res
+    scale = float(np.hypot(M[0, 0], M[1, 0]))
+    rot = abs(np.degrees(np.arctan2(M[1, 0], M[0, 0])))
+    if not (0.8 < scale < 1.25) or rot > 3:
+        return res
+    M[:, 2] /= s
+    if abs(scale - 1) < 0.004 and abs(M[0, 2]) < 1 and abs(M[1, 2]) < 1:
+        return res
+    logger.info("head_lock: pose align scale=%.3f shift=(%.1f, %.1f) inliers=%d", scale, M[0, 2], M[1, 2], int(inl.sum()))
+    return cv2.warpAffine(res, M, (W, H), flags=cv2.INTER_LANCZOS4, borderMode=cv2.BORDER_REPLICATE)
 
 
 POSE_CHANGE_MAX = 0.6
@@ -267,7 +310,7 @@ def prepare(person_bytes: bytes, long_garment: bool, hands: list = None, paste_h
     face_c = (face[0], face[1] + top, face[2], face[3]) if face else None
     del im
     gc.collect()
-    return buf.getvalue(), {"canvas": canvas, "mask": mask, "face": face_c, "hands": paste_c, "pose": pose}
+    return buf.getvalue(), {"canvas": canvas, "mask": mask, "face": face_c, "hands": paste_c, "pose": pose, "pads_px": (top, bottom)}
 
 
 def _match_head_colour(canvas: np.ndarray, res: np.ndarray, mask: np.ndarray) -> np.ndarray:
@@ -314,7 +357,10 @@ def finalize(result_bytes: bytes, meta: dict) -> bytes:
     else:
         res = cv2.resize(res, (W, H), interpolation=cv2.INTER_LANCZOS4)
     # If the model zoomed/shifted the person, scale+move the result so its face lands exactly on the original face.
-    rf, of = _face_box(res), meta.get("face")
+    of = meta.get("face")
+    # Match the generated face to the ORIGINAL one by position (not by detector rank: a poster/mirror face must not win).
+    cand = _faces(res)
+    rf = min(cand, key=lambda b: (_centre(b)[0] - _centre(of)[0]) ** 2 + (_centre(b)[1] - _centre(of)[1]) ** 2) if (cand and of) else (cand[0] if cand else None)
     head_at = of  # where the ORIGINAL head will be pasted
     aligned = not of  # no detected face: only the top safe-zone band is restored
     if rf and of and 0.6 < of[2] / rf[2] < 1.6:
@@ -322,7 +368,10 @@ def finalize(result_bytes: bytes, meta: dict) -> bytes:
         sc = of[2] / rf[2]
         ocx, ocy = of[0] + of[2] / 2, of[1] + of[3] / 2
         rcx, rcy = rf[0] + rf[2] / 2, rf[1] + rf[3] / 2
-        if abs(sc - 1) > 0.02 or abs(ocx - rcx) > 3 or abs(ocy - rcy) > 3:
+        if meta.get("pose"):
+            # Posed photo: original pixels stay untouched; the generated image is moved onto the original framing.
+            res = _align_pose(canvas, res)
+        elif abs(sc - 1) > 0.02 or abs(ocx - rcx) > 3 or abs(ocy - rcy) > 3:
             # Keep the generated full body (hem, feet) and move the ORIGINAL head onto the generated face position.
             k = 1 / sc
             M = np.float32([[k, 0, rcx - k * ocx], [0, k, rcy - k * ocy]])
@@ -348,7 +397,7 @@ def finalize(result_bytes: bytes, meta: dict) -> bytes:
                 aligned = abs(cx - ox) < 0.35 * of[2] and abs(cy - oy) < 0.35 * of[3]
     if meta.get("pose"):
         # Posed photo: never keep a generated face. Misaligned or new scene -> flag so the render loop regenerates.
-        out, frac = (_pose_composite(canvas, res, head_at) if aligned and head_at else (res, 1.0))
+        out, frac = (_pose_composite(canvas, res, head_at, meta.get("pads_px", (0, 0))) if aligned and head_at else (res, 1.0))
         logger.info("head_lock: pose composite changed=%.2f aligned=%s", frac, aligned)
         del res, canvas, mask
         meta.clear()

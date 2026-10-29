@@ -44,7 +44,7 @@ export default function TryOnDetail() {
         <Link to="/wardrobe" className="label-caps inline-flex items-center gap-2 mb-4 hover:text-[#8C7355]" data-testid="back-to-wardrobe">
           <ArrowLeft size={14} weight="bold" /> Il tuo armadio
         </Link>
-        <div className="relative border hairline overflow-hidden bg-[#FAF8F5]" style={{ aspectRatio: "3/4" }}>
+        <div className="relative border hairline overflow-hidden bg-[#FAF8F5] lg:max-h-[72vh]" style={{ aspectRatio: "3/4" }}>
           <img src={imgSrc} alt="" className="absolute inset-0 w-full h-full object-contain" data-testid="tryon-main-image" />
           <button
             onClick={() => setView(view === "after" ? "before" : "after")}

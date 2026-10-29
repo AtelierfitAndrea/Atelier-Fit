@@ -1,0 +1,65 @@
+{
+  "summary": "Tested the FACE LOCK pose composite, the CREDIT SAVER face check and the Book bar with no modal, on backend and frontend, desktop 1920 and mobile 390. Ran 3 real pose renders, 1 real avatar render and 1 real grid render. WORKING: (a) /api/pose/check returns {ok, confidence, reason, message}, the result is cached in db.face_checks, it needs auth and rejects other users' paths. Dark, no-face and tiny-face photos return ok:false with an Italian message. (b) Server guard: /api/tryon/generate and /api/outfit/generate-from-uploads with preserve_pose and a bad photo give job error 422 'Ricarica foto più luminosa.' within seconds, with no AI call, no try-on doc and quota unchanged. (c) Studio PersonSource on mobile: a dark gallery upload shows pose-face-error, the photo is not selected and the 'Le mie Pose' ask does not open. A good photo clears the error and the ask opens. (d) Book bar: outfit-book-ask is a normal-flow bar 8px under the tryon-main-image box (desktop and mobile) and 16px under grid-result-image (real grid render). There is no overlay. SALVA sends POST /outfit-book {kind:'tryon', ref_id} and SCARTA sends nothing. The bar shows again after a real FreeRetry and does not show on a plain visit. (e) Unit tests: _pose_composite keeps head pixels identical (diff 0.0) and the background identical, and takes only the changed torso. finalize sets pose_fail on a new scene. render() regenerates once with SCENE_RULE and then raises HTTPException 422. (f) Avatar regression: avatar try-on done in 50s, result good. BROKEN: (1) The 422 from render() never reaches the user: it comes back as 500 'Image generation failed: 422: ...'. (2) On the owner's real pose photo b1a48272 the LARGEST detected face is a faded poster face in the background (YuNet 0.803), not the person (0.892). face_check passed on the wrong face, and both renders failed: 'pose composite changed=0.99' then '0.98' after the SCENE_RULE retry, so the user got an error. (3) On a clean street pose (yellow hoodie, suit garment) the head ellipse reaches down to 1.36*face height. It keeps the ORIGINAL yellow hood/collar around the neck, cut off with hard edges, in both the first render and the FreeRetry. QC flagged it 4 times ('yellow hoodie remnants around neck', 'halo behind head') and wasted 2 fix passes per render. (4) The bottom extension band for long garments shows flat pad-colour rectangles mixed with the generated floor.",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "POST /api/tryon/generate (preserve_pose) -> server._render_single / _render_copylook / _compose_outfit", "issue": "The HTTPException(422) raised by tryon_quality.render() on pose_fail is caught by the bare 'except Exception as e' at server.py ~2074 (also ~2254 copylook and ~3051 _compose_outfit) and re-raised as 500 'Image generation failed: 422: Non riesco a mantenere...'. Reproduced live: GET /api/render-jobs/14a02da0 returned 500 with that detail. No try-on or credit is created (correct), but the status code and message are wrong. Fix: add 'except HTTPException: raise' before 'except Exception' in all 3 wrappers.", "priority": "HIGH"},
+      {"endpoint": "head_lock._faces / _face_box / face_check (face selection)", "issue": "The face is chosen by LARGEST AREA. On the owner photo vfit/person/user_389c87aaadc6/b1a482725d9c4ea2a3b228bd487520e7.jpg (a screenshot with a big faded poster face behind the man) YuNet finds [12,295,269,379] score 0.803 (poster) and [340,482,171,212] score 0.892 (the real face). face_check reports conf 0.803 for the poster, prepare locks the poster face, and finalize aligns on the wrong face (ratio 269/171=1.57 is inside the 0.6-1.6 window), so changed=0.99 -> pose_fail -> SCENE retry 0.98 -> error. The real person's face would never be locked. Fix: pick the face by score, or by score * area with a contrast/sharpness check, and use the same chosen face in face_check, prepare and finalize. Clear db.face_checks after the fix (the cache stores the old verdict).", "priority": "CRITICAL"},
+      {"endpoint": "head_lock._pose_composite head ellipse", "issue": "The ellipse centre is fy+0.38fh with semi-axes 0.82fw x 0.98fh, so it reaches fy+1.36fh, well below the chin. Any garment near the head (hood, high collar, scarf, the hands holding the hood) stays ORIGINAL. Real render (street pose, yellow hoodie -> navy suit) left a yellow hood/collar piece cut with hard edges around the neck, in the first render and the FreeRetry (head crop: /app/test_reports/fl57/head_1fd6d4ee.png). QC repeatedly reported 'yellow hoodie fabric remnant around neck' and 'ghost silhouette and halo behind head'. Fix passes cannot help because finalize re-pastes the same original neck each time (2 wasted AI calls per render). Suggest: lock only face + hair with a skin/hair segmentation or a tighter ellipse ending at the chin (~fy+1.05fh), and let changed clothing pixels inside the neck/collar zone come from the model.", "priority": "HIGH"}
+    ],
+    "minor": [
+      {"endpoint": "head_lock._pose_composite with long garments (bottom pad band)", "issue": "The bottom extension band is a flat bg colour in the canvas. Where the generated floor is within diff 24 of the flat colour, the flat pad stays, so the result shows hard-edged flat rectangles and patches near the feet/shadow (bottom-right of tryon e3769eb1...jpg). The pad bands (top and bottom) should always be taken from the model output in pose mode."},
+      {"endpoint": "tryon_quality.render log", "issue": "Logs 'background drift 0.0, regenerating once' when the real reason is pose_fail. This is misleading when debugging."},
+      {"endpoint": "finalize pose branch in the fix passes", "issue": "In the QC fix loop, finalize(raw, _snapshot(base)) ignores pose_fail. If a fix-pass output is misaligned, the branch returns (res, 1.0), which is the RAW model image with a generated face, and that image can become 'best'. This violates FACE LOCK. Guard: skip or discard fix outputs where pose_fail is True."},
+      {"endpoint": "warp branch in finalize (pose)", "issue": "When the model zooms, the canvas is scaled to the model framing (head offset 11-16px, scale 1.08-1.14 in real runs). The head comes from original pixels but resampled, and the background is no longer pixel-identical to the photo (head crop diff 14-16 vs 0 expected)."},
+      {"endpoint": "POST /api/outfit/generate-from-uploads", "issue": "preserve_pose:true with person_path null skips _require_pose_face (falls back to the avatar silently)."},
+      {"endpoint": "_tryon_retry / _render_copylook with preserve_pose", "issue": "Copy-look retry passes POSE_RULE in extra, but _render_copylook does not pass pose=True to head_lock.prepare (code review). Verify the pose composite is applied for copylook pose retries."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {"flow": "Pose try-on failure message", "issue": "Because the backend returns 500 'Image generation failed: 422: ...', the Studio toast shows the raw technical prefix instead of the clean Italian message.", "affected_selectors": ["[data-sonner-toast]"]}
+    ],
+    "design_issues": [
+      {"screen": "TryOnDetail desktop 1920x1080", "issues": ["The image box is 1004px tall, so outfit-book-ask sits at y=1156, below the fold. Users only see the Book question after scrolling. Consider a max-height on the image box on desktop."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_face_lock_unit.py",
+    "/app/backend/tests/test_face_lock_api.py",
+    "/app/backend/tests/pose_facelock_check.py",
+    "/app/backend/tests/pose_result_diff.py",
+    "/app/backend/tests/pose_drift_probe.py",
+    "/app/backend/tests/avatar_regression_check.py",
+    "/app/test_reports/pytest/face_lock.xml"
+  ],
+  "action_items": [
+    "server.py: re-raise HTTPException in the except blocks of _render_single (~2074), _render_copylook (~2254) and _compose_outfit (~3051) so the pose_fail 422 reaches the client",
+    "head_lock: choose the person's face by detection score (or score * area with a sharpness check) in _faces/_face_box/face_check. The owner photo b1a48272 currently locks a background poster face and every pose try-on on it fails with changed≈0.99",
+    "head_lock._pose_composite: shrink the head lock to face + hair (end at about the chin) or use segmentation, so old hoods/collars/scarves are not kept around the neck (hard-edged yellow hood remnant seen in 2/2 real renders)",
+    "head_lock._pose_composite: always use model pixels inside the top/bottom pad bands (flat rectangles in the bottom band for long garments)",
+    "tryon_quality.render fix loop: discard fix outputs with pose_fail=True (otherwise a raw generated face can be delivered)",
+    "Clear db.face_checks after changing face selection (cached verdicts)",
+    "Fix the misleading 'background drift' log message in the pose_fail regeneration"
+  ],
+  "critical_code_review_comments": [
+    "server.py is 3551 lines: split the try-on, outfit, book and pose routes into modules",
+    "face_check and _faces duplicate the YuNet create/resize/detect code: extract one helper that returns boxes and scores",
+    "PersonSource: a failed face check leaves the uploaded file as an orphan person file (consider deleting it)",
+    "PersonSource: the pose photo set via 'Le mie Pose' (takePoseForStudio) is not face-checked client-side. The server guard catches it, but the user only learns after pressing Genera"
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_face_lock_unit.py",
+    "/app/backend/tests/test_face_lock_api.py",
+    "/app/backend/tests/pose_facelock_check.py",
+    "/app/backend/tests/pose_result_diff.py",
+    "/app/backend/tests/pose_drift_probe.py",
+    "/app/backend/tests/avatar_regression_check.py"
+  ],
+  "success_rate": {"backend": "API guard/check 6/6 and unit 6/6 pass. Real pose renders: 0/3 meet FACE LOCK quality (1 failed with a wrong 500, 2 with a hood remnant at the neck). Avatar regression 1/1 OK", "frontend": "100% of the tested UI flows (face error, Book bar under the tryon/grid image, SALVA/SCARTA, bar after FreeRetry). OutfitBuilder bar checked by code review only"},
+  "seed_data_creation": "None kept. Cleaned up: 2 tryons (TEST_pose 1fd6d4ee, TEST_avatar f3fbd789), grid outfit 55a11c10, their try_on_log/free_retries/book_outfits entries, uploaded test files (soft-deleted) and all db.face_checks.",
+  "retest_needed": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Owner token pending_test_tok (plan FREE in honeymoon, so the quota does not move). Run pytest with -n 0 and export REACT_APP_BACKEND_URL. test_pose_book.py needs /tmp/pose.jpg and the session test_book_other_tok, which no longer exists (3 failures are environmental). A good full-body street pose: unsplash photo-1515886657613-9f3515b0c78f (yellow hoodie, face score 0.93). Suit garment: vfit/garment/user_389c87aaadc6/6a2a817775de40d396c2d4b4d3cff79e.jpg. Use pose_facelock_check.py <person> <garment> for a real render (run in the foreground with timeout; nohup jobs get killed), then pose_result_diff.py <tryon_id>, which writes a side-by-side and a head crop to /app/test_reports/fl57/ (the view tool only displays .png). To simulate a fresh try-on: history.pushState({usr:{fresh:true},key:'k',idx:1},'','/tryon/<id>') + PopStateEvent. Real pose render takes ~75-120s (2 fix passes), avatar ~50s, grid ~60s.",
+  "rca of the issue": "Reported halo/grimace/deformed face: (1) the face detector picks the largest face. With a background face or poster it locks the wrong region, so the real face is regenerated or the job fails. (2) The head lock ellipse goes far below the chin, so original clothing at the neck is pasted over the new garment with hard edges (the 'halo' at the neck). (3) The pose_fail 422 is swallowed into a 500 by the generic except in server.py. Repro: POST /api/tryon/generate {person_path: b1a48272..., garment_path: 6a2a8177..., preserve_pose:true} gives logs 'pose composite changed=0.99' and then 0.98, and the job returns 500 'Image generation failed: 422: ...'."
+}
