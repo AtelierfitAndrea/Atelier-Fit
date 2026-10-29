@@ -143,7 +143,7 @@ export function SaveBookBar({ kind, refId }) {
 
 const TABS = [["outfits", "Book"], ["poses", "Le mie Pose"]];
 
-export default function BookButton({ showPoses = true }) {
+export default function BookButton({ showPoses = false }) {
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState("outfits");
   const navigate = useNavigate();

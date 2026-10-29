@@ -35,7 +35,7 @@ export default function Studio() {
     if (p) { takePoseForStudio(); setPersonMode("pose"); setPosePath(p); }
   }, [location.state]);
   const { user } = useAuth();
-  const poseAllowed = !!user?.is_owner;
+  const poseAllowed = user?.is_owner === true;
   const posed = poseAllowed && personMode === "pose";
   const personPath = posed ? posePath : avatarPath;
   const [garmentPath, setGarmentPath] = useState(preset?.garment_path || null);

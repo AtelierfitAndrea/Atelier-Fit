@@ -85,7 +85,7 @@ export default function AppShell({ children }) {
             )}
             <Link to="/assistenza" className="md:hidden" title="Assistenza" data-testid="nav-support-mobile"><Question size={22} weight="duotone" /></Link>
             <FamilySwitcher />
-            <BookButton showPoses={!!user?.is_owner} />
+            <BookButton showPoses={user?.is_owner === true} />
             <AvatarBubble />
             <button data-testid="logout-btn" onClick={logout} className="btn-ghost !px-3 !py-2" title="Logout">
               <SignOut size={16} weight="bold" />
