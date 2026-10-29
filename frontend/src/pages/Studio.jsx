@@ -11,6 +11,7 @@ import PrivacyBox from "@/components/PrivacyBox";
 import AccountPersonalBox from "@/components/AccountPersonalBox";
 import OutfitGrid from "@/components/OutfitGrid";
 import PersonSource from "@/components/PersonSource";
+import { takePoseForStudio } from "@/components/PoseBook";
 import IncludedNote from "@/components/IncludedNote";
 import CopyLook from "@/components/CopyLook";
 import TryOnProgress from "@/components/TryOnProgress";
@@ -25,8 +26,13 @@ export default function Studio() {
   const preset = location.state?.preset || null;
   const { avatar } = useAvatar();
   const avatarPath = avatar?.path || null;
-  const [personMode, setPersonMode] = useState("avatar");
-  const [posePath, setPosePath] = useState(null);
+  const [startPose] = useState(() => takePoseForStudio());
+  const [personMode, setPersonMode] = useState(startPose ? "pose" : "avatar");
+  const [posePath, setPosePath] = useState(startPose);
+  useEffect(() => {
+    const p = location.state?.posePath;
+    if (p) { takePoseForStudio(); setPersonMode("pose"); setPosePath(p); }
+  }, [location.state]);
   const posed = personMode === "pose";
   const personPath = posed ? posePath : avatarPath;
   const [garmentPath, setGarmentPath] = useState(preset?.garment_path || null);
@@ -88,7 +94,7 @@ export default function Studio() {
       refreshSub();
       setGenerating(false);
       await new Promise((r) => setTimeout(r, 800));
-      navigate(`/tryon/${data.id}`);
+      navigate(`/tryon/${data.id}`, { state: { fresh: true } });
     } catch (e) {
       if (e?.response?.status === 402) { openPaywall(); }
       else { toast.error(e?.response?.data?.detail || "Generazione non riuscita"); }

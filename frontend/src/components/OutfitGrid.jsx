@@ -11,6 +11,7 @@ import { notifyTabReady } from "@/lib/tabNotify";
 import { postRender } from "@/lib/renderJob";
 import SaveToGallery from "@/components/SaveToGallery";
 import ShareLook from "@/components/ShareLook";
+import { askBook } from "@/components/PoseBook";
 
 const SLOTS = [
   { k: "top", n: 1, l: "Maglia / Top" },
@@ -190,6 +191,7 @@ export default function OutfitGrid({ personPath, preservePose = false, uploadFil
         items: ready.map((s) => ({ slot: s.k, image_path: items[s.k].path })),
       });
       setResult({ ...data, used: ready.map((s) => ({ slot: s, item: items[s.k] })) });
+      askBook("outfit", data.id);
       refresh();
       onGenerated?.();
       notifyTabReady();

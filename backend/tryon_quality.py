@@ -208,6 +208,8 @@ async def render(system: str, prompt: str, contents: list, lock: dict, garments_
     if "SUIT — SHIRT TUCKED IN" in prompt:
         garments_txt += " — complete suit: the shirt must be TUCKED INSIDE the trousers, tie straight inside the jacket (shirt hanging out = garments_ok false)"
     phone = "SMARTPHONE REMOVAL" in prompt
+    if "NO INVENTED TATTOOS" in prompt:
+        garments_txt += " — arms and legs must show NO tattoo that is not in IMAGE 1, and no beard may be added (invented tattoo/beard = garments_ok false)"
     if phone:
         garments_txt += " — NO smartphone may remain in any hand or anywhere in the image; the former phone hand must be empty and relaxed (phone visible = garments_ok false)"
     aspect = _aspect(lock)

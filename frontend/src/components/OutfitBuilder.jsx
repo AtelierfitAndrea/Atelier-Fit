@@ -11,6 +11,7 @@ import { notifyTabReady } from "@/lib/tabNotify";
 import { postRender } from "@/lib/renderJob";
 import SaveToGallery from "@/components/SaveToGallery";
 import ShareLook from "@/components/ShareLook";
+import { askBook } from "@/components/PoseBook";
 
 
 function priceFmt(n, cur = "EUR") {
@@ -102,6 +103,7 @@ export default function OutfitBuilder() {
         person_path: personPath || undefined,
       });
       setResult(data);
+      askBook("outfit", data.id);
       setSelected([]);
       notifyTabReady();
       toast.success("Outfit pronto");

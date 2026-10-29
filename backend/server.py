@@ -12,7 +12,7 @@ import base64
 import requests as http_requests
 from pathlib import Path
 from pydantic import BaseModel, Field, ConfigDict
-from typing import List, Optional
+from typing import List, Literal, Optional
 from datetime import datetime, timezone, timedelta
 from zoneinfo import ZoneInfo
 from emergentintegrations.llm.chat import LlmChat, UserMessage, ImageContent
@@ -1626,6 +1626,36 @@ async def book_add(req: BookAddRequest, user: User = Depends(get_current_user)):
     return await db.pose_book.find_one({"user_id": user.user_id, "path": req.path}, {"_id": 0})
 
 
+class OutfitBookIn(BaseModel):
+    kind: Literal["tryon", "outfit"]
+    ref_id: str
+
+
+@api_router.get("/outfit-book")
+async def outfit_book_list(user: User = Depends(get_current_user)):
+    rows = await db.book_outfits_my_atelier.find({"user_id": user.user_id}, {"_id": 0}).sort("created_at", -1).to_list(300)
+    return {"outfits": rows}
+
+
+@api_router.post("/outfit-book")
+async def outfit_book_add(req: OutfitBookIn, user: User = Depends(get_current_user)):
+    # Only AI results generated in My Atelier: the image comes from the user's own try-on/outfit record.
+    src = await (db.tryons if req.kind == "tryon" else db.outfits).find_one({"id": req.ref_id, "user_id": user.user_id}, {"_id": 0, "result_path": 1})
+    if not src or not src.get("result_path"):
+        raise HTTPException(status_code=404, detail="Prova non trovata")
+    doc = {"id": str(uuid.uuid4()), "user_id": user.user_id, "kind": req.kind, "ref_id": req.ref_id,
+           "result_path": src["result_path"], "created_at": datetime.now(timezone.utc).isoformat()}
+    await db.book_outfits_my_atelier.update_one({"user_id": user.user_id, "result_path": src["result_path"]}, {"$setOnInsert": doc}, upsert=True)
+    return await db.book_outfits_my_atelier.find_one({"user_id": user.user_id, "result_path": src["result_path"]}, {"_id": 0})
+
+
+@api_router.delete("/outfit-book/{entry_id}")
+async def outfit_book_delete(entry_id: str, user: User = Depends(get_current_user)):
+    if not (await db.book_outfits_my_atelier.delete_one({"id": entry_id, "user_id": user.user_id})).deleted_count:
+        raise HTTPException(status_code=404, detail="Outfit non trovato")
+    return {"deleted": True}
+
+
 @api_router.delete("/book/{photo_id}")
 async def book_delete(photo_id: str, user: User = Depends(get_current_user)):
     doc = await db.pose_book.find_one_and_delete({"id": photo_id, "user_id": user.user_id})
@@ -1924,9 +1954,14 @@ POSE_RULE = (
     "• KEEP 100% IDENTICAL: face, hands with 5 fingers, body shape, pose, background, lighting and camera angle of IMAGE 1. "
     "Replace ONLY the clothes, draping and folding them naturally on this same pose (fabric follows bent arms and legs, tension where the body bends, "
     "correct occlusion of crossed limbs). The new clothes must NOT cover or alter the hands, the face or the neck.\n"
-    "• Output quality: photorealistic, Red Carpet editorial quality, 8k detail, sharp focus.\n"
+    "• IDENTITY — FIXED RULES: same face identity, never change, blur or distort the face. Do NOT add a beard or stubble that is not in IMAGE 1. "
+    "Keep the hair / head exactly as IMAGE 1 (a shaved head stays shaved). Keep glasses exactly as in IMAGE 1 (same frame, same position) and never add or remove glasses.\n"
+    "• SKIN — NO INVENTED TATTOOS: arms and legs keep exactly the skin of IMAGE 1; NEVER add tattoos on arms or legs and remove any tattoo that is not "
+    "visible in IMAGE 1. Keep only tattoos really visible in IMAGE 1 (e.g. a neck tattoo).\n"
+    "• Output quality: photorealistic, high resolution, Red Carpet editorial quality, 8k detail, sharp focus, natural light, no cartoon, no filter.\n"
     "• NEGATIVE: stiff straight pose, symmetrical mannequin stance, changed arm or leg position, rotated body, new background, deformed hands, "
-    "6 fingers, extra fingers, extra limbs, deformed face, halo, blur.\n"
+    "6 fingers, extra fingers, extra limbs, deformed face, face distortion, blurry face, changing identity, added beard, arm tattoos, leg tattoos, "
+    "cartoon, filter, halo, blur.\n"
 )
 
 PHONE_RULE = (

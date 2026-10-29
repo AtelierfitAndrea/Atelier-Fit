@@ -1,51 +1,148 @@
 import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
+import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { X, Images } from "@phosphor-icons/react";
+import { X, Images, UserCircle } from "@phosphor-icons/react";
 import { api, fileUrl } from "@/lib/api";
+import ShareLook from "@/components/ShareLook";
 
 export const BOOK_EVENT = "atelier-book-changed";
+const ASK_EVENT = "atelier-ask-book";
+const POSE_KEY = "atelier_use_pose";
 
-export function useBook() {
-  const [photos, setPhotos] = useState([]);
-  const load = useCallback(() => api.get("/book").then(({ data }) => setPhotos(data.photos)).catch(() => {}), []);
+// Call at the end of every try-on: the global BookAsk asks "Vuoi salvare questo outfit nel tuo Book?".
+export const askBook = (kind, refId) => window.dispatchEvent(new CustomEvent(ASK_EVENT, { detail: { kind, ref_id: refId } }));
+export const takePoseForStudio = () => { const p = sessionStorage.getItem(POSE_KEY); sessionStorage.removeItem(POSE_KEY); return p; };
+
+function useList(url, key) {
+  const [rows, setRows] = useState([]);
+  const load = useCallback(() => api.get(url).then(({ data }) => setRows(data[key])).catch(() => {}), [url, key]);
   useEffect(() => {
     load();
     window.addEventListener(BOOK_EVENT, load);
     return () => window.removeEventListener(BOOK_EVENT, load);
   }, [load]);
-  const remove = async (p) => {
+  const remove = async (id) => {
     try {
-      await api.delete(`/book/${p.id}`);
+      await api.delete(`${url}/${id}`);
       window.dispatchEvent(new Event(BOOK_EVENT));
-      toast.success("Foto eliminata dal Book");
+      toast.success("Foto eliminata");
       return true;
     } catch { toast.error("Eliminazione non riuscita"); return false; }
   };
-  return { photos, remove };
+  return { rows, remove };
 }
 
+export function useBook() {
+  const { rows, remove } = useList("/book", "photos");
+  return { photos: rows, remove: (p) => remove(p.id) };
+}
+
+const confirmDelete = () => window.confirm("Eliminare definitivamente questa foto?");
+
+const DeleteX = ({ onClick }) => (
+  <button onClick={() => { if (confirmDelete()) onClick(); }} aria-label="Elimina"
+    className="absolute top-1.5 right-1.5 w-7 h-7 rounded-full bg-black/70 text-white flex items-center justify-center hover:bg-black" data-testid="book-photo-delete">
+    <X size={14} weight="bold" />
+  </button>
+);
+
 export function BookGrid({ photos, onRemove, onPick, selected, testid = "book-grid" }) {
-  if (!photos.length) return <p className="text-sm text-neutral-500" data-testid={`${testid}-empty`}>Nessuna foto nel tuo Book</p>;
+  if (!photos.length) return <p className="text-sm text-neutral-500" data-testid={`${testid}-empty`}>Nessuna foto in Le mie Pose</p>;
   return (
     <div className="grid grid-cols-3 sm:grid-cols-4 gap-3" data-testid={testid}>
       {photos.map((p) => (
         <div key={p.id} className={`relative aspect-[3/4] overflow-hidden bg-neutral-100 ${selected === p.path ? "ring-2 ring-[#D4AF37]" : ""}`} data-testid="book-photo">
           <img src={`${fileUrl(p.path)}?thumb=480`} alt="" onClick={() => onPick?.(p)}
             className={`w-full h-full object-cover ${onPick ? "cursor-pointer hover:scale-105 transition-transform duration-300" : ""}`} />
-          <button onClick={() => { if (window.confirm("Eliminare definitivamente questa foto?")) onRemove(p); }} aria-label="Elimina"
-            className="absolute top-1.5 right-1.5 w-7 h-7 rounded-full bg-black/70 text-white flex items-center justify-center hover:bg-black" data-testid="book-photo-delete">
-            <X size={14} weight="bold" />
-          </button>
+          <DeleteX onClick={() => onRemove(p)} />
         </div>
       ))}
     </div>
   );
 }
 
+function Card({ path, onRemove, children, testid }) {
+  return (
+    <div className="bg-white border hairline" data-testid={testid}>
+      <div className="relative aspect-[3/4] overflow-hidden bg-neutral-100">
+        <img src={`${fileUrl(path)}?thumb=640`} alt="" className="w-full h-full object-cover" />
+        <DeleteX onClick={onRemove} />
+      </div>
+      <div className="p-2 space-y-2">{children}<ShareLook path={path} /></div>
+    </div>
+  );
+}
+
+function OutfitsTab() {
+  const { rows, remove } = useList("/outfit-book", "outfits");
+  if (!rows.length) return <p className="text-sm text-neutral-500" data-testid="outfit-book-empty">Nessun outfit salvato: a fine prova scegli "Salva nel Book"</p>;
+  return (
+    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3" data-testid="outfit-book-grid">
+      {rows.map((o) => (
+        <Card key={o.id} path={o.result_path} onRemove={() => remove(o.id)} testid="outfit-book-item">
+          <div className="text-[10px] tracking-[0.2em] text-neutral-500">{new Date(o.created_at).toLocaleDateString("it-IT")}</div>
+        </Card>
+      ))}
+    </div>
+  );
+}
+
+function PosesTab({ onUse }) {
+  const { photos, remove } = useBook();
+  if (!photos.length) return <p className="text-sm text-neutral-500" data-testid="pose-book-empty">Nessuna foto in posa salvata</p>;
+  return (
+    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3" data-testid="pose-book-grid">
+      {photos.map((p) => (
+        <Card key={p.id} path={p.path} onRemove={() => remove(p)} testid="pose-book-item">
+          <button onClick={() => onUse(p)} className="btn-primary w-full !py-2.5 !text-[11px]" data-testid="pose-book-use-btn">
+            <UserCircle size={16} /> Usa come Avatar
+          </button>
+        </Card>
+      ))}
+    </div>
+  );
+}
+
+export function BookAsk() {
+  const [ask, setAsk] = useState(null);
+  useEffect(() => {
+    const on = (e) => setAsk(e.detail);
+    window.addEventListener(ASK_EVENT, on);
+    return () => window.removeEventListener(ASK_EVENT, on);
+  }, []);
+  if (!ask) return null;
+  const save = async () => {
+    const a = ask;
+    setAsk(null);
+    try { await api.post("/outfit-book", a); window.dispatchEvent(new Event(BOOK_EVENT)); toast.success("Outfit salvato nel tuo Book"); }
+    catch { toast.error("Salvataggio non riuscito"); }
+  };
+  return createPortal(
+    <div className="fixed inset-0 z-[90] bg-black/60 flex items-center justify-center p-4" data-testid="outfit-book-ask">
+      <div className="bg-white max-w-sm w-full p-6 text-center">
+        <div className="font-serif text-2xl">Vuoi salvare questo outfit nel tuo Book?</div>
+        <div className="mt-6 flex gap-3">
+          <button onClick={() => setAsk(null)} className="btn-ghost flex-1" data-testid="outfit-book-discard">Scarta</button>
+          <button onClick={save} className="btn-primary flex-1" data-testid="outfit-book-save">Salva nel Book</button>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
+const TABS = [["outfits", "Book"], ["poses", "Le mie Pose"]];
+
 export default function BookButton() {
   const [open, setOpen] = useState(false);
-  const { photos, remove } = useBook();
+  const [tab, setTab] = useState("outfits");
+  const navigate = useNavigate();
+  const pickPose = (p) => {
+    sessionStorage.setItem(POSE_KEY, p.path);
+    setOpen(false);
+    navigate("/studio", { state: { posePath: p.path } });
+  };
   return (
     <>
       <button onClick={() => setOpen(true)} title="Il Mio Book" className="hover:text-[#D4AF37] transition-colors shrink-0" data-testid="book-btn">
@@ -55,13 +152,18 @@ export default function BookButton() {
         <div className="fixed inset-0 z-[70] bg-[#F5F2EC] overflow-y-auto text-[#0A0A0A]" data-testid="book-modal">
           <div className="max-w-3xl mx-auto px-4 py-8">
             <div className="flex items-center justify-between mb-6">
-              <div>
-                <div className="label-caps">Foto in posa salvate</div>
-                <h2 className="font-serif text-3xl tracking-tight mt-1">Il Mio Book</h2>
-              </div>
+              <h2 className="font-serif text-3xl tracking-tight">Il Mio Book</h2>
               <button onClick={() => setOpen(false)} aria-label="Chiudi" data-testid="book-modal-close"><X size={26} /></button>
             </div>
-            <BookGrid photos={photos} onRemove={remove} />
+            <div className="flex gap-2 mb-6">
+              {TABS.map(([k, l]) => (
+                <button key={k} onClick={() => setTab(k)} data-testid={`book-tab-${k}`}
+                  className={`px-4 py-2 label-caps border transition-colors ${tab === k ? "bg-[#0A0A0A] !text-white border-[#0A0A0A]" : "hairline hover:border-[#0A0A0A]"}`}>
+                  {l}
+                </button>
+              ))}
+            </div>
+            {tab === "outfits" ? <OutfitsTab /> : <PosesTab onUse={pickPose} />}
           </div>
         </div>,
         document.body,

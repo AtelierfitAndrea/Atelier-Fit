@@ -5,6 +5,7 @@ import { api } from "@/lib/api";
 import TryOnProgress from "@/components/TryOnProgress";
 import { notifyTabReady } from "@/lib/tabNotify";
 import { postRender } from "@/lib/renderJob";
+import { askBook } from "@/components/PoseBook";
 
 const REASONS = [["mani_viso", "Mani o volto strani"], ["sfondo", "Sfondo cambiato"], ["viso", "Viso diverso"], ["capo", "Capo sbagliato"], ["altro", "Altro"]];
 const DAY = 24 * 3600 * 1000;
@@ -27,6 +28,7 @@ export default function FreeRetry({ kind, item, onDone }) {
       setBusy(false);
       await new Promise((r) => setTimeout(r, 800));
       setOpen(false); onDone(data);
+      askBook(kind === "tryons" ? "tryon" : "outfit", item.id);
     } catch (e) { toast.error(e?.response?.data?.detail || "Riprova non riuscita"); }
     finally { setBusy(false); }
   };

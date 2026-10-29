@@ -25,8 +25,8 @@ function SaveAsk({ onAnswer }) {
   return (
     <div className="fixed inset-0 z-[85] bg-black/60 flex items-center justify-center p-4" data-testid="book-save-ask">
       <div className="bg-white max-w-sm w-full p-6 text-center">
-        <div className="font-serif text-2xl">Vuoi salvarla nel tuo Book?</div>
-        <p className="text-sm text-neutral-600 mt-2">La ritrovi in "Il Mio Book" per le prossime prove.</p>
+        <div className="font-serif text-2xl">Vuoi salvarla in Le mie Pose?</div>
+        <p className="text-sm text-neutral-600 mt-2">La ritrovi in "Le mie Pose" e la riusi come Avatar quando vuoi.</p>
         <div className="mt-6 flex gap-3">
           <button onClick={() => onAnswer(false)} className="btn-ghost flex-1" data-testid="book-save-no">No, solo ora</button>
           <button onClick={() => onAnswer(true)} className="btn-primary flex-1" data-testid="book-save-yes">Sì, salva</button>
@@ -60,7 +60,7 @@ export default function PersonSource({ mode, setMode, posePath, setPosePath, upl
     const p = asking;
     setAsking(null);
     if (!save) return;
-    try { await api.post("/book", { path: p }); window.dispatchEvent(new Event(BOOK_EVENT)); toast.success("Salvata nel tuo Book"); }
+    try { await api.post("/book", { path: p }); window.dispatchEvent(new Event(BOOK_EVENT)); toast.success("Salvata in Le mie Pose"); }
     catch { toast.error("Salvataggio non riuscito"); }
   };
   const removeBook = async (p) => { if (await remove(p) && p.path === posePath) setPosePath(null); };
@@ -82,7 +82,7 @@ export default function PersonSource({ mode, setMode, posePath, setPosePath, upl
           {busy && <p className="label-caps text-neutral-500" data-testid="pose-uploading">Caricamento foto…</p>}
           {photos.length > 0 && (
             <div className="max-w-2xl">
-              <div className="label-caps mb-3">Dal tuo Book</div>
+              <div className="label-caps mb-3">Dalle mie Pose</div>
               <BookGrid photos={photos} onRemove={removeBook} onPick={(p) => setPosePath(p.path)} selected={posePath} testid="studio-book-grid" />
             </div>
           )}

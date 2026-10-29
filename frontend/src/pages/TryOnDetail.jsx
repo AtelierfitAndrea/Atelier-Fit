@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { useNavigate, useParams, Link } from "react-router-dom";
+import { useLocation, useNavigate, useParams, Link } from "react-router-dom";
+import { askBook } from "@/components/PoseBook";
 import { toast } from "sonner";
 import { api, fileUrl } from "@/lib/api";
 import { ArrowLeft, Trash, ArrowsLeftRight } from "@phosphor-icons/react";
@@ -15,6 +16,13 @@ export default function TryOnDetail() {
   const [t, setT] = useState(null);
   const [view, setView] = useState("after");
   const navigate = useNavigate();
+  const location = useLocation();
+
+  useEffect(() => {
+    if (!location.state?.fresh) return;
+    askBook("tryon", id);
+    navigate(location.pathname, { replace: true, state: {} });
+  }, [location.state, id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     api.get(`/tryons/${id}`).then(({ data }) => setT(data)).catch(() => toast.error("Prova non trovata"));
