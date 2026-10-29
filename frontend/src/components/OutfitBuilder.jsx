@@ -11,7 +11,7 @@ import { notifyTabReady } from "@/lib/tabNotify";
 import { postRender } from "@/lib/renderJob";
 import SaveToGallery from "@/components/SaveToGallery";
 import ShareLook from "@/components/ShareLook";
-import { askBook } from "@/components/PoseBook";
+import { askBook, SaveBookBar } from "@/components/PoseBook";
 
 
 function priceFmt(n, cur = "EUR") {
@@ -265,6 +265,7 @@ function OutfitResult({ result, onSave, onShare, onClose, onRetry }) {
           <X size={16} weight="bold" />
         </button>
         <img src={fileUrl(result.result_path)} alt="" className="w-full h-auto block" data-testid="outfit-result-image" />
+        <SaveBookBar kind="outfit" refId={result.id} />
         <SaveToGallery path={result.result_path} />
         <ShareLook path={result.result_path} className="bg-white" />
       </div>

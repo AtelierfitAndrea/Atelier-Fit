@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useLocation, useNavigate, useParams, Link } from "react-router-dom";
-import { askBook } from "@/components/PoseBook";
+import { askBook, SaveBookBar } from "@/components/PoseBook";
 import { toast } from "sonner";
 import { api, fileUrl } from "@/lib/api";
 import { ArrowLeft, Trash, ArrowsLeftRight } from "@phosphor-icons/react";
@@ -54,6 +54,7 @@ export default function TryOnDetail() {
             <ArrowsLeftRight size={14} weight="bold" /> {view === "after" ? "Prima" : "Dopo"}
           </button>
         </div>
+        <div className="mt-2"><SaveBookBar kind="tryon" refId={t.id} /></div>
         <div className="mt-4"><HemCard url={`/tryons/${id}/hem`} /></div>
       </div>
       <div className="lg:col-span-5">

@@ -11,6 +11,7 @@ import uuid
 import numpy as np
 
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
+from fastapi import HTTPException
 from starlette.concurrency import run_in_threadpool
 from emergentintegrations.llm.chat import LlmChat, UserMessage, ImageContent
 
@@ -69,7 +70,7 @@ def _fix_prompt(issues: str, garments_txt: str, phone: bool = False) -> str:
 
 
 def _snapshot(lock: dict) -> dict:
-    return {"canvas": lock["canvas"].copy(), "mask": lock["mask"].copy(), "face": lock["face"], "hands": list(lock["hands"])}
+    return {"canvas": lock["canvas"].copy(), "mask": lock["mask"].copy(), "face": lock["face"], "hands": list(lock["hands"]), "pose": lock.get("pose", False)}
 
 
 def _aspect(lock: dict) -> str:
@@ -221,7 +222,7 @@ async def render(system: str, prompt: str, contents: list, lock: dict, garments_
     raw = await _image_call(system, prompt + QUALITY_RULES, contents, tag, aspect)
     snap = _snapshot(base)
     out = await run_in_threadpool(head_lock.finalize, raw, snap)
-    if snap.get("drift", 0) > head_lock.DRIFT_MAX:
+    if snap.get("drift", 0) > head_lock.DRIFT_MAX or snap.get("pose_fail"):
         # The model invented a new scene: one fresh generation that must keep IMAGE 1's background.
         logger.info(f"{tag}: background drift {snap['drift']:.1f}, regenerating once")
         del raw
@@ -229,12 +230,15 @@ async def render(system: str, prompt: str, contents: list, lock: dict, garments_
             raw = await _image_call(system, prompt + SCENE_RULE + QUALITY_RULES, contents, f"{tag}-scene", aspect)
             snap2 = _snapshot(base)
             out2 = await run_in_threadpool(head_lock.finalize, raw, snap2)
-            if snap2.get("drift", 0) < snap["drift"]:
-                out = out2
+            if snap2.get("drift", 0) < snap["drift"] or (snap.get("pose_fail") and not snap2.get("pose_fail")):
+                out, snap = out2, snap2
             del out2
         except Exception as e:
             logger.warning(f"{tag}: scene regeneration failed, keeping first result: {e}")
             raw = None
+    if snap.get("pose_fail"):
+        # FACE LOCK: a posed result without the original head is never delivered (no try-on saved = no credit used).
+        raise HTTPException(status_code=422, detail="Non riesco a mantenere identica la tua foto in posa. Riprova con una foto più luminosa e il viso ben visibile: nessun credito usato.")
     del raw, contents
     best, best_score = out, -2
     for attempt in range(MAX_FIXES + 1):

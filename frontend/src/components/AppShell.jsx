@@ -9,7 +9,7 @@ import TermsGate from "@/components/TermsGate";
 import OnboardingGate from "@/components/OnboardingGate";
 import ReminderPopup from "@/components/ReminderPopup";
 import AvatarBubble from "@/components/AvatarBubble";
-import BookButton, { BookAsk } from "@/components/PoseBook";
+import BookButton from "@/components/PoseBook";
 import { SignOut, House, User as UserIcon, TShirt, Sparkle, GearSix, MagnifyingGlass, Crown, Question } from "@phosphor-icons/react";
 
 function useSupportPending() {
@@ -94,7 +94,6 @@ export default function AppShell({ children }) {
         </div>
       </header>
       <main className="max-w-[1400px] mx-auto px-6 md:px-10 py-10">{children}</main>
-      <BookAsk />
       <TermsGate />
       <OnboardingGate />
       <ReminderPopup />

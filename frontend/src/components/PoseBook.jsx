@@ -10,8 +10,12 @@ export const BOOK_EVENT = "atelier-book-changed";
 const ASK_EVENT = "atelier-ask-book";
 const POSE_KEY = "atelier_use_pose";
 
-// Call at the end of every try-on: the global BookAsk asks "Vuoi salvare questo outfit nel tuo Book?".
-export const askBook = (kind, refId) => window.dispatchEvent(new CustomEvent(ASK_EVENT, { detail: { kind, ref_id: refId } }));
+// Call at the end of every try-on: the SaveBookBar under the result asks "Vuoi salvare questo outfit nel tuo Book?".
+const pendingAsks = new Set();
+export const askBook = (kind, refId) => {
+  pendingAsks.add(`${kind}:${refId}`);
+  window.dispatchEvent(new CustomEvent(ASK_EVENT, { detail: { kind, ref_id: refId } }));
+};
 export const takePoseForStudio = () => { const p = sessionStorage.getItem(POSE_KEY); sessionStorage.removeItem(POSE_KEY); return p; };
 
 function useList(url, key, deletedMsg = "Foto eliminata") {
@@ -110,31 +114,30 @@ function PosesTab({ onUse }) {
   );
 }
 
-export function BookAsk() {
-  const [ask, setAsk] = useState(null);
+// Thin, non-blocking question right under the result photo (the photo always stays fully visible).
+export function SaveBookBar({ kind, refId }) {
+  const key = `${kind}:${refId}`;
+  const [show, setShow] = useState(() => pendingAsks.has(key));
   useEffect(() => {
-    const on = (e) => setAsk(e.detail);
+    const on = (e) => { if (`${e.detail.kind}:${e.detail.ref_id}` === key) setShow(true); };
     window.addEventListener(ASK_EVENT, on);
     return () => window.removeEventListener(ASK_EVENT, on);
-  }, []);
-  if (!ask) return null;
+  }, [key]);
+  if (!show) return null;
+  const close = () => { pendingAsks.delete(key); setShow(false); };
   const save = async () => {
-    const a = ask;
-    setAsk(null);
-    try { await api.post("/outfit-book", a); window.dispatchEvent(new Event(BOOK_EVENT)); toast.success("Outfit salvato nel tuo Book"); }
+    close();
+    try { await api.post("/outfit-book", { kind, ref_id: refId }); window.dispatchEvent(new Event(BOOK_EVENT)); toast.success("Outfit salvato nel tuo Book"); }
     catch { toast.error("Salvataggio non riuscito"); }
   };
-  return createPortal(
-    <div className="fixed inset-0 z-[90] bg-black/60 flex items-center justify-center p-4" data-testid="outfit-book-ask">
-      <div className="bg-white max-w-sm w-full p-6 text-center">
-        <div className="font-serif text-2xl">Vuoi salvare questo outfit nel tuo Book?</div>
-        <div className="mt-6 flex gap-3">
-          <button onClick={() => setAsk(null)} className="btn-ghost flex-1" data-testid="outfit-book-discard">Scarta</button>
-          <button onClick={save} className="btn-primary flex-1" data-testid="outfit-book-save">Salva nel Book</button>
-        </div>
+  return (
+    <div className="flex items-center justify-between gap-3 border hairline bg-white px-3 py-2" data-testid="outfit-book-ask">
+      <span className="text-xs text-neutral-700">Vuoi salvare questo outfit nel tuo Book?</span>
+      <div className="flex gap-2 shrink-0">
+        <button onClick={save} className="px-3 py-1.5 text-[10px] font-semibold tracking-[0.18em] bg-[#0A0A0A] text-white hover:bg-[#333] transition-colors" data-testid="outfit-book-save">SALVA</button>
+        <button onClick={close} className="px-3 py-1.5 text-[10px] font-semibold tracking-[0.18em] border hairline hover:border-[#0A0A0A] transition-colors" data-testid="outfit-book-discard">SCARTA</button>
       </div>
-    </div>,
-    document.body,
+    </div>
   );
 }
 

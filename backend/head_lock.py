@@ -70,6 +70,82 @@ def _faces(rgb: np.ndarray) -> list:
     return sorted(boxes, key=lambda b: b[2] * b[3], reverse=True)
 
 
+FACE_MIN_CONF = 0.75  # YuNet score: clear real photos measure 0.80-0.95
+
+
+def face_check(person_bytes: bytes) -> tuple:
+    """Credit saver for posed photos: (ok, confidence, reason). Face re-detected on a zoomed crop so small full-body faces score fairly."""
+    rgb = np.array(_open_small(person_bytes, PERSON_MAX_SIDE).convert("RGB"))
+    h, w = rgb.shape[:2]
+    scale = 640 / max(h, w)
+    small = cv2.resize(rgb, (int(w * scale), int(h * scale)))
+    det = cv2.FaceDetectorYN.create(_FACE_MODEL, "", (small.shape[1], small.shape[0]), 0.5)
+    _ok, faces = det.detect(cv2.cvtColor(small, cv2.COLOR_RGB2BGR))
+    if faces is None:
+        return False, 0.0, "no_face"
+    f = max(faces, key=lambda r: r[2] * r[3])
+    x, y, fw, fh = (f[:4] / scale).astype(int)
+    conf = float(f[14])
+    side = int(max(fw, fh) * 3)
+    cx, cy = x + fw // 2, y + fh // 2
+    x0, y0 = max(0, cx - side // 2), max(0, cy - side // 2)
+    crop = rgb[y0:min(h, y0 + side), x0:min(w, x0 + side)]
+    if crop.size:
+        cs = 640 / max(crop.shape[:2])
+        c2 = cv2.resize(crop, (int(crop.shape[1] * cs), int(crop.shape[0] * cs)))
+        det2 = cv2.FaceDetectorYN.create(_FACE_MODEL, "", (c2.shape[1], c2.shape[0]), 0.5)
+        _ok, f2 = det2.detect(cv2.cvtColor(c2, cv2.COLOR_RGB2BGR))
+        if f2 is not None:
+            conf = max(conf, float(max(f2, key=lambda r: r[2] * r[3])[14]))
+    face = cv2.cvtColor(rgb[max(0, y):y + fh, max(0, x):x + fw], cv2.COLOR_RGB2GRAY)
+    bright = float(face.mean()) if face.size else 0.0
+    sharp = float(cv2.Laplacian(cv2.resize(face, (128, 128)), cv2.CV_64F).var()) if face.size else 0.0
+    if fw < 40 or fh < 40:
+        return False, conf, "face_small"
+    if bright < 55:
+        return False, conf, "dark"
+    if sharp < 25:
+        return False, conf, "blurry"
+    if conf < FACE_MIN_CONF:
+        return False, conf, "low_conf"
+    return True, conf, ""
+
+
+def _pose_composite(canvas: np.ndarray, res: np.ndarray, face: tuple):
+    """FACE LOCK for posed photos: original pixels everywhere, generated pixels ONLY where the clothes changed.
+    Head (hair, ears, glasses, face) is never taken from the model. Returns (image, changed_fraction)."""
+    H, W = canvas.shape[:2]
+    s = 512 / max(H, W)
+    sw, sh = int(W * s), int(H * s)
+    cs = cv2.resize(canvas, (sw, sh), interpolation=cv2.INTER_AREA).astype(np.float32)
+    rs = cv2.resize(res, (sw, sh), interpolation=cv2.INTER_AREA).astype(np.float32)
+    gain = np.clip((np.median(rs.reshape(-1, 3), 0) + 1) / (np.median(cs.reshape(-1, 3), 0) + 1), 0.8, 1.25)
+    d = np.abs(cv2.GaussianBlur(cs * gain, (0, 0), 1.2) - cv2.GaussianBlur(rs, (0, 0), 1.2)).mean(axis=2)
+    ch = (d > 24).astype(np.uint8)
+    ch = cv2.morphologyEx(ch, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
+    ch = cv2.morphologyEx(ch, cv2.MORPH_CLOSE, np.ones((9, 9), np.uint8))
+    n, lab, stats, _ = cv2.connectedComponentsWithStats(ch, 8)
+    keep = stats[:, cv2.CC_STAT_AREA] >= 0.002 * sw * sh
+    keep[0] = False
+    ch = keep[lab].astype(np.uint8) * 255
+    del cs, rs, d, lab
+    frac = float((ch > 0).mean())
+    ch = cv2.dilate(ch, np.ones((3, 3), np.uint8))
+    ch = cv2.resize(ch, (W, H), interpolation=cv2.INTER_LINEAR)
+    fx, fy, fw, fh = face
+    # Whole head down to the chin (hair, ears, glasses) always stays original; collar/neck below the chin may change.
+    head = np.zeros((H, W), np.uint8)
+    cv2.ellipse(head, (int(fx + fw / 2), int(fy + fh * 0.38)), (int(fw * 0.82), int(fh * 0.98)), 0, 0, 360, 255, -1)
+    ch[head > 0] = 0
+    w = cv2.GaussianBlur(ch, (0, 0), 2.0).astype(np.float32) * (1 / 255)
+    out = cv2.blendLinear(res, canvas, w, 1 - w)
+    del w, ch, head
+    return out, frac
+
+
+POSE_CHANGE_MAX = 0.6
+
+
 def _face_box(rgb: np.ndarray):
     f = _faces(rgb)
     return f[0] if f else None
@@ -146,7 +222,7 @@ def _paste_hand(out: np.ndarray, canvas: np.ndarray, res: np.ndarray, box: tuple
     return True
 
 
-def prepare(person_bytes: bytes, long_garment: bool, hands: list = None, paste_hands=True) -> tuple:
+def prepare(person_bytes: bytes, long_garment: bool, hands: list = None, paste_hands=True, pose: bool = False) -> tuple:
     """paste_hands: bool for all hands, or one bool per hand box (False = the model may redraw that hand)."""
     # Returns (canvas_png_bytes, meta) with top safe margin and optional bottom extension.
     im = np.array(_open_small(person_bytes, PERSON_OUT_SIDE).convert("RGB"))
@@ -191,7 +267,7 @@ def prepare(person_bytes: bytes, long_garment: bool, hands: list = None, paste_h
     face_c = (face[0], face[1] + top, face[2], face[3]) if face else None
     del im
     gc.collect()
-    return buf.getvalue(), {"canvas": canvas, "mask": mask, "face": face_c, "hands": paste_c}
+    return buf.getvalue(), {"canvas": canvas, "mask": mask, "face": face_c, "hands": paste_c, "pose": pose}
 
 
 def _match_head_colour(canvas: np.ndarray, res: np.ndarray, mask: np.ndarray) -> np.ndarray:
@@ -270,6 +346,19 @@ def finalize(result_bytes: bytes, meta: dict) -> bytes:
             if rf2:
                 (cx, cy), (ox, oy) = _centre(rf2), _centre(of)
                 aligned = abs(cx - ox) < 0.35 * of[2] and abs(cy - oy) < 0.35 * of[3]
+    if meta.get("pose"):
+        # Posed photo: never keep a generated face. Misaligned or new scene -> flag so the render loop regenerates.
+        out, frac = (_pose_composite(canvas, res, head_at) if aligned and head_at else (res, 1.0))
+        logger.info("head_lock: pose composite changed=%.2f aligned=%s", frac, aligned)
+        del res, canvas, mask
+        meta.clear()
+        meta["drift"] = 0.0
+        meta["pose_fail"] = frac > POSE_CHANGE_MAX
+        buf = io.BytesIO()
+        Image.fromarray(out).save(buf, "PNG")
+        del out
+        gc.collect()
+        return buf.getvalue()
     if not aligned:
         # Pasting the original head onto a misplaced generated one would create a double face: keep the model output.
         logger.warning("head_lock: generated head not aligned with original %s, skipping head paste", head_at)

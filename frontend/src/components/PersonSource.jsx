@@ -42,6 +42,7 @@ export default function PersonSource({ mode, setMode, posePath, setPosePath, upl
   const [camOpen, setCamOpen] = useState(false);
   const [asking, setAsking] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [faceError, setFaceError] = useState(null);
   const { photos, remove } = useBook();
 
   const handleFile = async (f) => {
@@ -51,11 +52,20 @@ export default function PersonSource({ mode, setMode, posePath, setPosePath, upl
     setBusy(true);
     try {
       const p = await uploadFile(f, "person");
-      setPosePath(p);
-      setAsking(p);
+      if (await faceOk(p)) { setPosePath(p); setAsking(p); }
     } catch (e) { if (e?.message !== "blocked" && e?.response?.status !== 402) toast.error("Caricamento non riuscito"); }
     finally { setBusy(false); }
   };
+  // Credit saver: the face must be clearly visible before any try-on can start.
+  const faceOk = async (p) => {
+    setFaceError(null);
+    const { data } = await api.post("/pose/check", { path: p });
+    if (data.ok) return true;
+    setFaceError(data.message || "Ricarica foto più luminosa.");
+    setPosePath(null);
+    return false;
+  };
+  const pick = async (p) => { try { if (await faceOk(p.path)) setPosePath(p.path); } catch { toast.error("Controllo foto non riuscito"); } };
   const answer = async (save) => {
     const p = asking;
     setAsking(null);
@@ -80,10 +90,11 @@ export default function PersonSource({ mode, setMode, posePath, setPosePath, upl
           <input ref={gallery} type="file" accept=".jpg,.jpeg,.png,image/jpeg,image/png" className="hidden" data-testid="pose-gallery-input"
             onChange={(e) => { handleFile(e.target.files?.[0]); e.target.value = ""; }} />
           {busy && <p className="label-caps text-neutral-500" data-testid="pose-uploading">Caricamento foto…</p>}
+          {faceError && <p className="text-sm text-red-700 border border-red-200 bg-red-50 px-3 py-2 max-w-2xl" data-testid="pose-face-error">{faceError}</p>}
           {photos.length > 0 && (
             <div className="max-w-2xl">
               <div className="label-caps mb-3">Dalle mie Pose</div>
-              <BookGrid photos={photos} onRemove={removeBook} onPick={(p) => setPosePath(p.path)} selected={posePath} testid="studio-book-grid" />
+              <BookGrid photos={photos} onRemove={removeBook} onPick={pick} selected={posePath} testid="studio-book-grid" />
             </div>
           )}
         </div>

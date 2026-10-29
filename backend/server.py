@@ -1608,6 +1608,45 @@ class BookAddRequest(BaseModel):
     path: str
 
 
+FACE_CHECK_MSG = {
+    "no_face": "Non vedo bene il tuo viso: ricarica una foto più luminosa con il viso visibile.",
+    "face_small": "Il viso è troppo piccolo nella foto: avvicinati un po' e ricarica.",
+    "dark": "Ricarica foto più luminosa.",
+    "blurry": "La foto è mossa sul viso: ricarica una foto più nitida.",
+    "low_conf": "Ricarica foto più luminosa.",
+}
+
+
+async def _pose_face_ok(user: User, path: str) -> dict:
+    cached = await db.face_checks.find_one({"path": path}, {"_id": 0})
+    if cached:
+        return cached
+    raw, _ = get_object(path)
+    ok, conf, reason = await run_in_threadpool(head_lock.face_check, raw)
+    doc = {"path": path, "ok": ok, "confidence": round(conf, 3), "reason": reason, "message": FACE_CHECK_MSG.get(reason, "")}
+    await db.face_checks.update_one({"path": path}, {"$set": doc}, upsert=True)
+    logger.info(f"pose face check {path}: ok={ok} conf={conf:.3f} reason={reason}")
+    return doc
+
+
+async def _require_pose_face(user: User, path: Optional[str]) -> None:
+    # CREDIT SAVER: no AI call and no credit when the posed photo's face is not reliable.
+    if path:
+        chk = await _pose_face_ok(user, path)
+        if not chk["ok"]:
+            raise HTTPException(status_code=422, detail=chk["message"] or "Ricarica foto più luminosa.")
+
+
+class PoseCheckIn(BaseModel):
+    path: str
+
+
+@api_router.post("/pose/check")
+async def pose_check(req: PoseCheckIn, user: User = Depends(get_current_user)):
+    await _require_account_paths(user, req.path)
+    return await _pose_face_ok(user, req.path)
+
+
 @api_router.get("/book")
 async def book_list(user: User = Depends(get_current_user)):
     rows = await db.pose_book.find({"user_id": user.user_id}, {"_id": 0}).sort("created_at", -1).to_list(200)
@@ -1984,7 +2023,7 @@ async def _render_single(user_id: str, person_path: str, garment_path: str, cate
     garment_bytes, garment_ct = get_object(garment_path)
     boxes, keep, phone_txt = await _lock_hands(person_path, person_bytes, (category_in or "").lower() == "bag", POSE_RULE in extra)
     extra += phone_txt
-    canvas_bytes, lock = await run_in_threadpool(head_lock.prepare, person_bytes, head_lock.is_long(category_in, name or ""), boxes, keep)
+    canvas_bytes, lock = await run_in_threadpool(head_lock.prepare, person_bytes, head_lock.is_long(category_in, name or ""), boxes, keep, POSE_RULE in extra)
     garment_bytes = await run_in_threadpool(head_lock.downscale, garment_bytes, head_lock.GARMENT_MAX_SIDE)
     person_b64 = base64.b64encode(canvas_bytes).decode('utf-8')
     garment_b64 = base64.b64encode(garment_bytes).decode('utf-8')
@@ -2052,6 +2091,8 @@ async def _tryon_generate(req: TryOnRequest, user: User):
     status = await get_subscription_status(user.account_id)
     if status["is_blocked"]:
         raise HTTPException(status_code=402, detail="Quota exhausted — subscribe or buy an extra try-on.")
+    if req.preserve_pose:
+        await _require_pose_face(user, req.person_path)
     m_doc = await _get_measurements(user.user_id)
     req.garment_category = await _classify_garment(req.garment_path, req.garment_category)
     result_path = await _render_single(user.user_id, req.person_path, req.garment_path, req.garment_category, req.garment_name, m_doc, POSE_RULE if req.preserve_pose else "")
@@ -2965,7 +3006,7 @@ async def _compose_outfit(user: User, person_path: Optional[str], items: list, l
     person_bytes, _ = get_object(person_path)
     boxes, keep, phone_txt = await _lock_hands(person_path, person_bytes, any((g.get("category") or "").lower() == "bag" for g in items), POSE_RULE in extra if extra else False)
     extra += phone_txt
-    canvas_bytes, lock = await run_in_threadpool(head_lock.prepare, person_bytes, any(head_lock.is_long(g.get("category"), g.get("name") or "") for g in items), boxes, keep)
+    canvas_bytes, lock = await run_in_threadpool(head_lock.prepare, person_bytes, any(head_lock.is_long(g.get("category"), g.get("name") or "") for g in items), boxes, keep, bool(extra) and POSE_RULE in extra)
     file_contents = [ImageContent(base64.b64encode(canvas_bytes).decode("utf-8"))]
     del person_bytes, canvas_bytes
     layer_lines = []
@@ -3104,6 +3145,8 @@ async def _outfit_generate_from_uploads(req: GridOutfitRequest, user: User):
     status = await get_subscription_status(user.account_id)
     if status["is_blocked"]:
         raise HTTPException(status_code=402, detail="Quota esaurita — sblocca o attiva un piano")
+    if req.preserve_pose:
+        await _require_pose_face(user, req.person_path)
     descs = {k: (await _garment_info(slots[k])).get("desc") for k in slots}
     items = [{
         "slot": k, "image_path": slots[k], "category": _GRID_SLOTS[k][0], "name": descs[k] or _GRID_SLOTS[k][1], "brand": None,
