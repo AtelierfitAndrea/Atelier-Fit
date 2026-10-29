@@ -70,7 +70,8 @@ def _fix_prompt(issues: str, garments_txt: str, phone: bool = False) -> str:
 
 
 def _snapshot(lock: dict) -> dict:
-    return {"canvas": lock["canvas"].copy(), "mask": lock["mask"].copy(), "face": lock["face"], "hands": list(lock["hands"]), "pose": lock.get("pose", False)}
+    return {"canvas": lock["canvas"].copy(), "mask": lock["mask"].copy(), "face": lock["face"], "hands": list(lock["hands"]), "pose": lock.get("pose", False),
+            "pads_px": lock.get("pads_px", (0, 0)), "freeze": list(lock.get("freeze", []))}
 
 
 def _aspect(lock: dict) -> str:

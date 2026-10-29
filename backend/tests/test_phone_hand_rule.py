@@ -35,28 +35,28 @@ def fake_info(monkeypatch):
 # Pose mode + phone hand -> phone hand not pasted, PHONE_RULE appended
 def test_pose_phone_hand_not_pasted(fake_info):
     fake_info([True, False])
-    boxes, keep, txt = _run(server._lock_hands("p", b"", False, True))
+    boxes, keep, txt, _f = _run(server._lock_hands("p", b"", False, True))
     assert boxes == BOXES and keep == [False, True] and txt == server.PHONE_RULE
 
 
 # Avatar mode with phone -> all hands pasted, no PHONE_RULE
 def test_avatar_mode_unaffected(fake_info):
     fake_info([True, False])
-    _b, keep, txt = _run(server._lock_hands("p", b"", False, False))
+    _b, keep, txt, _f = _run(server._lock_hands("p", b"", False, False))
     assert keep == [True, True] and txt == ""
 
 
 # Pose without phone -> hands pasted, no rule
 def test_pose_no_phone(fake_info):
     fake_info([False, False])
-    _b, keep, txt = _run(server._lock_hands("p", b"", False, True))
+    _b, keep, txt, _f = _run(server._lock_hands("p", b"", False, True))
     assert keep == [True, True] and txt == ""
 
 
 # Bag -> nothing pasted (free hand may grip handle); phone rule still added in pose
 def test_pose_bag_phone(fake_info):
     fake_info([True, False])
-    _b, keep, txt = _run(server._lock_hands("p", b"", True, True))
+    _b, keep, txt, _f = _run(server._lock_hands("p", b"", True, True))
     assert keep == [False, False] and txt == server.PHONE_RULE
 
 

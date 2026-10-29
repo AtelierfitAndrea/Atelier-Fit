@@ -417,3 +417,7 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 - head_lock: _pose_composite (original pixels everywhere, model pixels only where clothes changed; head + zone above chin always original; pads from model), _align_pose (ORB+RANSAC registers model output onto original), face_check credit saver (YuNet, FACE_MIN_CONF 0.75 + brightness/sharpness/size), pose_fail -> regenerate once -> 422 no credit. Fixed dropped elif in finalize.
 - /api/pose/check + server guard; SaveBookBar thin bar under result (no modal).
 - Foto in Posa hidden for non-owners (Studio PersonSource + Le mie Pose tab). NOT deployed.
+
+## 2026-10-29 — Pantaloni freeze + background jobs (PREVIEW ONLY)
+- _hand_info also returns lower (trousers/skirt) and shoes boxes (same cached call). Pose mode: garments not tried on are frozen to original pixels in _pose_composite (top 30% band allows new top hem but never new skin; outerwear -> only no-new-skin); GARMENT_KEEP_RULE in prompt.
+- Background renders: postRender stores job in localStorage (atelier_render_job), clears pending draft, hands over to global JobWatcher (AppShell) when user leaves the page; watcher polls /render-jobs/{id}, shows progress pill, on done navigates to /tryon/{id} or shows outfit modal with SaveBookBar. Not deployed.

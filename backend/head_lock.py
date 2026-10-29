@@ -114,7 +114,7 @@ def face_check(person_bytes: bytes) -> tuple:
     return True, conf, ""
 
 
-def _pose_composite(canvas: np.ndarray, res: np.ndarray, face: tuple, pads: tuple = (0, 0)):
+def _pose_composite(canvas: np.ndarray, res: np.ndarray, face: tuple, pads: tuple = (0, 0), freeze: list = ()):
     """FACE LOCK for posed photos: original pixels everywhere, generated pixels ONLY where the clothes changed.
     Head (hair, ears, glasses, face) is never taken from the model. Returns (image, changed_fraction)."""
     H, W = canvas.shape[:2]
@@ -145,6 +145,16 @@ def _pose_composite(canvas: np.ndarray, res: np.ndarray, face: tuple, pads: tupl
     cv2.ellipse(zone, (cx, int(fy + fh * 0.30)), (int(fw * 1.15), int(fh * 1.15)), 0, 0, 360, 255, -1)
     zone[int(fy + fh * 1.0):] = 0
     ch[(head > 0) | (zone > 0)] = 0
+    # Garments not being tried on (e.g. white paint-splash trousers when only a top is tested) keep the original pixels:
+    # no skin holes, same pattern. Only their top band may show the new top's hem, and never as new bare skin there.
+    for x0, y0, x1, y1, top_free in freeze:
+        px, py = max(2, int((x1 - x0) * 0.04)), max(2, int((y1 - y0) * 0.03))
+        X0, Y0, X1, Y1 = max(0, x0 - px), max(0, y0 - py), min(W, x1 + px), min(H, y1 + py)
+        yf = Y0 + int((Y1 - Y0) * top_free)
+        if yf > Y0:
+            band = ch[Y0:yf, X0:X1]
+            band[(_skin(res[Y0:yf, X0:X1]) > 0) & (_skin(canvas[Y0:yf, X0:X1]) == 0)] = 0
+        ch[yf:Y1, X0:X1] = 0
     # Top/bottom pad bands are not part of the photo: always the model's continuation of the scene.
     if pads[0]:
         ch[:pads[0]] = 255
@@ -265,7 +275,7 @@ def _paste_hand(out: np.ndarray, canvas: np.ndarray, res: np.ndarray, box: tuple
     return True
 
 
-def prepare(person_bytes: bytes, long_garment: bool, hands: list = None, paste_hands=True, pose: bool = False) -> tuple:
+def prepare(person_bytes: bytes, long_garment: bool, hands: list = None, paste_hands=True, pose: bool = False, freeze: list = None) -> tuple:
     """paste_hands: bool for all hands, or one bool per hand box (False = the model may redraw that hand)."""
     # Returns (canvas_png_bytes, meta) with top safe margin and optional bottom extension.
     im = np.array(_open_small(person_bytes, PERSON_OUT_SIDE).convert("RGB"))
@@ -288,6 +298,12 @@ def prepare(person_bytes: bytes, long_garment: bool, hands: list = None, paste_h
     else:
         mask[: top + int(h * HEAD_SAFE_ZONE)] = 255
     # Hand boxes (normalised 0-1000 [ymin, xmin, ymax, xmax] on the photo) -> canvas pixels.
+    # Frozen garment zones (normalised boxes) -> canvas pixels; the top part may be covered by the new top's hem.
+    freeze_c = []
+    for z in freeze or []:
+        y0, x0, y1, x1 = (max(0.0, min(1000.0, float(v))) / 1000 for v in z["box"])
+        if x1 - x0 > 0.02 and y1 - y0 > 0.02:
+            freeze_c.append((int(x0 * w), int(y0 * h) + top, int(x1 * w), int(y1 * h) + top, float(z.get("top_free", 0))))
     hand_c, paste_c = [], []
     keep = paste_hands if isinstance(paste_hands, list) else [paste_hands] * len(hands or [])
     for b, k in zip(hands or [], keep):
@@ -310,7 +326,7 @@ def prepare(person_bytes: bytes, long_garment: bool, hands: list = None, paste_h
     face_c = (face[0], face[1] + top, face[2], face[3]) if face else None
     del im
     gc.collect()
-    return buf.getvalue(), {"canvas": canvas, "mask": mask, "face": face_c, "hands": paste_c, "pose": pose, "pads_px": (top, bottom)}
+    return buf.getvalue(), {"canvas": canvas, "mask": mask, "face": face_c, "hands": paste_c, "pose": pose, "pads_px": (top, bottom), "freeze": freeze_c}
 
 
 def _match_head_colour(canvas: np.ndarray, res: np.ndarray, mask: np.ndarray) -> np.ndarray:
@@ -397,7 +413,7 @@ def finalize(result_bytes: bytes, meta: dict) -> bytes:
                 aligned = abs(cx - ox) < 0.35 * of[2] and abs(cy - oy) < 0.35 * of[3]
     if meta.get("pose"):
         # Posed photo: never keep a generated face. Misaligned or new scene -> flag so the render loop regenerates.
-        out, frac = (_pose_composite(canvas, res, head_at, meta.get("pads_px", (0, 0))) if aligned and head_at else (res, 1.0))
+        out, frac = (_pose_composite(canvas, res, head_at, meta.get("pads_px", (0, 0)), meta.get("freeze", ())) if aligned and head_at else (res, 1.0))
         logger.info("head_lock: pose composite changed=%.2f aligned=%s", frac, aligned)
         del res, canvas, mask
         meta.clear()
