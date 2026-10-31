@@ -39,18 +39,18 @@ def _mask():
 class TestMatchHeadColour:
     def test_warm_shift_is_matched(self):
         canvas, res = _scene((150, 150, 160)), _scene((180, 160, 130))
-        out = head_lock._match_head_colour(canvas, res, _mask())[0]
+        out = head_lock._match_head_colour(canvas, res, _mask())
         ring_px = out[100, 150].astype(int)  # background above the head, inside the padded box
         assert np.abs(ring_px - np.array([180, 160, 130])).max() <= 3, ring_px
         assert not np.shares_memory(out, canvas)  # input not mutated
 
     def test_no_shift_returns_same(self):
         c = _scene((150, 150, 160))
-        assert head_lock._match_head_colour(c, c.copy(), _mask())[0] is c
+        assert head_lock._match_head_colour(c, c.copy(), _mask()) is c
 
     def test_gain_clipped(self):
         canvas, res = _scene((100, 100, 100)), _scene((250, 20, 100))
-        out = head_lock._match_head_colour(canvas, res, _mask())[0]
+        out = head_lock._match_head_colour(canvas, res, _mask())
         px = out[100, 150].astype(int)
         assert px[0] <= 134 and px[1] >= 74
 

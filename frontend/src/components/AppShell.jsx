@@ -9,8 +9,6 @@ import TermsGate from "@/components/TermsGate";
 import OnboardingGate from "@/components/OnboardingGate";
 import ReminderPopup from "@/components/ReminderPopup";
 import AvatarBubble from "@/components/AvatarBubble";
-import BookButton from "@/components/PoseBook";
-import JobWatcher from "@/components/JobWatcher";
 import { SignOut, House, User as UserIcon, TShirt, Sparkle, GearSix, MagnifyingGlass, Crown, Question } from "@phosphor-icons/react";
 
 function useSupportPending() {
@@ -43,39 +41,39 @@ export default function AppShell({ children }) {
       <header className="theme-dark sticky top-0 z-30 border-b hairline">
         <div className="max-w-[1400px] mx-auto px-3 sm:px-6 md:px-10 flex items-center justify-between gap-2 py-4">
           <div
-            className="flex items-center gap-2 cursor-pointer shrink-0 mr-0 sm:mr-6"
+            className="flex items-center gap-2 cursor-pointer shrink-0 mr-2 sm:mr-6"
             onClick={() => navigate("/dashboard")}
             data-testid="shell-brand"
           >
-            <img src="/logo-white.png" alt="MY ATELIER" className="h-7 sm:h-8 w-auto" translate="no" />
-            <div className="ml-1.5 sm:ml-3 relative z-10" onClick={(e) => e.stopPropagation()}>
+            <img src="/logo-white.png" alt="MY ATELIER" className="h-8 w-auto" translate="no" />
+            <div className="ml-3 relative z-10" onClick={(e) => e.stopPropagation()}>
               <LanguageSwitcher />
             </div>
           </div>
           <nav className="hidden md:flex items-center gap-3 xl:gap-5" translate="no">
             <NavLink to="/dashboard" className={navItem} data-testid="nav-dashboard">
-              <House size={14} weight="duotone" /> <span className="hidden min-[1680px]:inline">{t("nav.home")}</span>
+              <House size={14} weight="duotone" /> <span className="hidden xl:inline">{t("nav.home")}</span>
             </NavLink>
             <NavLink to="/studio" className={navItem} data-testid="nav-studio">
-              <Sparkle size={14} weight="duotone" /> <span className="hidden min-[1680px]:inline">{t("nav.studio")}</span>
+              <Sparkle size={14} weight="duotone" /> <span className="hidden xl:inline">{t("nav.studio")}</span>
             </NavLink>
             <NavLink to="/analyze" className={navItem} data-testid="nav-analyze">
-              <MagnifyingGlass size={14} weight="duotone" /> <span className="hidden min-[1680px]:inline">{t("nav.analyze")}</span>
+              <MagnifyingGlass size={14} weight="duotone" /> <span className="hidden xl:inline">{t("nav.analyze")}</span>
             </NavLink>
             <NavLink to="/wardrobe" className={navItem} data-testid="nav-wardrobe">
-              <TShirt size={14} weight="duotone" /> <span className="hidden min-[1680px]:inline">{t("nav.wardrobe")}</span>
+              <TShirt size={14} weight="duotone" /> <span className="hidden xl:inline">{t("nav.wardrobe")}</span>
             </NavLink>
             <NavLink to="/profile" className={navItem} data-testid="nav-profile">
-              <UserIcon size={14} weight="duotone" /> <span className="hidden min-[1680px]:inline">{t("nav.profile")}</span>
+              <UserIcon size={14} weight="duotone" /> <span className="hidden xl:inline">{t("nav.profile")}</span>
             </NavLink>
             <NavLink to="/settings" className={navItem} data-testid="nav-settings">
-              <GearSix size={14} weight="duotone" /> <span className="hidden min-[1680px]:inline">{t("nav.settings")}</span>
+              <GearSix size={14} weight="duotone" /> <span className="hidden xl:inline">{t("nav.settings")}</span>
             </NavLink>
             <NavLink to="/assistenza" className={navItem} data-testid="nav-support">
-              <Question size={14} weight="duotone" /> <span className="hidden min-[1680px]:inline">{t("nav.support")}</span>
+              <Question size={14} weight="duotone" /> <span className="hidden xl:inline">{t("nav.support")}</span>
             </NavLink>
           </nav>
-          <div className="flex items-center gap-1.5 sm:gap-4 min-w-0">
+          <div className="flex items-center gap-2 sm:gap-4 min-w-0">
             {user?.is_owner && (
               <Link to={pending ? "/stanza/assistenza" : "/stanza"} title={pending ? `${pending} conversazioni da gestire` : "Stanza del Proprietario"} className="relative text-[#D4AF37] hover:scale-110 transition-transform" data-testid="owner-crown-btn">
                 <Crown size={24} weight="fill" />
@@ -86,8 +84,14 @@ export default function AppShell({ children }) {
             )}
             <Link to="/assistenza" className="md:hidden" title="Assistenza" data-testid="nav-support-mobile"><Question size={22} weight="duotone" /></Link>
             <FamilySwitcher />
-            <BookButton showPoses={user?.is_owner === true} />
             <AvatarBubble />
+            {user?.picture && (
+              <img src={user.picture} alt="" className="hidden 2xl:block w-8 h-8 object-cover" style={{ borderRadius: 2 }} />
+            )}
+            <div className="hidden 2xl:block text-right">
+              <div className="text-sm font-medium" data-testid="shell-user-name">{user?.name}</div>
+              <div className="text-xs text-neutral-500">{user?.email}</div>
+            </div>
             <button data-testid="logout-btn" onClick={logout} className="btn-ghost !px-3 !py-2" title="Logout">
               <SignOut size={16} weight="bold" />
             </button>
@@ -95,7 +99,6 @@ export default function AppShell({ children }) {
         </div>
       </header>
       <main className="max-w-[1400px] mx-auto px-6 md:px-10 py-10">{children}</main>
-      <JobWatcher />
       <TermsGate />
       <OnboardingGate />
       <ReminderPopup />

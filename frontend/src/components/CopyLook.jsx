@@ -77,7 +77,7 @@ export default function CopyLook({ personPath, uploadFile }) {
       const { data } = await postRender("/copylook/apply", { model_path: model.path, items: chosen });
       toast.success("Look copiato sul tuo Avatar"); notifyTabReady(); refresh(); setPhase("idle");
       await new Promise((r) => setTimeout(r, 800));
-      navigate(`/tryon/${data.id}`, { state: { fresh: true } });
+      navigate(`/tryon/${data.id}`);
     } catch (e) {
       if (e?.response?.status === 402) openPaywall(); else toast.error(e?.response?.data?.detail || "Generazione non riuscita");
     } finally { setPhase("idle"); }

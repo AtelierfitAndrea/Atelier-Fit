@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
-import { useLocation, useNavigate, useParams, Link } from "react-router-dom";
-import { askBook, SaveBookBar } from "@/components/PoseBook";
+import { useNavigate, useParams, Link } from "react-router-dom";
 import { toast } from "sonner";
 import { api, fileUrl } from "@/lib/api";
 import { ArrowLeft, Trash, ArrowsLeftRight } from "@phosphor-icons/react";
@@ -16,13 +15,6 @@ export default function TryOnDetail() {
   const [t, setT] = useState(null);
   const [view, setView] = useState("after");
   const navigate = useNavigate();
-  const location = useLocation();
-
-  useEffect(() => {
-    if (!location.state?.fresh) return;
-    askBook("tryon", id);
-    navigate(location.pathname, { replace: true, state: {} });
-  }, [location.state, id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     api.get(`/tryons/${id}`).then(({ data }) => setT(data)).catch(() => toast.error("Prova non trovata"));
@@ -44,7 +36,7 @@ export default function TryOnDetail() {
         <Link to="/wardrobe" className="label-caps inline-flex items-center gap-2 mb-4 hover:text-[#8C7355]" data-testid="back-to-wardrobe">
           <ArrowLeft size={14} weight="bold" /> Il tuo armadio
         </Link>
-        <div className="relative border hairline overflow-hidden bg-[#FAF8F5] lg:max-h-[72vh]" style={{ aspectRatio: "3/4" }}>
+        <div className="relative border hairline overflow-hidden bg-[#FAF8F5]" style={{ aspectRatio: "3/4" }}>
           <img src={imgSrc} alt="" className="absolute inset-0 w-full h-full object-contain" data-testid="tryon-main-image" />
           <button
             onClick={() => setView(view === "after" ? "before" : "after")}
@@ -54,7 +46,6 @@ export default function TryOnDetail() {
             <ArrowsLeftRight size={14} weight="bold" /> {view === "after" ? "Prima" : "Dopo"}
           </button>
         </div>
-        <div className="mt-2"><SaveBookBar kind="tryon" refId={t.id} /></div>
         <div className="mt-4"><HemCard url={`/tryons/${id}/hem`} /></div>
       </div>
       <div className="lg:col-span-5">

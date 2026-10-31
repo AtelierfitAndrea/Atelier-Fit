@@ -29,7 +29,7 @@ function download(file) {
 }
 
 // One tap: phone share sheet (WhatsApp, Instagram, Facebook, Telegram...) with the signed photo + invite; desktop gets direct buttons.
-export default function ShareLook({ path, className = "", label = "Condividi il look" }) {
+export default function ShareLook({ path, className = "" }) {
   const [busy, setBusy] = useState(false);
   const [menu, setMenu] = useState(false);
 
@@ -59,7 +59,7 @@ export default function ShareLook({ path, className = "", label = "Condividi il 
     <div className={className} data-testid="share-look">
       <button onClick={share} disabled={busy} data-testid="share-look-btn"
         className="w-full inline-flex items-center justify-center gap-2 border border-[#1A1A1A] bg-white text-[#1A1A1A] px-5 py-3.5 text-xs font-semibold uppercase tracking-[0.18em] hover:bg-[#1A1A1A] hover:text-white disabled:opacity-60 transition-colors duration-300">
-        <ShareNetwork size={16} weight="bold" /> {busy ? "Preparo la foto..." : label}
+        <ShareNetwork size={16} weight="bold" /> {busy ? "Preparo la foto..." : "Condividi il look"}
       </button>
       {menu && (
         <div className="mt-2 grid grid-cols-4 gap-2" data-testid="share-look-menu">

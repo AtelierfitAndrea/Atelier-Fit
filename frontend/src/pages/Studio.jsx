@@ -10,9 +10,6 @@ import { CloudArrowUp, ArrowRight } from "@phosphor-icons/react";
 import PrivacyBox from "@/components/PrivacyBox";
 import AccountPersonalBox from "@/components/AccountPersonalBox";
 import OutfitGrid from "@/components/OutfitGrid";
-import PersonSource from "@/components/PersonSource";
-import { useAuth } from "@/lib/auth";
-import { takePoseForStudio } from "@/components/PoseBook";
 import IncludedNote from "@/components/IncludedNote";
 import CopyLook from "@/components/CopyLook";
 import TryOnProgress from "@/components/TryOnProgress";
@@ -26,18 +23,7 @@ export default function Studio() {
   const location = useLocation();
   const preset = location.state?.preset || null;
   const { avatar } = useAvatar();
-  const avatarPath = avatar?.path || null;
-  const [startPose] = useState(() => takePoseForStudio());
-  const [personMode, setPersonMode] = useState(startPose ? "pose" : "avatar");
-  const [posePath, setPosePath] = useState(startPose);
-  useEffect(() => {
-    const p = location.state?.posePath;
-    if (p) { takePoseForStudio(); setPersonMode("pose"); setPosePath(p); }
-  }, [location.state]);
-  const { user } = useAuth();
-  const poseAllowed = user?.is_owner === true;
-  const posed = poseAllowed && personMode === "pose";
-  const personPath = posed ? posePath : avatarPath;
+  const personPath = avatar?.path || null;
   const [garmentPath, setGarmentPath] = useState(preset?.garment_path || null);
   const [garmentPreview, setGarmentPreview] = useState(preset?.garment_path ? fileUrl(preset.garment_path) : null);
   const [category, setCategory] = useState(preset?.category || null);
@@ -77,7 +63,7 @@ export default function Studio() {
 
   const generate = async () => {
     if (!personPath || !garmentPath) {
-      toast.error(personPath ? "Carica prima il capo" : (posed ? "Scatta o carica prima la tua foto in posa" : "Crea prima il tuo Avatar nella Home"));
+      toast.error(personPath ? "Carica prima il capo" : "Crea prima il tuo Avatar nella Home");
       return;
     }
     if (subStatus?.is_blocked) { openPaywall(); return; }
@@ -89,7 +75,6 @@ export default function Studio() {
         garment_category: category,
         garment_name: name || null,
         chosen_size: chosenSize || null,
-        preserve_pose: posed,
       });
       pending.markDone();
       notifyTabReady();
@@ -97,7 +82,7 @@ export default function Studio() {
       refreshSub();
       setGenerating(false);
       await new Promise((r) => setTimeout(r, 800));
-      navigate(`/tryon/${data.id}`, { state: { fresh: true } });
+      navigate(`/tryon/${data.id}`);
     } catch (e) {
       if (e?.response?.status === 402) { openPaywall(); }
       else { toast.error(e?.response?.data?.detail || "Generazione non riuscita"); }
@@ -113,13 +98,11 @@ export default function Studio() {
           <div className="label-caps mb-3">Atelier Fit</div>
           <h1 className="font-serif text-4xl md:text-5xl tracking-tighter">Prova taglia</h1>
           <p className="mt-3 text-neutral-600 max-w-xl leading-relaxed">
-            {posed ? "Carica il capo: lo proviamo sulla tua foto in posa, senza cambiare la posa." : "Carica il capo: usiamo il tuo Avatar e ti vestiamo in un attimo."}
+            Carica il capo: usiamo il tuo Avatar e ti vestiamo in un attimo.
           </p>
         </div>
         <TryonCounter />
       </header>
-
-      {poseAllowed && <PersonSource mode={personMode} setMode={setPersonMode} posePath={posePath} setPosePath={setPosePath} uploadFile={uploadFile} />}
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         <UploadBox
@@ -138,7 +121,7 @@ export default function Studio() {
           testid="upload-garment"
           className="lg:col-span-6"
         />
-        <AvatarPanel path={personPath} posed={posed} />
+        <AvatarPanel path={personPath} />
       </div>
 
       <section className="border hairline p-6 md:p-8 bg-white" data-testid="tryon-action">
@@ -157,9 +140,9 @@ export default function Studio() {
 
       <TryOnProgress active={generating} testid="generating-indicator" />
 
-      <CopyLook personPath={avatarPath} uploadFile={uploadFile} />
+      <CopyLook personPath={personPath} uploadFile={uploadFile} />
 
-      <OutfitGrid personPath={personPath} preservePose={posed} uploadFile={uploadFile} restoreItems={restoreItems}
+      <OutfitGrid personPath={personPath} uploadFile={uploadFile} restoreItems={restoreItems}
         onItemsChange={setGridItems} onGenerated={pending.markDone} />
       <PendingOutfitModal draft={pending.draft} onResume={pending.resume} onDiscard={pending.discard} />
 
@@ -171,18 +154,14 @@ export default function Studio() {
   );
 }
 
-function AvatarPanel({ path, posed }) {
+function AvatarPanel({ path }) {
   return (
     <div className="upload-zone p-6 min-h-[380px] flex flex-col lg:col-span-6" data-testid="studio-avatar">
-      <div className="label-caps">{posed ? "La tua Foto in Posa" : "Il Mio Avatar"}</div>
-      <p className="text-xs text-neutral-500 mt-1">{posed ? "Manteniamo la tua posa: cambiamo solo i vestiti." : "La tua foto unica, usata per tutte le prove."}</p>
+      <div className="label-caps">Il Mio Avatar</div>
+      <p className="text-xs text-neutral-500 mt-1">La tua foto unica, usata per tutte le prove.</p>
       <div className="flex-1 mt-6 relative overflow-hidden" style={{ aspectRatio: "4/5" }}>
         {path ? (
           <img src={fileUrl(path)} alt="" className="absolute inset-0 w-full h-full object-cover" data-testid="studio-avatar-photo" />
-        ) : posed ? (
-          <div className="absolute inset-0 flex flex-col items-center justify-center text-neutral-500 text-center px-6" data-testid="studio-pose-empty">
-            <span className="font-serif text-lg">Scatta o carica la tua foto in posa</span>
-          </div>
         ) : (
           <Link to="/dashboard#il-mio-avatar" className="absolute inset-0 flex flex-col items-center justify-center text-neutral-500 text-center px-6" data-testid="studio-avatar-create">
             <span className="font-serif text-lg">Crea il tuo Avatar</span>

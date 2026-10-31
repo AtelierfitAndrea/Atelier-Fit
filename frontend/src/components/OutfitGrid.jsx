@@ -11,7 +11,6 @@ import { notifyTabReady } from "@/lib/tabNotify";
 import { postRender } from "@/lib/renderJob";
 import SaveToGallery from "@/components/SaveToGallery";
 import ShareLook from "@/components/ShareLook";
-import { askBook, SaveBookBar } from "@/components/PoseBook";
 
 const SLOTS = [
   { k: "top", n: 1, l: "Maglia / Top" },
@@ -143,7 +142,7 @@ export function OutfitTotal({ used, saved, prefix = "grid", title = "Totale outf
   );
 }
 
-export default function OutfitGrid({ personPath, preservePose = false, uploadFile, restoreItems, onItemsChange, onGenerated }) {
+export default function OutfitGrid({ personPath, uploadFile, restoreItems, onItemsChange, onGenerated }) {
   const { status, openPaywall, refresh } = useSubscription();
   const [items, setItems] = useState({});
 
@@ -179,7 +178,7 @@ export default function OutfitGrid({ personPath, preservePose = false, uploadFil
   const busy = SLOTS.some((s) => items[s.k]?.uploading);
 
   const generate = async () => {
-    if (!personPath) { toast.error(preservePose ? "Scatta o carica prima la tua foto in posa" : "Crea prima il tuo Avatar nella Home"); return; }
+    if (!personPath) { toast.error("Crea prima il tuo Avatar nella Home"); return; }
     if (!ready.length) { toast.error("Carica almeno 1 capo"); return; }
     if (status?.is_blocked) { openPaywall(); return; }
     setGenerating(true);
@@ -187,11 +186,9 @@ export default function OutfitGrid({ personPath, preservePose = false, uploadFil
     try {
       const { data } = await postRender("/outfit/generate-from-uploads", {
         person_path: personPath,
-        preserve_pose: preservePose,
         items: ready.map((s) => ({ slot: s.k, image_path: items[s.k].path })),
       });
       setResult({ ...data, used: ready.map((s) => ({ slot: s, item: items[s.k] })) });
-      askBook("outfit", data.id);
       refresh();
       onGenerated?.();
       notifyTabReady();
@@ -235,7 +232,6 @@ export default function OutfitGrid({ personPath, preservePose = false, uploadFil
         <div className="mt-10 grid grid-cols-1 lg:grid-cols-2 gap-8" data-testid="grid-result">
           <div className="space-y-4">
             <img src={fileUrl(result.result_path)} alt="Outfit" className="w-full border hairline" data-testid="grid-result-image" />
-            <SaveBookBar kind="outfit" refId={result.id} />
             <SaveToGallery path={result.result_path} />
             <ShareLook path={result.result_path} />
             <HemCard url={`/outfits/${result.id}/hem`} />
