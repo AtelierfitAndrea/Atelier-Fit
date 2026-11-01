@@ -453,3 +453,10 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 - Preset = default for ALL owner pose photos: preserve_pose -> POSE_RULE + SURGICAL_RULE (face/hand/phone/legs/shoes lock) + head_lock precise hand lock + hole fill. No code changes after this point without owner command.
 - Stable copies: /app/memory/stable_2026-11-01/{server.py,head_lock.py,tryon_quality.py} (after commit 004e1d2).
 - Render jobs remain OWNER ONLY until owner says otherwise. No publish.
+
+## 2026-11-01 (4) — UNIVERSAL POSE LOCK (DWPose local, free)
+- pose_lock.py: DWPose ONNX (models/dw-ll_ucoco_384.onnx, onnxruntime CPU). mediapipe rejected (needs libGLES, not in prod).
+- tryon_quality.render surgical: skeleton of IMAGE 1 sent as LAST guide image + post-check deviation (max limb joint shift / torso) > 0.30 -> 422, no try-on credit.
+- Offline calibration: good results 0.01-0.26, bad (leg lowered) 1.3-2.1, previously "approved" book seated 0.53 (now rejected).
+- SURGICAL_RULE: universal pose lock any pose + no added objects (bag only if Borsa slot).
+- Owner decides tests (no agent generation). Still OWNER ONLY, not published.

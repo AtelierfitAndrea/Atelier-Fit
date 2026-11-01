@@ -16,8 +16,18 @@ from starlette.concurrency import run_in_threadpool
 from emergentintegrations.llm.chat import LlmChat, UserMessage, ImageContent
 
 import head_lock
+import pose_lock
 
 logger = logging.getLogger(__name__)
+
+
+def _pose_dev(canvas: np.ndarray, out_png: bytes):
+    res = np.array(Image.open(io.BytesIO(out_png)).convert("RGB"))
+    if res.shape[:2] != canvas.shape[:2]:
+        res = np.array(Image.fromarray(res).resize((canvas.shape[1], canvas.shape[0])))
+    return pose_lock.deviation(canvas, res)
+
+
 MODELS = ("gemini-3-pro-image-preview", "gemini-3.1-flash-image-preview")
 QC_MODEL = "gemini-3.8-flash"
 MAX_FIXES = 2
@@ -220,14 +230,27 @@ async def render(system: str, prompt: str, contents: list, lock: dict, garments_
     lum = np.array([0.299, 0.587, 0.114], np.float32)
     pads = (float((base["canvas"][0] @ lum).mean()), float((base["canvas"][-1] @ lum).mean()))
     lock.clear()
+    surgical = "SURGICAL TRY-ON" in prompt
+    if surgical:
+        # UNIVERSAL POSE LOCK: the original skeleton (local DWPose, free) is sent as a guide image after all the others.
+        skel = await run_in_threadpool(pose_lock.skeleton_png, base64.b64decode(person_b64))
+        if skel:
+            contents = [*contents, ImageContent(base64.b64encode(skel).decode())]
+            prompt += ("\nPOSE SKELETON — the LAST image is the body skeleton extracted from IMAGE 1 (white bones, orange joints), same framing. "
+                       "The output body MUST overlay this skeleton EXACTLY: every shoulder, elbow, wrist, hip, knee, ankle and foot in the same place. "
+                       "It is a guide only: NEVER draw lines, dots or the skeleton in the output.\n")
     raw = await _image_call(system, prompt + QUALITY_RULES, contents, tag, aspect)
     snap = _snapshot(base)
     out = await run_in_threadpool(head_lock.finalize, raw, snap)
-    if "SURGICAL TRY-ON" in prompt:
+    if surgical:
         # STOP rule: exactly ONE generation, no regeneration, no automatic fix loop. Not usable -> error, no credit.
         with open(f"/tmp/surgical_raw_{tag}.png", "wb") as f:  # model output kept for free offline merge checks
             f.write(raw)
+        dev = await run_in_threadpool(_pose_dev, base["canvas"], out)
+        logger.info(f"{tag}: pose lock deviation {dev}")
         del raw, contents, base
+        if dev is not None and dev > pose_lock.POSE_DEV_MAX:
+            raise HTTPException(status_code=422, detail="La posa non è rimasta identica alla tua foto: risultato scartato, nessuna prova scalata. Premi Riprova.")
         if snap.get("pose_fail"):
             raise HTTPException(status_code=422, detail="Non riesco a mantenere identica la tua foto. Premi Riprova o usa una foto più luminosa: nessun credito usato.")
         logger.info(f"{tag}: surgical one-shot render delivered")

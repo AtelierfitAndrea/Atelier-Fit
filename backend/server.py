@@ -2041,6 +2041,10 @@ SURGICAL_RULE = (
     "tucks naturally over the boot shaft.\n"
     "• SHOES LOCK: each shoe sits exactly where that foot is in IMAGE 1, anchored to the ankle and standing on the floor with its sole and a contact "
     "shadow — never floating, never resized; real shoe scale for this foot (no oversized or tiny shoes).\n"
+    "• UNIVERSAL POSE LOCK — ANY POSE (seated, standing, jumping, arms open, leg raised on a bed, lying, outdoor, indoor, mirror): the body keeps "
+    "EXACTLY the pose of IMAGE 1 — every arm, leg, knee, foot and hand stays where it is (a raised leg stays raised, a foot on the bed stays on the bed, "
+    "an arm resting on a knee stays there). NO pose correction, NO straightening, NO re-sitting, NO symmetric pose.\n"
+    "• NO ADDED OBJECTS: add nothing that is not in IMAGE 1 or in the requested garments (no bag unless a bag image is given, no props, no furniture changes).\n"
     "• Output: one photorealistic image, 4K detail, no deformation.\n"
     "• NEGATIVE: tattoo, deformed face, deformed hands, extra fingers, extra limbs, nude skin under clothes, transparent clothes, blurry face, changed identity.\n"
 )
