@@ -21,6 +21,10 @@ from bs4 import BeautifulSoup
 import json as pyjson
 from cryptography.fernet import Fernet, InvalidToken
 from body_measure import brand_sizes, shoe_size
+import io
+import cv2
+import numpy as np
+from PIL import Image
 import head_lock
 import pose_lock
 import receipt
@@ -3058,7 +3062,103 @@ class OutfitGenerateRequest(BaseModel):
 _DEFAULT_LAYER_TEXT = "  1) bottoms / dress 2) shoes 3) top / shirt 4) outerwear / jacket on top 5) bag (accessory, carried last)."
 
 
-async def _compose_outfit(user: User, person_path: Optional[str], items: list, layer_order_text: str = _DEFAULT_LAYER_TEXT, extra: str = ""):
+_LEG_CATS = ("bottom", "shoes")
+LEGS_PASS_RULE = (
+    "LEGS-ONLY TRY-ON ON A CROP: IMAGE 1 is a CROP of a real photo showing a person from the hips down (legs, feet, floor; maybe a hand or the "
+    "shirt hem at the top). Dress ONLY the legs and feet with the requested garments. Keep the EXACT crop framing, size and aspect of IMAGE 1: "
+    "the same legs in the same positions (a raised leg or a foot on the bed stays exactly there, bent knees stay bent, crossed legs stay crossed), "
+    "same background, floor, bed, rug and lighting, same hands and same shirt hem. Never move, straighten, lower or re-pose a leg.\n"
+    "• Trousers: solid opaque fabric fully covering hips, thighs and legs down to the shoes, realistic size and fit for this body, waistband under "
+    "the shirt hem, no holes or skin showing (bare legs in IMAGE 1 become fully dressed).\n"
+    "• Shoes: each shoe exactly on that foot, anchored to the ankle, real scale, sole on the surface the foot touches, natural contact shadow.\n"
+    "• NEGATIVE: moved leg, lowered leg, straightened pose, extra legs, extra feet, floating shoes, cropped person, new background, skeleton lines.\n"
+)
+
+
+async def _multipass_outfit(user: User, person_path: str, items: list, layer_order_text: str, extra: str) -> str:
+    lowers = [g for g in items if (g.get("category") or "").lower() in _LEG_CATS]
+    uppers = [g for g in items if g not in lowers]
+    person_bytes, _ = get_object(person_path)
+    orig = np.array(head_lock._open_small(person_bytes, head_lock.PERSON_OUT_SIDE).convert("RGB"))
+    h, w = orig.shape[:2]
+    if uppers:
+        _, p1 = await _compose_outfit(user, person_path, uppers, layer_order_text, extra, raw=True)
+        top = max(head_lock.TOP_PAD_MIN_PX, int(h * head_lock.TOP_PAD_RATIO))
+        base = np.array(Image.open(io.BytesIO(p1)).convert("RGB"))[top:top + h]
+        if base.shape[:2] != (h, w):
+            base = cv2.resize(base, (w, h), interpolation=cv2.INTER_LANCZOS4)
+        del p1
+    else:
+        base = orig.copy()
+    kp = await run_in_threadpool(pose_lock.keypoints, orig)
+    legs = [i for i in (11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22) if kp is not None and kp[i, 2] > pose_lock.MIN_SCORE]
+    if len(legs) < 4:
+        raise HTTPException(status_code=422, detail="Non riconosco bene gambe e piedi nella foto: nessuna prova scalata. Usa una foto con le gambe visibili.")
+    (x0, y0), (x1, y1) = kp[legs, :2].min(0), kp[legs, :2].max(0)
+    bw, bh = x1 - x0, y1 - y0
+    X0, X1 = int(max(0, x0 - 0.35 * bw - 0.05 * w)), int(min(w, x1 + 0.35 * bw + 0.05 * w))
+    Y0, Y1 = int(max(0, y0 - 0.12 * bh)), int(min(h, y1 + 0.12 * bh + 0.04 * h))
+    crop = base[Y0:Y1, X0:X1].copy()
+    ch_, cw_ = crop.shape[:2]
+    logger.info(f"multipass legs crop x={X0}-{X1} y={Y0}-{Y1} ({cw_}x{ch_}) joints={len(legs)}")
+    buf = io.BytesIO()
+    Image.fromarray(crop).save(buf, "PNG")
+    contents = [ImageContent(base64.b64encode(buf.getvalue()).decode())]
+    lines = []
+    for idx, g in enumerate(lowers, start=2):
+        g_bytes, _ = get_object(g["image_path"])
+        g_bytes = await run_in_threadpool(head_lock.downscale, g_bytes, head_lock.GARMENT_MAX_SIDE)
+        contents.append(ImageContent(base64.b64encode(g_bytes).decode()))
+        lines.append(f"IMAGE {idx} — {g.get('category')} — {g.get('name') or ''}")
+    skel = await run_in_threadpool(pose_lock.skeleton_png, buf.getvalue())
+    prompt = LEGS_PASS_RULE + "\n".join(lines) + "\n"
+    if skel:
+        contents.append(ImageContent(base64.b64encode(skel).decode()))
+        prompt += "The LAST image is the leg skeleton of IMAGE 1 (guide only, never draw it): the dressed legs must overlay it exactly.\n"
+    aspect = min(tryon_quality._RATIOS, key=lambda k: abs(tryon_quality._RATIOS[k] - cw_ / ch_))
+    try:
+        res_bytes = await tryon_quality._image_call("You dress only the legs and feet of the person in the crop, keeping their exact pose.",
+                                                    prompt, contents, f"legs-{user.user_id}", aspect)
+    except Exception as e:
+        logger.error(f"multipass legs pass failed: {e}")
+        raise HTTPException(status_code=502, detail="Prova non riuscita: premi Riprova. Nessuna prova scalata.")
+    res = np.array(Image.open(io.BytesIO(res_bytes)).convert("RGB"))
+    reg = await run_in_threadpool(head_lock._register, crop, res)
+    if reg is None:
+        reg = cv2.resize(res, (cw_, ch_), interpolation=cv2.INTER_LANCZOS4)
+    info = await _hand_info(person_path, person_bytes)
+    fz = []
+    for b in info["boxes"]:  # hands inside the crop stay the original ones
+        by0, bx0, by1, bx1 = (v / 1000 for v in b)
+        fz.append((int(bx0 * w) - X0, int(by0 * h) - Y0, int(bx1 * w) - X0, int(by1 * h) - Y0, -1.0))
+    legs_out, frac = await run_in_threadpool(head_lock._pose_composite, crop, reg, None, (0, 0), [z for z in fz if z[2] > 0 and z[3] > 0 and z[0] < cw_ and z[1] < ch_])
+    # Feathered paste of the dressed crop (edges that touch the photo border stay hard).
+    wgt = np.ones((ch_, cw_), np.float32)
+    f = max(8, int(0.06 * min(cw_, ch_)))
+    ramp = np.linspace(0, 1, f, dtype=np.float32)
+    if X0 > 0:
+        wgt[:, :f] *= ramp[None, :]
+    if X1 < w:
+        wgt[:, -f:] *= ramp[::-1][None, :]
+    if Y0 > 0:
+        wgt[:f, :] *= ramp[:, None]
+    if Y1 < h:
+        wgt[-f:, :] *= ramp[::-1][:, None]
+    final = base.copy()
+    final[Y0:Y1, X0:X1] = cv2.blendLinear(legs_out, base[Y0:Y1, X0:X1], wgt, 1 - wgt)
+    dev = await run_in_threadpool(pose_lock.deviation, orig, final)
+    logger.info(f"multipass legs changed={frac:.2f} pose deviation={dev}")
+    if dev is not None and dev > pose_lock.POSE_DEV_MAX:
+        raise HTTPException(status_code=422, detail="La posa delle gambe non è rimasta identica: risultato scartato, nessuna prova scalata. Premi Riprova.")
+    out = io.BytesIO()
+    Image.fromarray(final).save(out, "PNG")
+    signed = await run_in_threadpool(tryon_quality.watermark, out.getvalue(), await _mark_for(user.user_id))
+    result_path = f"{APP_NAME}/outfit/{user.user_id}/{uuid.uuid4().hex}.jpg"
+    put_object(result_path, signed, "image/jpeg")
+    return result_path
+
+
+async def _compose_outfit(user: User, person_path: Optional[str], items: list, layer_order_text: str = _DEFAULT_LAYER_TEXT, extra: str = "", raw: bool = False):
     """Layer the given garment images on the user's base photo; returns (person_path, result_path)."""
     # Resolve person photo — prefer explicit path, else latest person file for the user
     if not person_path:
@@ -3077,6 +3177,10 @@ async def _compose_outfit(user: User, person_path: Optional[str], items: list, l
     person_bytes, _ = get_object(person_path)
     surgical = bool(extra) and SURGICAL_RULE in extra
     half = surgical and await _half_body(person_bytes, [g.get("category") for g in items])
+    if surgical and not half and not raw and any((g.get("category") or "").lower() in _LEG_CATS for g in items):
+        # MULTI-PASS (full figure): pass 1 dresses the upper body with legs frozen, pass 2 dresses only the legs/feet crop.
+        del person_bytes
+        return person_path, await _multipass_outfit(user, person_path, items, layer_order_text, extra)
     posed = ((bool(extra) and POSE_RULE in extra) or surgical) and not half
     boxes, keep, phone_txt, freeze = await _lock_hands(person_path, person_bytes, any((g.get("category") or "").lower() == "bag" for g in items), posed,
                                                        [g.get("category") for g in items], surgical)
@@ -3123,13 +3227,15 @@ async def _compose_outfit(user: User, person_path: Optional[str], items: list, l
     try:
         out_bytes = await tryon_quality.render(system, prompt, file_contents, lock,
                                                "; ".join(f"{g.get('category','top')}: {(g.get('brand') or '')} {g.get('name') or ''}".strip() for g in items),
-                                               f"outfit-{user.user_id}", await _mark_for(user.user_id))
+                                               f"outfit-{user.user_id}", None if raw else await _mark_for(user.user_id))
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Outfit generation error: {e}")
         raise HTTPException(status_code=500, detail=f"Generazione outfit non riuscita: {e}")
     del file_contents
+    if raw:
+        return person_path, out_bytes
     result_path = f"{APP_NAME}/outfit/{user.user_id}/{uuid.uuid4().hex}.jpg"
     put_object(result_path, out_bytes, "image/jpeg")
     return person_path, result_path

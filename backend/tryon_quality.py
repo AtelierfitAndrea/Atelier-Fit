@@ -256,6 +256,8 @@ async def render(system: str, prompt: str, contents: list, lock: dict, garments_
         if snap.get("pose_fail"):
             raise HTTPException(status_code=422, detail="Non riesco a mantenere identica la tua foto. Premi Riprova o usa una foto più luminosa: nessun credito usato.")
         logger.info(f"{tag}: surgical one-shot render delivered")
+        if mark is None:  # multi-pass: un-signed PNG of the canvas, the caller finishes it
+            return out
         return await run_in_threadpool(watermark, out, mark, pads)
     if snap.get("drift", 0) > head_lock.DRIFT_MAX or snap.get("pose_fail"):
         # The model invented a new scene: one fresh generation that must keep IMAGE 1's background.

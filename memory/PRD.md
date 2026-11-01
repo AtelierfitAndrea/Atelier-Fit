@@ -472,3 +472,8 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 - Leg-raised photo: Gemini lowers the leg even with skeleton guide (full dev 0.74) -> stays REJECTED, no credit. Owner accepts (ControlNet = paid, declined).
 - DWPose model gitignored (134MB): auto-downloaded from HuggingFace on first use (pose_lock._session).
 - hand_boxes/face_checks cache cleared for owner. Owner approved production deploy, owner-only (customers see maintenance).
+
+## 2026-11-01 (7) — MULTI-PASS legs (free, Gemini)
+- server._multipass_outfit: full-figure surgical outfits with bottom/shoes -> pass1 uppers via _compose_outfit(raw=True) (legs frozen), pass2 Gemini on DWPose legs crop (LEGS_PASS_RULE + skeleton), _register + _pose_composite (hands locked) + feathered paste, full pose check, watermark.
+- Test 14:31: leg raised on bed -> KEPT (dev 0.14) delivered; central -> OK (dev 0.14); half-body -> Gemini changed pose/scene (dev 0.75) rejected, no credit.
+- Deployed owner-only.
