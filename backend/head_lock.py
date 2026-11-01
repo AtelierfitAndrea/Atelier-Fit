@@ -148,6 +148,8 @@ def _pose_composite(canvas: np.ndarray, res: np.ndarray, face: tuple, pads: tupl
     keep = stats[:, cv2.CC_STAT_AREA] >= 0.002 * sw * sh
     keep[0] = False
     ch = keep[lab].astype(np.uint8) * 255
+    # CLEAN EDGES: thin changed lines (strong edges like mirror frames / door jambs shifted by a pixel) are not clothes: drop them.
+    ch = cv2.morphologyEx(ch, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5)))
     # Unchanged islands enclosed by new clothes (skin-coloured prints, labels, hem gap) are fabric, never original skin: fill them.
     cnts, _ = cv2.findContours(ch, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     cv2.drawContours(ch, cnts, -1, 255, -1)

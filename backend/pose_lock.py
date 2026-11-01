@@ -152,3 +152,25 @@ def arm_masks(rgb: np.ndarray):
         hands = cv2.dilate(hands, np.ones((max(3, int(0.12 * span)),) * 2, np.uint8))
     force[hands > 0] = 0
     return force, hands
+
+
+def legs_mask(kp: np.ndarray, shape) -> np.ndarray:
+    """Where trousers and shoes can be: thick hip->knee->ankle->foot strips + feet, from the original skeleton."""
+    H, W = shape[:2]
+    m = np.zeros((H, W), np.uint8)
+    ok = lambda i: kp[i, 2] > MIN_SCORE  # noqa: E731
+    thigh = max([float(np.hypot(*(kp[a, :2] - kp[b, :2]))) for a, b in ((11, 13), (12, 14)) if ok(a) and ok(b)] or [0.25 * H])
+    t = max(10, int(0.8 * thigh))
+    if ok(11) and ok(12):
+        cv2.line(m, tuple(np.int32(kp[11, :2])), tuple(np.int32(kp[12, :2])), 255, t)
+    for chain in ((11, 13, 15), (12, 14, 16)):
+        pts = [kp[i, :2] for i in chain if ok(i)]
+        if len(pts) >= 2:
+            cv2.polylines(m, [np.int32(pts)], False, 255, t, cv2.LINE_AA)
+    for ank, feet in ((15, (17, 18, 19)), (16, (20, 21, 22))):
+        pts = [kp[i, :2] for i in (ank, *feet) if ok(i)]
+        for p in pts:
+            cv2.circle(m, tuple(np.int32(p)), max(8, int(0.3 * thigh)), 255, -1)
+        if len(pts) >= 2:
+            cv2.fillConvexPoly(m, cv2.convexHull(np.int32(pts)), 255)
+    return m

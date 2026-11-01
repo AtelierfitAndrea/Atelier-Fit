@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import { toast } from "sonner";
-import { CloudArrowUp, Play, ArrowsClockwise } from "@phosphor-icons/react";
+import { CloudArrowUp, Play, ArrowsClockwise, FilePdf } from "@phosphor-icons/react";
+import { exportPosePdf } from "@/lib/posePdf";
 import { api, fileUrl } from "@/lib/api";
 import { postRender } from "@/lib/renderJob";
 
@@ -65,7 +66,7 @@ function OutfitBar({ outfit, setOutfit }) {
   );
 }
 
-function PoseCard({ pose, items, busy, setBusy }) {
+function PoseCard({ pose, items, busy, setBusy, onResult }) {
   const [own, setOwn] = useState(null);
   const [result, setResult] = useState(null);
   const [running, setRunning] = useState(false);
@@ -77,6 +78,7 @@ function PoseCard({ pose, items, busy, setBusy }) {
       const person = own?.path || (await api.post("/test-pose/import", { url: pose.src })).data.path;
       const { data } = await postRender("/outfit/generate-from-uploads", { person_path: person, preserve_pose: true, items });
       setResult(data.result_path);
+      onResult(pose.k, { title: pose.t, before: fileUrl(person), after: fileUrl(data.result_path) });
       toast.success(`${pose.t}: pronto`);
     } catch (e) {
       toast.error(e?.response?.data?.detail || "Test non riuscito");
@@ -115,16 +117,28 @@ function PoseCard({ pose, items, busy, setBusy }) {
 export default function TestPose() {
   const [outfit, setOutfit] = useState({});
   const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState({});
+  const [exporting, setExporting] = useState(false);
+  const pages = POSES.filter((p) => done[p.k]).map((p) => done[p.k]);
+  const exportPdf = async () => {
+    setExporting(true);
+    try { await exportPosePdf(pages); toast.success("PDF scaricato"); }
+    catch { toast.error("Esportazione PDF non riuscita"); }
+    finally { setExporting(false); }
+  };
   const items = SLOTS.filter((s) => outfit[s.k]?.path).map((s) => ({ slot: s.k, image_path: outfit[s.k].path }));
   return (
     <div className="max-w-6xl mx-auto px-4 py-10 space-y-8" data-testid="test-pose-page">
       <div>
         <h1 className="font-serif text-4xl">Test 8 pose social</h1>
         <p className="mt-2 text-sm text-neutral-600">Solo proprietario. Ogni TEST fa 1 sola generazione, solo quando lo premi: un test alla volta.</p>
+        <button onClick={exportPdf} disabled={!pages.length || exporting} className="mt-5 btn-primary disabled:opacity-40" data-testid="test-pose-export-pdf">
+          <FilePdf size={16} /> {exporting ? "Preparo il PDF…" : `ESPORTA PDF PRIMA/DOPO (${pages.length})`}
+        </button>
       </div>
       <OutfitBar outfit={outfit} setOutfit={setOutfit} />
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-        {POSES.map((p) => <PoseCard key={p.k} pose={p} items={items} busy={busy} setBusy={setBusy} />)}
+        {POSES.map((p) => <PoseCard key={p.k} pose={p} items={items} busy={busy} setBusy={setBusy} onResult={(k, v) => setDone((d) => ({ ...d, [k]: v }))} />)}
       </div>
     </div>
   );

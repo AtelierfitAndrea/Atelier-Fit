@@ -493,3 +493,9 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 - pages/TestPose.jsx: shared outfit (top/bottom/shoes upload) + 8 stock pose cards (Unsplash/Pexels), manual TEST per card (1 generation, one at a time), Cambia foto, before/after.
 - POST /api/test-pose/import {url}: owner only, unsplash/pexels hosts only, cached per URL in db.test_pose_imports.
 - _require_pose_face now non-blocking (log only) per owner request.
+
+## 2026-11-01 (11) — Clean edges + PDF
+- multipass legs paste limited to pose_lock.legs_mask (hip->knee->ankle strips + feet hull, feathered + crop-border ramp): background/mirror/floor objects (slippers) stay identical.
+- _pose_composite: MORPH_OPEN ellipse 5 on change mask drops thin ghost lines (shifted frame edges).
+- Offline sim (no generation): mirror-frame ghost gone, slippers kept.
+- /test-pose: ESPORTA PDF PRIMA/DOPO (jspdf 2.5.2, lib/posePdf.js): cover + 1 A4 landscape page per tested pose. PDF not yet exercised with real results (needs owner TEST).

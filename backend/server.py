@@ -3172,8 +3172,10 @@ async def _multipass_outfit(user: User, person_path: str, items: list, layer_ord
         keep = cv2.dilate(np.maximum(am[0][Y0:Y1, X0:X1] & sleeve, am[1][Y0:Y1, X0:X1]), np.ones((9, 9), np.uint8))
         kw = cv2.GaussianBlur(keep, (0, 0), 2.0).astype(np.float32)[..., None] / 255
         legs_out = (crop * kw + legs_out * (1 - kw)).astype(np.uint8)
-    # Feathered paste of the dressed crop (edges that touch the photo border stay hard).
-    wgt = np.ones((ch_, cw_), np.float32)
+    # CLEAN EDGES: only the legs/feet area of the skeleton takes the new pixels (background, mirror frame, floor objects stay
+    # pixel-identical, no ghost lines), feathered; edges that touch the photo border stay hard.
+    lm = pose_lock.legs_mask(kp, orig.shape)[Y0:Y1, X0:X1]
+    wgt = cv2.GaussianBlur(lm, (0, 0), max(3.0, 0.012 * max(cw_, ch_))).astype(np.float32) / 255
     f = max(8, int(0.06 * min(cw_, ch_)))
     ramp = np.linspace(0, 1, f, dtype=np.float32)
     if X0 > 0:
