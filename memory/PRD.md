@@ -499,3 +499,6 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 - _pose_composite: MORPH_OPEN ellipse 5 on change mask drops thin ghost lines (shifted frame edges).
 - Offline sim (no generation): mirror-frame ghost gone, slippers kept.
 - /test-pose: ESPORTA PDF PRIMA/DOPO (jspdf 2.5.2, lib/posePdf.js): cover + 1 A4 landscape page per tested pose. PDF not yet exercised with real results (needs owner TEST).
+
+## 2026-11-01 (12)
+- posePdf.js agency book: black cover with /logo-trim.png, per pose page black header band with logo + only PRIMA/DOPO images. Verified by exporting a real pair (2 pages OK). No generation.

@@ -1,11 +1,18 @@
 import { jsPDF } from "jspdf";
 import { api } from "@/lib/api";
 
+const load = (src) => new Promise((ok, ko) => { const i = new Image(); i.onload = () => ok(i); i.onerror = ko; i.src = src; });
+
 const toImg = async (url) => {
   const { data } = await api.get(url, { responseType: "blob", baseURL: "" });
   const src = await new Promise((ok) => { const r = new FileReader(); r.onload = () => ok(r.result); r.readAsDataURL(data); });
-  const dim = await new Promise((ok) => { const i = new Image(); i.onload = () => ok([i.width, i.height]); i.src = src; });
-  return { src, w: dim[0], h: dim[1] };
+  const i = await load(src);
+  return { src, w: i.width, h: i.height };
+};
+
+const logoImg = async () => {
+  const i = await load("/logo-trim.png");
+  return { src: i, w: i.width, h: i.height };
 };
 
 const fit = (img, bw, bh) => {
@@ -13,30 +20,31 @@ const fit = (img, bw, bh) => {
   return [img.w * s, img.h * s];
 };
 
-// A4 landscape: cover + one page per pose with Before / After side by side.
+// Agency book: black cover with the My Atelier logo, then one A4 landscape page per pose with only PRIMA / DOPO.
 export async function exportPosePdf(pages) {
   const pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
-  const W = 297, H = 210;
-  pdf.setFont("times", "normal");
-  pdf.setFontSize(34);
-  pdf.text("My Atelier", 20, 80);
-  pdf.setFontSize(14);
-  pdf.text("Virtual Try-On - Prima / Dopo - pose social", 20, 95);
-  pdf.setFontSize(10);
-  pdf.text(new Date().toLocaleDateString("it-IT"), 20, 105);
+  const W = 297, H = 210, band = 18;
+  const logo = await logoImg();
+  pdf.setFillColor(0, 0, 0);
+  pdf.rect(0, 0, W, H, "F");
+  const [lw, lh] = fit(logo, 150, 70);
+  pdf.addImage(logo.src, "PNG", (W - lw) / 2, (H - lh) / 2, lw, lh);
   for (const p of pages) {
     const [b, a] = await Promise.all([toImg(p.before), toImg(p.after)]);
     pdf.addPage();
-    pdf.setFontSize(16);
-    pdf.text(p.title, 15, 16);
-    pdf.setFontSize(9);
-    const bw = (W - 45) / 2, bh = H - 45;
-    [[b, "PRIMA", 15], [a, "DOPO", 30 + bw]].forEach(([img, label, x]) => {
+    pdf.setFillColor(0, 0, 0);
+    pdf.rect(0, 0, W, band, "F");
+    const [sw, sh] = fit(logo, 40, band - 6);
+    pdf.addImage(logo.src, "PNG", 12, (band - sh) / 2, sw, sh);
+    pdf.setFont("helvetica", "normal");
+    pdf.setFontSize(8);
+    pdf.setTextColor(60, 60, 60);
+    const gap = 10, bw = (W - 24 - gap) / 2, top = band + 12, bh = H - top - 8;
+    [[b, "PRIMA", 12], [a, "DOPO", 12 + bw + gap]].forEach(([img, label, x]) => {
       const [w, h] = fit(img, bw, bh);
-      pdf.text(label, x, 26);
-      pdf.addImage(img.src, "JPEG", x + (bw - w) / 2, 30 + (bh - h) / 2, w, h);
+      pdf.text(label, x + bw / 2, band + 8, { align: "center", charSpace: 1.5 });
+      pdf.addImage(img.src, "JPEG", x + (bw - w) / 2, top + (bh - h) / 2, w, h);
     });
-    pdf.text("My Atelier - Virtual Try-On", 15, H - 8);
   }
-  pdf.save("my-atelier-prima-dopo.pdf");
+  pdf.save("my-atelier-book-prima-dopo.pdf");
 }
