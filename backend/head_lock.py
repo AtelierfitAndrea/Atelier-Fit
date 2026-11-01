@@ -139,11 +139,11 @@ def _pose_composite(canvas: np.ndarray, res: np.ndarray, face: tuple, pads: tupl
     cx = int(fx + fw / 2)
     # Head (hair, ears, glasses, face) down to the chin always stays original; hoods/collars/neck below the chin come from the model.
     head = np.zeros((H, W), np.uint8)
-    cv2.ellipse(head, (cx, int(fy + fh * 0.30)), (int(fw * 0.78), int(fh * 0.80)), 0, 0, 360, 255, -1)
+    cv2.ellipse(head, (cx, int(fy + fh * 0.30)), (int(fw * 0.78), int(fh * 0.68)), 0, 0, 360, 255, -1)  # ends at the chin: the new collar may sit right under it
     # Around the head ABOVE the chin, changes are the model's misplaced head/hair (ghost silhouette): keep the original there too.
     zone = np.zeros((H, W), np.uint8)
     cv2.ellipse(zone, (cx, int(fy + fh * 0.30)), (int(fw * 1.15), int(fh * 1.15)), 0, 0, 360, 255, -1)
-    zone[int(fy + fh * 1.0):] = 0
+    zone[int(fy + fh * 0.95):] = 0
     ch[(head > 0) | (zone > 0)] = 0
     # Garments not being tried on (e.g. white paint-splash trousers when only a top is tested) keep the original pixels:
     # no skin holes, same pattern. Only their top band may show the new top's hem, and never as new bare skin there.
