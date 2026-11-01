@@ -466,3 +466,9 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 - head_lock._register: ORB+RANSAC similarity registration of model output onto original (any aspect/zoom) used first for posed photos; _pose_composite works without detected face; POSE_CHANGE_MAX 0.75.
 - pose_lock.is_half_body (no ankle in frame) + HALF_BODY_RULE + canvas bottom extension 0.7 + non-pose finalize (head/hands lock) when bottom/shoes requested; pose check upper joints only.
 - Not generation-tested (owner tests himself).
+
+## 2026-11-01 (6)
+- pose_lock.deviation: Procrustes (similarity fit) before measuring -> zoom/framing no longer counts. Half-body result 14:04 now 0.20 (passes).
+- Leg-raised photo: Gemini lowers the leg even with skeleton guide (full dev 0.74) -> stays REJECTED, no credit. Owner accepts (ControlNet = paid, declined).
+- DWPose model gitignored (134MB): auto-downloaded from HuggingFace on first use (pose_lock._session).
+- hand_boxes/face_checks cache cleared for owner. Owner approved production deploy, owner-only (customers see maintenance).

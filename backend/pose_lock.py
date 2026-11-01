@@ -23,9 +23,23 @@ _lock = threading.Lock()
 _sess = None
 
 
+MODEL_URL = "https://huggingface.co/yzd-v/DWPose/resolve/main/dw-ll_ucoco_384.onnx"
+
+
 def _session():
     global _sess
     if _sess is None:
+        if not Path(MODEL).exists():
+            # Model is too large for the repo: fetched once on first use.
+            import requests
+            tmp = MODEL + ".part"
+            with requests.get(MODEL_URL, stream=True, timeout=120) as r:
+                r.raise_for_status()
+                with open(tmp, "wb") as f:
+                    for chunk in r.iter_content(1 << 20):
+                        f.write(chunk)
+            Path(tmp).rename(MODEL)
+            logger.info("pose_lock: DWPose model downloaded")
         _sess = ort.InferenceSession(MODEL, providers=["CPUExecutionProvider"])
     return _sess
 
@@ -101,5 +115,12 @@ def deviation(orig: np.ndarray, res: np.ndarray, upper_only: bool = False):
     if kr is None:
         return 1.0
     torso = max(np.hypot(*(ko[5, :2] - ko[11, :2])), np.hypot(*(ko[6, :2] - ko[12, :2])), 1.0)
-    devs = [np.hypot(*(ko[i, :2] - kr[i, :2])) / torso for i in (JOINTS[:6] if upper_only else JOINTS) if ko[i, 2] > MIN_SCORE]
-    return float(max(devs)) if devs else None
+    idx = [i for i in (JOINTS[:6] if upper_only else JOINTS) if ko[i, 2] > MIN_SCORE and kr[i, 2] > 0.2]
+    if len(idx) < 3:
+        return None
+    # Compare pose SHAPE, not framing: the result skeleton is first fitted (scale/rotation/shift) onto the original one.
+    src, dst = kr[idx, :2].astype(np.float32), ko[idx, :2].astype(np.float32)
+    M, _ = cv2.estimateAffinePartial2D(src, dst, method=cv2.LMEDS)
+    fit = src @ M[:, :2].T + M[:, 2] if M is not None else src
+    devs = np.hypot(*(fit - dst).T) / torso
+    return float(devs.max())

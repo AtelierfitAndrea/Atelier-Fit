@@ -244,10 +244,12 @@ async def render(system: str, prompt: str, contents: list, lock: dict, garments_
     out = await run_in_threadpool(head_lock.finalize, raw, snap)
     if surgical:
         # STOP rule: exactly ONE generation, no regeneration, no automatic fix loop. Not usable -> error, no credit.
-        with open(f"/tmp/surgical_raw_{tag}.png", "wb") as f:  # model output kept for free offline merge checks
+        raw_file = f"/tmp/surgical_raw_{tag}_{uuid.uuid4().hex[:6]}.png"
+        with open(raw_file, "wb") as f:  # model output kept for free offline merge checks
             f.write(raw)
+        # Half-body photos: legs are invented by design, only shoulders/arms are checked.
         dev = await run_in_threadpool(_pose_dev, base["canvas"], out, "HALF-BODY PHOTO" in prompt)
-        logger.info(f"{tag}: pose lock deviation {dev}")
+        logger.info(f"{tag}: pose lock deviation {dev} raw={raw_file}")
         del raw, contents, base
         if dev is not None and dev > pose_lock.POSE_DEV_MAX:
             raise HTTPException(status_code=422, detail="La posa non è rimasta identica alla tua foto: risultato scartato, nessuna prova scalata. Premi Riprova.")
