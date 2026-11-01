@@ -447,3 +447,9 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 - SURGICAL_RULE: opaque full coverage + PANTS LOCK + SHOES LOCK.
 - Surgical raw model output saved to /tmp/surgical_raw_<tag>.png for free offline re-merge.
 - Full outfit (red top+black pants+sneakers) re-merged offline from raw: clean. Seated test needs 1 regeneration to verify new rules.
+
+## 2026-11-01 (3) — STABLE VERSION LOCKED by owner
+- Owner approved seated mirror pose (floral shirt, ripped jeans, white Versace, phone hand) in Il Mio Book, outfit f51f09ab (13:16).
+- Preset = default for ALL owner pose photos: preserve_pose -> POSE_RULE + SURGICAL_RULE (face/hand/phone/legs/shoes lock) + head_lock precise hand lock + hole fill. No code changes after this point without owner command.
+- Stable copies: /app/memory/stable_2026-11-01/{server.py,head_lock.py,tryon_quality.py} (after commit 004e1d2).
+- Render jobs remain OWNER ONLY until owner says otherwise. No publish.
