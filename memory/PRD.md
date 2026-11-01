@@ -488,3 +488,8 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 - pose_lock.arm_masks: DWPose shoulder->elbow->85% wrist strip forced to model sleeve; hand kept = hull of finger points (wrist root excluded, cuff covers wrist tattoo).
 - head_lock._pose_composite(arms=...) used in surgical posed finalize; multipass legs pass restores pass-1 sleeves/hands (strip & changed-vs-orig) so elbows on knees never repainted.
 - Test 22:46 leg-raised screenshot photo (floral/jeans/white shoes): elbow hole closed, full sleeves, raised leg kept (dev 0.17). Preview only.
+
+## 2026-11-01 (10) — /test-pose (owner only)
+- pages/TestPose.jsx: shared outfit (top/bottom/shoes upload) + 8 stock pose cards (Unsplash/Pexels), manual TEST per card (1 generation, one at a time), Cambia foto, before/after.
+- POST /api/test-pose/import {url}: owner only, unsplash/pexels hosts only, cached per URL in db.test_pose_imports.
+- _require_pose_face now non-blocking (log only) per owner request.

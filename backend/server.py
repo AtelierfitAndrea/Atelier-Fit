@@ -10,6 +10,7 @@ import logging
 import uuid
 import base64
 import requests as http_requests
+from urllib.parse import urlparse
 from pathlib import Path
 from pydantic import BaseModel, Field, ConfigDict
 from typing import List, Literal, Optional
@@ -1609,6 +1610,30 @@ async def upload(kind: str = Query(..., regex="^(person|garment)$"), file: Uploa
     return {"path": result["path"]}
 
 
+class TestPoseImport(BaseModel):
+    url: str
+
+
+@api_router.post("/test-pose/import")
+async def test_pose_import(req: TestPoseImport, user: User = Depends(get_current_user)):
+    """Owner test bench: stores a stock pose photo as a person photo (once per URL)."""
+    if not _is_owner_email(user.email):
+        raise HTTPException(status_code=403, detail="Solo proprietario")
+    host = (urlparse(req.url).hostname or "").lower()
+    if host not in ("images.unsplash.com", "images.pexels.com"):
+        raise HTTPException(status_code=400, detail="Fonte foto non ammessa")
+    done = await db.test_pose_imports.find_one({"user_id": user.user_id, "url": req.url}, {"_id": 0, "path": 1})
+    if done:
+        return {"path": done["path"]}
+    r = await run_in_threadpool(lambda: http_requests.get(req.url, timeout=30))
+    if r.status_code != 200:
+        raise HTTPException(status_code=502, detail="Foto stock non scaricabile")
+    data = await run_in_threadpool(head_lock.downscale, r.content, head_lock.PERSON_MAX_SIDE)
+    path = put_object(f"{APP_NAME}/person/{user.user_id}/{uuid.uuid4().hex}.jpg", data, "image/jpeg")["path"]
+    await db.test_pose_imports.insert_one({"user_id": user.user_id, "url": req.url, "path": path, "created_at": datetime.now(timezone.utc).isoformat()})
+    return {"path": path}
+
+
 class BookAddRequest(BaseModel):
     path: str
 
@@ -1635,11 +1660,11 @@ async def _pose_face_ok(user: User, path: str) -> dict:
 
 
 async def _require_pose_face(user: User, path: Optional[str]) -> None:
-    # CREDIT SAVER: no AI call and no credit when the posed photo's face is not reliable.
+    # Owner request: never block a pose photo; the face check is only logged.
     if path:
         chk = await _pose_face_ok(user, path)
         if not chk["ok"]:
-            raise HTTPException(status_code=422, detail=chk["message"] or "Ricarica foto più luminosa.")
+            logger.info(f"pose face check not ok for {path} (not blocking): {chk.get('message')}")
 
 
 class PoseCheckIn(BaseModel):

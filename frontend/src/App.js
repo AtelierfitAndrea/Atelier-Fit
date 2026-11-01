@@ -24,6 +24,7 @@ import AdminSupport from "@/pages/AdminSupport";
 import Support from "@/pages/Support";
 import PaymentResult from "@/pages/PaymentResult";
 import Renew from "@/pages/Renew";
+import TestPose from "@/pages/TestPose";
 import SessionRevokedNotice from "@/components/SessionRevokedNotice";
 import "@/App.css";
 
@@ -70,6 +71,7 @@ function AppRouter() {
       <Route path="/analyze" element={<Protected><AnalyzeProduct /></Protected>} />
       <Route path="/stanza" element={user?.is_owner ? <AdminAtelier /> : <Navigate to="/dashboard" replace />} />
       <Route path="/stanza/assistenza" element={user?.is_owner ? <AdminSupport /> : <Navigate to="/dashboard" replace />} />
+      <Route path="/test-pose" element={user?.is_owner ? <Protected><TestPose /></Protected> : <Navigate to="/dashboard" replace />} />
       <Route path="/assistenza" element={<Protected><Support /></Protected>} />
       <Route path="/rinnova" element={<Protected><Renew /></Protected>} />
       <Route path="/payment/success" element={<Protected><PaymentResult /></Protected>} />
