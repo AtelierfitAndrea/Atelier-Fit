@@ -460,3 +460,9 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 - Offline calibration: good results 0.01-0.26, bad (leg lowered) 1.3-2.1, previously "approved" book seated 0.53 (now rejected).
 - SURGICAL_RULE: universal pose lock any pose + no added objects (bag only if Borsa slot).
 - Owner decides tests (no agent generation). Still OWNER ONLY, not published.
+
+## 2026-11-01 (5) — Pose photos robustness
+- Root causes (logs): leg-raised photo -> head_lock alignment failed (aligned=False, face behind phone/aspect change) -> pose_fail; half-body screenshot -> pose deviation 0.72 (feet invented) -> rejected. NO nudity/underwear filter exists.
+- head_lock._register: ORB+RANSAC similarity registration of model output onto original (any aspect/zoom) used first for posed photos; _pose_composite works without detected face; POSE_CHANGE_MAX 0.75.
+- pose_lock.is_half_body (no ankle in frame) + HALF_BODY_RULE + canvas bottom extension 0.7 + non-pose finalize (head/hands lock) when bottom/shoes requested; pose check upper joints only.
+- Not generation-tested (owner tests himself).

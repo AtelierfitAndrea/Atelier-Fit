@@ -82,7 +82,17 @@ def skeleton_png(img_bytes: bytes):
     return buf.getvalue()
 
 
-def deviation(orig: np.ndarray, res: np.ndarray):
+def is_half_body(img_bytes: bytes) -> bool:
+    """True when the feet are not in the photo (portrait / half figure): no visible ankle inside the frame."""
+    rgb = np.array(Image.open(io.BytesIO(img_bytes)).convert("RGB"))
+    kp = keypoints(rgb)
+    if kp is None:
+        return False
+    ank = kp[[15, 16]]
+    return bool(((ank[:, 2] < MIN_SCORE) | (ank[:, 1] > rgb.shape[0] * 0.97)).all())
+
+
+def deviation(orig: np.ndarray, res: np.ndarray, upper_only: bool = False):
     """Largest limb-joint shift between original and result (fraction of torso length); None if not measurable."""
     ko = keypoints(orig)
     if ko is None:
@@ -91,5 +101,5 @@ def deviation(orig: np.ndarray, res: np.ndarray):
     if kr is None:
         return 1.0
     torso = max(np.hypot(*(ko[5, :2] - ko[11, :2])), np.hypot(*(ko[6, :2] - ko[12, :2])), 1.0)
-    devs = [np.hypot(*(ko[i, :2] - kr[i, :2])) / torso for i in JOINTS if ko[i, 2] > MIN_SCORE]
+    devs = [np.hypot(*(ko[i, :2] - kr[i, :2])) / torso for i in (JOINTS[:6] if upper_only else JOINTS) if ko[i, 2] > MIN_SCORE]
     return float(max(devs)) if devs else None

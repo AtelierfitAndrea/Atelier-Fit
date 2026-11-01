@@ -22,6 +22,7 @@ import json as pyjson
 from cryptography.fernet import Fernet, InvalidToken
 from body_measure import brand_sizes, shoe_size
 import head_lock
+import pose_lock
 import receipt
 import payments_log
 import hem as hem_mod
@@ -2064,14 +2065,32 @@ PHONE_RULE = (
 )
 
 
+HALF_EXTEND = 0.7
+HALF_BODY_RULE = (
+    "HALF-BODY PHOTO — EXTEND TO FULL FIGURE: IMAGE 1 shows the person only down to the waist/thighs; a plain band was added at the bottom. "
+    "Fill that band by extending the SAME person's body down to the feet, as the natural continuation of the visible pose (seated -> seated legs, "
+    "standing -> standing legs), wearing the requested trousers and shoes, and continue the same background and floor. Face, head, torso pose, "
+    "arms and hands of the visible part stay identical to IMAGE 1. Ignore any phone-app interface (icons, buttons) visible in IMAGE 1.\n"
+)
+
+
+async def _half_body(person_bytes: bytes, cats) -> bool:
+    # Only matters when legs/feet garments are requested on a photo that shows no knees/ankles.
+    if not {(c or "").lower() for c in cats} & {"bottom", "shoes", "dress", "suit"}:
+        return False
+    return await run_in_threadpool(pose_lock.is_half_body, person_bytes)
+
+
 async def _render_single(user_id: str, person_path: str, garment_path: str, category_in: Optional[str], name: Optional[str], m_doc: dict, extra: str = "") -> str:
     # Load both images
     person_bytes, person_ct = get_object(person_path)
     garment_bytes, garment_ct = get_object(garment_path)
     surgical = SURGICAL_RULE in extra
-    boxes, keep, phone_txt, freeze = await _lock_hands(person_path, person_bytes, (category_in or "").lower() == "bag", POSE_RULE in extra or surgical, [category_in], surgical)
-    extra += phone_txt
-    canvas_bytes, lock = await run_in_threadpool(head_lock.prepare, person_bytes, head_lock.is_long(category_in, name or ""), boxes, keep, POSE_RULE in extra or surgical, freeze)
+    half = surgical and await _half_body(person_bytes, [category_in])
+    posed = (POSE_RULE in extra or surgical) and not half
+    boxes, keep, phone_txt, freeze = await _lock_hands(person_path, person_bytes, (category_in or "").lower() == "bag", posed, [category_in], surgical)
+    extra += phone_txt + (HALF_BODY_RULE if half else "")
+    canvas_bytes, lock = await run_in_threadpool(head_lock.prepare, person_bytes, head_lock.is_long(category_in, name or ""), boxes, keep, posed, freeze, HALF_EXTEND if half else 0.0)
     garment_bytes = await run_in_threadpool(head_lock.downscale, garment_bytes, head_lock.GARMENT_MAX_SIDE)
     person_b64 = base64.b64encode(canvas_bytes).decode('utf-8')
     garment_b64 = base64.b64encode(garment_bytes).decode('utf-8')
@@ -3057,11 +3076,13 @@ async def _compose_outfit(user: User, person_path: Optional[str], items: list, l
     # Build the multi-image prompt
     person_bytes, _ = get_object(person_path)
     surgical = bool(extra) and SURGICAL_RULE in extra
-    posed = (bool(extra) and POSE_RULE in extra) or surgical
+    half = surgical and await _half_body(person_bytes, [g.get("category") for g in items])
+    posed = ((bool(extra) and POSE_RULE in extra) or surgical) and not half
     boxes, keep, phone_txt, freeze = await _lock_hands(person_path, person_bytes, any((g.get("category") or "").lower() == "bag" for g in items), posed,
                                                        [g.get("category") for g in items], surgical)
-    extra += phone_txt
-    canvas_bytes, lock = await run_in_threadpool(head_lock.prepare, person_bytes, any(head_lock.is_long(g.get("category"), g.get("name") or "") for g in items), boxes, keep, posed, freeze)
+    extra += phone_txt + (HALF_BODY_RULE if half else "")
+    canvas_bytes, lock = await run_in_threadpool(head_lock.prepare, person_bytes, any(head_lock.is_long(g.get("category"), g.get("name") or "") for g in items), boxes, keep, posed, freeze,
+                                                 HALF_EXTEND if half else 0.0)
     file_contents = [ImageContent(base64.b64encode(canvas_bytes).decode("utf-8"))]
     del person_bytes, canvas_bytes
     layer_lines = []

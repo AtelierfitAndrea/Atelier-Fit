@@ -21,11 +21,11 @@ import pose_lock
 logger = logging.getLogger(__name__)
 
 
-def _pose_dev(canvas: np.ndarray, out_png: bytes):
+def _pose_dev(canvas: np.ndarray, out_png: bytes, upper_only: bool = False):
     res = np.array(Image.open(io.BytesIO(out_png)).convert("RGB"))
     if res.shape[:2] != canvas.shape[:2]:
         res = np.array(Image.fromarray(res).resize((canvas.shape[1], canvas.shape[0])))
-    return pose_lock.deviation(canvas, res)
+    return pose_lock.deviation(canvas, res, upper_only)
 
 
 MODELS = ("gemini-3-pro-image-preview", "gemini-3.1-flash-image-preview")
@@ -246,7 +246,7 @@ async def render(system: str, prompt: str, contents: list, lock: dict, garments_
         # STOP rule: exactly ONE generation, no regeneration, no automatic fix loop. Not usable -> error, no credit.
         with open(f"/tmp/surgical_raw_{tag}.png", "wb") as f:  # model output kept for free offline merge checks
             f.write(raw)
-        dev = await run_in_threadpool(_pose_dev, base["canvas"], out)
+        dev = await run_in_threadpool(_pose_dev, base["canvas"], out, "HALF-BODY PHOTO" in prompt)
         logger.info(f"{tag}: pose lock deviation {dev}")
         del raw, contents, base
         if dev is not None and dev > pose_lock.POSE_DEV_MAX:

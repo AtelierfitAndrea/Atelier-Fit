@@ -121,6 +121,16 @@ def _largest(m: np.ndarray) -> np.ndarray:
     return (lab == 1 + int(np.argmax(stats[1:, cv2.CC_STAT_AREA]))).astype(np.uint8)
 
 
+def _head_zones(head: np.ndarray, zone: np.ndarray, face: tuple) -> None:
+    fx, fy, fw, fh = face
+    cx = int(fx + fw / 2)
+    # Head (hair, ears, glasses, face) down to the chin always stays original; hoods/collars/neck below the chin come from the model.
+    cv2.ellipse(head, (cx, int(fy + fh * 0.30)), (int(fw * 0.78), int(fh * 0.68)), 0, 0, 360, 255, -1)
+    # Around the head ABOVE the chin, changes are the model's misplaced head/hair (ghost silhouette): keep the original there too.
+    cv2.ellipse(zone, (cx, int(fy + fh * 0.30)), (int(fw * 1.15), int(fh * 1.15)), 0, 0, 360, 255, -1)
+    zone[int(fy + fh * 0.95):] = 0
+
+
 def _pose_composite(canvas: np.ndarray, res: np.ndarray, face: tuple, pads: tuple = (0, 0), freeze: list = ()):
     """FACE LOCK for posed photos: original pixels everywhere, generated pixels ONLY where the clothes changed.
     Head (hair, ears, glasses, face) is never taken from the model. Returns (image, changed_fraction)."""
@@ -145,15 +155,10 @@ def _pose_composite(canvas: np.ndarray, res: np.ndarray, face: tuple, pads: tupl
     frac = float((ch > 0).mean())
     ch = cv2.dilate(ch, np.ones((7, 7), np.uint8))
     ch = cv2.resize(ch, (W, H), interpolation=cv2.INTER_LINEAR)
-    fx, fy, fw, fh = face
-    cx = int(fx + fw / 2)
-    # Head (hair, ears, glasses, face) down to the chin always stays original; hoods/collars/neck below the chin come from the model.
     head = np.zeros((H, W), np.uint8)
-    cv2.ellipse(head, (cx, int(fy + fh * 0.30)), (int(fw * 0.78), int(fh * 0.68)), 0, 0, 360, 255, -1)  # ends at the chin: the new collar may sit right under it
-    # Around the head ABOVE the chin, changes are the model's misplaced head/hair (ghost silhouette): keep the original there too.
     zone = np.zeros((H, W), np.uint8)
-    cv2.ellipse(zone, (cx, int(fy + fh * 0.30)), (int(fw * 1.15), int(fh * 1.15)), 0, 0, 360, 255, -1)
-    zone[int(fy + fh * 0.95):] = 0
+    if face:  # face hidden (e.g. behind the phone): the unchanged-pixel rule alone keeps the original head
+        _head_zones(head, zone, face)
     ch[(head > 0) | (zone > 0)] = 0
     # Garments not being tried on (e.g. white paint-splash trousers when only a top is tested) keep the original pixels:
     # no skin holes, same pattern. Only their top band may show the new top's hem, and never as new bare skin there.
@@ -219,7 +224,7 @@ def _align_pose(canvas: np.ndarray, res: np.ndarray) -> np.ndarray:
     return cv2.warpAffine(res, M, (W, H), flags=cv2.INTER_LANCZOS4, borderMode=cv2.BORDER_REPLICATE)
 
 
-POSE_CHANGE_MAX = 0.6
+POSE_CHANGE_MAX = 0.75
 
 
 def surgical_merge(orig_jpeg: bytes, result_bytes: bytes, freeze: list) -> bytes:
@@ -327,13 +332,13 @@ def _paste_hand(out: np.ndarray, canvas: np.ndarray, res: np.ndarray, box: tuple
     return True
 
 
-def prepare(person_bytes: bytes, long_garment: bool, hands: list = None, paste_hands=True, pose: bool = False, freeze: list = None) -> tuple:
+def prepare(person_bytes: bytes, long_garment: bool, hands: list = None, paste_hands=True, pose: bool = False, freeze: list = None, extend: float = 0.0) -> tuple:
     """paste_hands: bool for all hands, or one bool per hand box (False = the model may redraw that hand)."""
     # Returns (canvas_png_bytes, meta) with top safe margin and optional bottom extension.
     im = np.array(_open_small(person_bytes, PERSON_OUT_SIDE).convert("RGB"))
     h, w = im.shape[:2]
     top = max(TOP_PAD_MIN_PX, int(h * TOP_PAD_RATIO))
-    bottom = int(h * BOTTOM_PAD_RATIO) if long_garment else 0
+    bottom = int(h * extend) if extend else (int(h * BOTTOM_PAD_RATIO) if long_garment else 0)
     # Bands are filled with the plain background colour (never the person: head/feet touching the edge must not smear).
     canvas = cv2.copyMakeBorder(im, top, bottom, 0, 0, cv2.BORDER_CONSTANT, value=_bg_color(im[:3]))
     if bottom:
@@ -406,12 +411,51 @@ def _match_head_colour(canvas: np.ndarray, res: np.ndarray, mask: np.ndarray) ->
     return canvas, drift
 
 
+def _register(canvas: np.ndarray, res: np.ndarray):
+    """Map the generated image onto the original framing from background features, whatever size/aspect/zoom the model used."""
+    H, W = canvas.shape[:2]
+    rh, rw = res.shape[:2]
+    sc, sr = 1024 / max(H, W), 1024 / max(rh, rw)
+    g1 = cv2.cvtColor(cv2.resize(canvas, (int(W * sc), int(H * sc))), cv2.COLOR_RGB2GRAY)
+    g2 = cv2.cvtColor(cv2.resize(res, (int(rw * sr), int(rh * sr))), cv2.COLOR_RGB2GRAY)
+    orb = cv2.ORB_create(4000)
+    k1, d1 = orb.detectAndCompute(g1, None)
+    k2, d2 = orb.detectAndCompute(g2, None)
+    if d1 is None or d2 is None or len(k1) < 30 or len(k2) < 30:
+        return None
+    pairs = cv2.BFMatcher(cv2.NORM_HAMMING).knnMatch(d2, d1, k=2)
+    good = [p[0] for p in pairs if len(p) == 2 and p[0].distance < 0.8 * p[1].distance]
+    if len(good) < 30:
+        return None
+    src = np.float32([k2[m.queryIdx].pt for m in good]) / sr
+    dst = np.float32([k1[m.trainIdx].pt for m in good]) / sc
+    M, inl = cv2.estimateAffinePartial2D(src, dst, ransacReprojThreshold=4.0 / sc)
+    if M is None or inl is None or int(inl.sum()) < 25:
+        return None
+    scale = float(np.hypot(M[0, 0], M[1, 0]))
+    if not (0.4 < scale < 2.5) or abs(np.degrees(np.arctan2(M[1, 0], M[0, 0]))) > 4:
+        return None
+    logger.info("head_lock: registered result scale=%.3f shift=(%.0f, %.0f) inliers=%d", scale, M[0, 2], M[1, 2], int(inl.sum()))
+    return cv2.warpAffine(res, M, (W, H), flags=cv2.INTER_LANCZOS4, borderMode=cv2.BORDER_REPLICATE)
+
+
 def finalize(result_bytes: bytes, meta: dict) -> bytes:
     canvas, mask = meta["canvas"], meta["mask"]
     H, W = canvas.shape[:2]
     res = np.array(_open_small(result_bytes, max(H, W)).convert("RGB"))
     del result_bytes
     rh, rw = res.shape[:2]
+    reg = _register(canvas, res) if meta.get("pose") else None
+    if reg is not None:
+        # Posed photo registered on the background: composite directly (face position no longer needed for alignment).
+        out, frac = _pose_composite(canvas, reg, meta.get("face"), meta.get("pads_px", (0, 0)), meta.get("freeze", ()))
+        logger.info("head_lock: pose composite (registered) changed=%.2f", frac)
+        meta.clear()
+        meta["drift"] = 0.0
+        meta["pose_fail"] = frac > POSE_CHANGE_MAX
+        buf = io.BytesIO()
+        Image.fromarray(out).save(buf, "PNG")
+        return buf.getvalue()
     if abs(rw / rh - W / H) > 0.04:
         # Model changed the aspect: fit the full HEIGHT (head and feet never cut), then trim or pad the sides only.
         nw = int(rw * H / rh)
