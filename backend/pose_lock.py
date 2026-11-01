@@ -97,13 +97,13 @@ def skeleton_png(img_bytes: bytes):
 
 
 def is_half_body(img_bytes: bytes) -> bool:
-    """True when the feet are not in the photo (portrait / half figure): no visible ankle inside the frame."""
+    """True when neither feet nor knees are in the photo (portrait / half figure). Crossed or tucked legs keep their knees: full figure."""
     rgb = np.array(Image.open(io.BytesIO(img_bytes)).convert("RGB"))
     kp = keypoints(rgb)
     if kp is None:
         return False
-    ank = kp[[15, 16]]
-    return bool(((ank[:, 2] < MIN_SCORE) | (ank[:, 1] > rgb.shape[0] * 0.97)).all())
+    low = kp[[13, 14, 15, 16]]
+    return bool(((low[:, 2] < MIN_SCORE) | (low[:, 1] > rgb.shape[0] * 0.97)).all())
 
 
 def deviation(orig: np.ndarray, res: np.ndarray, upper_only: bool = False):
@@ -127,31 +127,35 @@ def deviation(orig: np.ndarray, res: np.ndarray, upper_only: bool = False):
 
 
 def arm_masks(rgb: np.ndarray):
-    """(sleeve_force, hand_keep) full-size masks: sleeve strip shoulder->elbow->near wrist, hand = hull of the finger points."""
+    """([(kind, mask)] arm segments 'upper'/'fore', hand_keep): sleeve strips from the skeleton, hand = hull of the finger points."""
     kp = keypoints(rgb)
     if kp is None:
         return None
     H, W = rgb.shape[:2]
-    force, hands = np.zeros((H, W), np.uint8), np.zeros((H, W), np.uint8)
-    for sh, el, wr in ((5, 7, 9), (6, 8, 10)):
-        if kp[sh, 2] < MIN_SCORE or kp[el, 2] < MIN_SCORE:
-            continue
-        upper = float(np.hypot(*(kp[sh, :2] - kp[el, :2])))
-        pts = [kp[sh, :2], kp[el, :2]]
-        if kp[wr, 2] >= MIN_SCORE:
-            pts.append(kp[el, :2] + 0.85 * (kp[wr, :2] - kp[el, :2]))
-        cv2.polylines(force, [np.int32(pts)], False, 255, max(6, int(0.45 * upper)), cv2.LINE_AA)
+    segs, hands = [], np.zeros((H, W), np.uint8)
     for lo in (92, 113):  # finger points of each hand (wrist root excluded: the cuff covers it)
         pts = kp[lo:lo + 20]
         pts = pts[pts[:, 2] > 0.3]
         if len(pts) < 6:
             continue
-        hull = cv2.convexHull(np.int32(pts[:, :2]))
-        cv2.fillConvexPoly(hands, hull, 255)
+        one = np.zeros((H, W), np.uint8)
+        cv2.fillConvexPoly(one, cv2.convexHull(np.int32(pts[:, :2])), 255)
         span = max(np.ptp(pts[:, 0]), np.ptp(pts[:, 1]))
-        hands = cv2.dilate(hands, np.ones((max(3, int(0.12 * span)),) * 2, np.uint8))
-    force[hands > 0] = 0
-    return force, hands
+        hands |= cv2.dilate(one, np.ones((max(3, int(0.12 * span)),) * 2, np.uint8))
+    for sh, el, wr in ((5, 7, 9), (6, 8, 10)):
+        if kp[sh, 2] < MIN_SCORE or kp[el, 2] < MIN_SCORE:
+            continue
+        t = max(6, int(0.45 * float(np.hypot(*(kp[sh, :2] - kp[el, :2])))))
+        m = np.zeros((H, W), np.uint8)
+        cv2.line(m, tuple(np.int32(kp[sh, :2])), tuple(np.int32(kp[el, :2])), 255, t, cv2.LINE_AA)
+        segs.append(("upper", m))
+        if kp[wr, 2] >= MIN_SCORE:
+            m = np.zeros((H, W), np.uint8)
+            cv2.line(m, tuple(np.int32(kp[el, :2])), tuple(np.int32(kp[el, :2] + 0.85 * (kp[wr, :2] - kp[el, :2]))), 255, t, cv2.LINE_AA)
+            segs.append(("fore", m))
+    for _, m in segs:
+        m[hands > 0] = 0
+    return segs, hands
 
 
 def legs_mask(kp: np.ndarray, shape) -> np.ndarray:

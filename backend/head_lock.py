@@ -186,10 +186,21 @@ def _pose_composite(canvas: np.ndarray, res: np.ndarray, face: tuple, pads: tupl
             band[(_skin(res[Y0:yf, X0:X1]) > 0) & (_skin(canvas[Y0:yf, X0:X1]) == 0)] = 0
         ch[yf:Y1, X0:X1] = 0
     if arms is not None:
-        # SLEEVE LOCK: along shoulder->elbow->wrist the new sleeve always comes from the model (no original skin/tattoo holes);
-        # only the hand itself (DWPose finger points) stays original. The head stays original.
-        force, hands = arms
-        ch[force > 0] = 255
+        # SLEEVE LOCK per arm segment: if the model kept the segment as in the photo (bare forearm, short sleeve) it stays the
+        # ORIGINAL skin/tattoos (no invented tattoos); if it put a new sleeve there, the whole segment is the new sleeve (no holes).
+        segs, hands = arms
+        diff = np.abs(cv2.GaussianBlur(canvas, (0, 0), 1.5).astype(np.int16) - cv2.GaussianBlur(res, (0, 0), 1.5).astype(np.int16)).mean(axis=2)
+        for kind, m in segs:
+            sel = m > 0
+            if not sel.any():
+                continue
+            same = float((diff[sel] < 20).mean())
+            if same > 0.5:
+                if kind == "fore":
+                    ch[sel] = 0
+            else:
+                ch[sel] = 255
+        del diff
         ch[(hands > 0) | (head > 0) | (zone > 0)] = 0
     # Top/bottom pad bands are not part of the photo: always the model's continuation of the scene.
     if pads[0]:
@@ -569,6 +580,19 @@ def has_face(jpeg: bytes) -> bool:
 def crop_screenshot(data: bytes) -> bytes:
     """Phone screenshot of an app showing the photo (UI bars, text, buttons): keep only the embedded photo."""
     img = Image.open(io.BytesIO(data)).convert("RGB")
+    # Letterbox bars (flat black/white rows or columns at the edges) are not part of the photo.
+    a = np.asarray(img.convert("L"), np.float32)
+    rows, cols = a.std(axis=1) < 4, a.std(axis=0) < 4
+    t = int(np.argmin(rows)) if rows.any() else 0
+    b = len(rows) - int(np.argmin(rows[::-1])) if rows.any() else len(rows)
+    lft = int(np.argmin(cols)) if cols.any() else 0
+    rgt = len(cols) - int(np.argmin(cols[::-1])) if cols.any() else len(cols)
+    if (t or b < len(rows) or lft or rgt < len(cols)) and (b - t) > 0.3 * len(rows) and (rgt - lft) > 0.3 * len(cols):
+        logger.info("head_lock: letterbox trimmed to x=%d-%d y=%d-%d", lft, rgt, t, b)
+        img = img.crop((lft, t, rgt, b))
+        buf = io.BytesIO()
+        img.save(buf, "JPEG", quality=95)
+        data = buf.getvalue()
     W, H = img.size
     small = np.array(img.resize((max(1, W // 2), max(1, H // 2))))
     g = cv2.cvtColor(small, cv2.COLOR_RGB2GRAY)

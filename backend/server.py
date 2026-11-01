@@ -3169,7 +3169,10 @@ async def _multipass_outfit(user: User, person_path: str, items: list, layer_ord
     if am is not None:
         # Arms/hands resting on the legs keep the pass-1 sleeves and hands (the legs pass never repaints an elbow).
         sleeve = (np.abs(base[Y0:Y1, X0:X1].astype(np.int16) - orig[Y0:Y1, X0:X1].astype(np.int16)).mean(axis=2) > 24).astype(np.uint8) * 255
-        keep = cv2.dilate(np.maximum(am[0][Y0:Y1, X0:X1] & sleeve, am[1][Y0:Y1, X0:X1]), np.ones((9, 9), np.uint8))
+        strip = np.zeros(orig.shape[:2], np.uint8)
+        for _, m in am[0]:
+            strip |= m
+        keep = cv2.dilate(np.maximum(strip[Y0:Y1, X0:X1] & sleeve, am[1][Y0:Y1, X0:X1]), np.ones((9, 9), np.uint8))
         kw = cv2.GaussianBlur(keep, (0, 0), 2.0).astype(np.float32)[..., None] / 255
         legs_out = (crop * kw + legs_out * (1 - kw)).astype(np.uint8)
     # CLEAN EDGES: only the legs/feet area of the skeleton takes the new pixels (background, mirror frame, floor objects stay

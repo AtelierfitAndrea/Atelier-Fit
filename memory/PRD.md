@@ -502,3 +502,9 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 
 ## 2026-11-01 (12)
 - posePdf.js agency book: black cover with /logo-trim.png, per pose page black header band with logo + only PRIMA/DOPO images. Verified by exporting a real pair (2 pages OK). No generation.
+
+## 2026-11-01 (13) — Identity/framing fixes
+- Crossed legs on bed (23:11) went HALF-BODY path (ankles hidden) -> extension + zoom + legs on floor. is_half_body now requires knees AND ankles missing.
+- crop_screenshot trims letterbox bars (flat rows/cols) before screenshot detection.
+- Sleeve lock per arm segment (upper/fore): segment kept same as photo -> forearm stays ORIGINAL (no invented tattoos on short sleeves); segment changed -> whole segment new sleeve. Verified offline on floral long-sleeve (no holes) and black tee (original forearm tattoos).
+- Not done: light/quality enhancement (would alter original pixels).
