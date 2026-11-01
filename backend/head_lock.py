@@ -66,8 +66,171 @@ def _faces(rgb: np.ndarray) -> list:
     _ok, faces = det.detect(cv2.cvtColor(small, cv2.COLOR_RGB2BGR))
     if faces is None:
         return []
-    boxes = [tuple(int(v) for v in f[:4] / scale) for f in faces]
-    return sorted(boxes, key=lambda b: b[2] * b[3], reverse=True)
+    # The person is the most CONFIDENT sizeable face (a big faded poster face in the background must not win on area).
+    big = max(f[2] * f[3] for f in faces)
+    faces = sorted([f for f in faces if f[2] * f[3] >= 0.15 * big], key=lambda f: f[14], reverse=True)
+    return [tuple(int(v) for v in f[:4] / scale) for f in faces]
+
+
+FACE_MIN_CONF = 0.75  # YuNet score: clear real photos measure 0.80-0.95
+
+
+def face_check(person_bytes: bytes) -> tuple:
+    """Credit saver for posed photos: (ok, confidence, reason). Face re-detected on a zoomed crop so small full-body faces score fairly."""
+    rgb = np.array(_open_small(person_bytes, PERSON_MAX_SIDE).convert("RGB"))
+    h, w = rgb.shape[:2]
+    scale = 640 / max(h, w)
+    small = cv2.resize(rgb, (int(w * scale), int(h * scale)))
+    det = cv2.FaceDetectorYN.create(_FACE_MODEL, "", (small.shape[1], small.shape[0]), 0.5)
+    _ok, faces = det.detect(cv2.cvtColor(small, cv2.COLOR_RGB2BGR))
+    if faces is None:
+        return False, 0.0, "no_face"
+    big = max(r[2] * r[3] for r in faces)
+    f = max((r for r in faces if r[2] * r[3] >= 0.15 * big), key=lambda r: r[14])
+    x, y, fw, fh = (f[:4] / scale).astype(int)
+    conf = float(f[14])
+    side = int(max(fw, fh) * 3)
+    cx, cy = x + fw // 2, y + fh // 2
+    x0, y0 = max(0, cx - side // 2), max(0, cy - side // 2)
+    crop = rgb[y0:min(h, y0 + side), x0:min(w, x0 + side)]
+    if crop.size:
+        cs = 640 / max(crop.shape[:2])
+        c2 = cv2.resize(crop, (int(crop.shape[1] * cs), int(crop.shape[0] * cs)))
+        det2 = cv2.FaceDetectorYN.create(_FACE_MODEL, "", (c2.shape[1], c2.shape[0]), 0.5)
+        _ok, f2 = det2.detect(cv2.cvtColor(c2, cv2.COLOR_RGB2BGR))
+        if f2 is not None:
+            conf = max(conf, float(max(f2, key=lambda r: r[14])[14]))
+    face = cv2.cvtColor(rgb[max(0, y):y + fh, max(0, x):x + fw], cv2.COLOR_RGB2GRAY)
+    bright = float(face.mean()) if face.size else 0.0
+    sharp = float(cv2.Laplacian(cv2.resize(face, (128, 128)), cv2.CV_64F).var()) if face.size else 0.0
+    if fw < 40 or fh < 40:
+        return False, conf, "face_small"
+    if bright < 55:
+        return False, conf, "dark"
+    if sharp < 25:
+        return False, conf, "blurry"
+    if conf < FACE_MIN_CONF:
+        return False, conf, "low_conf"
+    return True, conf, ""
+
+
+def _pose_composite(canvas: np.ndarray, res: np.ndarray, face: tuple, pads: tuple = (0, 0), freeze: list = ()):
+    """FACE LOCK for posed photos: original pixels everywhere, generated pixels ONLY where the clothes changed.
+    Head (hair, ears, glasses, face) is never taken from the model. Returns (image, changed_fraction)."""
+    H, W = canvas.shape[:2]
+    s = 512 / max(H, W)
+    sw, sh = int(W * s), int(H * s)
+    cs = cv2.resize(canvas, (sw, sh), interpolation=cv2.INTER_AREA).astype(np.float32)
+    rs = cv2.resize(res, (sw, sh), interpolation=cv2.INTER_AREA).astype(np.float32)
+    gain = np.clip((np.median(rs.reshape(-1, 3), 0) + 1) / (np.median(cs.reshape(-1, 3), 0) + 1), 0.8, 1.25)
+    d = np.abs(cv2.GaussianBlur(cs * gain, (0, 0), 1.2) - cv2.GaussianBlur(rs, (0, 0), 1.2)).mean(axis=2)
+    ch = (d > 24).astype(np.uint8)
+    ch = cv2.morphologyEx(ch, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
+    ch = cv2.morphologyEx(ch, cv2.MORPH_CLOSE, np.ones((9, 9), np.uint8))
+    n, lab, stats, _ = cv2.connectedComponentsWithStats(ch, 8)
+    keep = stats[:, cv2.CC_STAT_AREA] >= 0.002 * sw * sh
+    keep[0] = False
+    ch = keep[lab].astype(np.uint8) * 255
+    del cs, rs, d, lab
+    frac = float((ch > 0).mean())
+    ch = cv2.dilate(ch, np.ones((3, 3), np.uint8))
+    ch = cv2.resize(ch, (W, H), interpolation=cv2.INTER_LINEAR)
+    fx, fy, fw, fh = face
+    cx = int(fx + fw / 2)
+    # Head (hair, ears, glasses, face) down to the chin always stays original; hoods/collars/neck below the chin come from the model.
+    head = np.zeros((H, W), np.uint8)
+    cv2.ellipse(head, (cx, int(fy + fh * 0.30)), (int(fw * 0.78), int(fh * 0.80)), 0, 0, 360, 255, -1)
+    # Around the head ABOVE the chin, changes are the model's misplaced head/hair (ghost silhouette): keep the original there too.
+    zone = np.zeros((H, W), np.uint8)
+    cv2.ellipse(zone, (cx, int(fy + fh * 0.30)), (int(fw * 1.15), int(fh * 1.15)), 0, 0, 360, 255, -1)
+    zone[int(fy + fh * 1.0):] = 0
+    ch[(head > 0) | (zone > 0)] = 0
+    # Garments not being tried on (e.g. white paint-splash trousers when only a top is tested) keep the original pixels:
+    # no skin holes, same pattern. Only their top band may show the new top's hem, and never as new bare skin there.
+    for x0, y0, x1, y1, top_free in freeze:
+        px, py = max(2, int((x1 - x0) * 0.04)), max(2, int((y1 - y0) * 0.03))
+        X0, Y0, X1, Y1 = max(0, x0 - px), max(0, y0 - py), min(W, x1 + px), min(H, y1 + py)
+        if top_free < 0:
+            # Hand box: lock only the hand itself (skin in both images), never paste the body skin around it over a new garment.
+            box = ch[Y0:Y1, X0:X1]
+            box[(_skin(res[Y0:Y1, X0:X1]) > 0) & (_skin(canvas[Y0:Y1, X0:X1]) > 0)] = 0
+            continue
+        yf = Y0 + int((Y1 - Y0) * top_free)
+        if yf > Y0:
+            band = ch[Y0:yf, X0:X1]
+            band[(_skin(res[Y0:yf, X0:X1]) > 0) & (_skin(canvas[Y0:yf, X0:X1]) == 0)] = 0
+        ch[yf:Y1, X0:X1] = 0
+    # Top/bottom pad bands are not part of the photo: always the model's continuation of the scene.
+    if pads[0]:
+        ch[:pads[0]] = 255
+    if pads[1]:
+        ch[H - pads[1]:] = 255
+    w = cv2.GaussianBlur(ch, (0, 0), 2.0).astype(np.float32) * (1 / 255)
+    out = cv2.blendLinear(res, canvas, w, 1 - w)
+    del w, ch, head, zone
+    return out, frac
+
+
+def _align_pose(canvas: np.ndarray, res: np.ndarray) -> np.ndarray:
+    """Register the generated image onto the original by matching background features (similarity transform, RANSAC)."""
+    H, W = canvas.shape[:2]
+    s = 0.5
+    g1 = cv2.cvtColor(cv2.resize(canvas, (int(W * s), int(H * s))), cv2.COLOR_RGB2GRAY)
+    g2 = cv2.cvtColor(cv2.resize(res, (int(W * s), int(H * s))), cv2.COLOR_RGB2GRAY)
+    orb = cv2.ORB_create(2000)
+    k1, d1 = orb.detectAndCompute(g1, None)
+    k2, d2 = orb.detectAndCompute(g2, None)
+    if d1 is None or d2 is None:
+        return res
+    m = sorted(cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True).match(d2, d1), key=lambda x: x.distance)[:500]
+    if len(m) < 30:
+        return res
+    src = np.float32([k2[x.queryIdx].pt for x in m])
+    dst = np.float32([k1[x.trainIdx].pt for x in m])
+    M, inl = cv2.estimateAffinePartial2D(src, dst, ransacReprojThreshold=3.0)
+    if M is None or inl is None or int(inl.sum()) < 20:
+        return res
+    scale = float(np.hypot(M[0, 0], M[1, 0]))
+    rot = abs(np.degrees(np.arctan2(M[1, 0], M[0, 0])))
+    if not (0.8 < scale < 1.25) or rot > 3:
+        return res
+    M[:, 2] /= s
+    if abs(scale - 1) < 0.004 and abs(M[0, 2]) < 1 and abs(M[1, 2]) < 1:
+        return res
+    logger.info("head_lock: pose align scale=%.3f shift=(%.1f, %.1f) inliers=%d", scale, M[0, 2], M[1, 2], int(inl.sum()))
+    return cv2.warpAffine(res, M, (W, H), flags=cv2.INTER_LANCZOS4, borderMode=cv2.BORDER_REPLICATE)
+
+
+POSE_CHANGE_MAX = 0.6
+
+
+def surgical_merge(orig_jpeg: bytes, result_bytes: bytes, freeze: list) -> bytes:
+    """Dedicated try-on output -> original pixels everywhere except the changed clothing (face/hair/hands/skin/background locked)."""
+    orig = np.array(Image.open(io.BytesIO(orig_jpeg)).convert("RGB"))
+    H, W = orig.shape[:2]
+    res = Image.open(io.BytesIO(result_bytes)).convert("RGB")
+    rw, rh = res.size
+    if abs(rw / rh - W / H) > 0.02:
+        # Engine changed the aspect: fit by width/height (centre), then feature registration fixes the rest.
+        sc = max(W / rw, H / rh)
+        res = res.resize((int(rw * sc), int(rh * sc)), Image.LANCZOS)
+        l, t = (res.width - W) // 2, (res.height - H) // 2
+        res = res.crop((l, t, l + W, t + H))
+    else:
+        res = res.resize((W, H), Image.LANCZOS)
+    res = _align_pose(orig, np.array(res))
+    face = _face_box(orig)
+    if not face:
+        raise ValueError("no face in original")
+    fz = []
+    for z in freeze:
+        y0, x0, y1, x1 = (max(0.0, min(1000.0, float(v))) / 1000 for v in z["box"])
+        fz.append((int(x0 * W), int(y0 * H), int(x1 * W), int(y1 * H), float(z.get("top_free", 0))))
+    out, frac = _pose_composite(orig, res, face, (0, 0), fz)
+    logger.info("head_lock: surgical merge changed=%.2f", frac)
+    buf = io.BytesIO()
+    Image.fromarray(out).save(buf, "PNG")
+    return buf.getvalue()
 
 
 def _face_box(rgb: np.ndarray):
@@ -91,6 +254,13 @@ def _bg_color(rows: np.ndarray) -> tuple:
 
 
 HAND_MATCH_MIN = 0.5
+
+
+DRIFT_MAX = 28.0
+
+
+def _skin(a: np.ndarray) -> np.ndarray:
+    return cv2.inRange(cv2.cvtColor(np.ascontiguousarray(a), cv2.COLOR_RGB2YCrCb), (0, 133, 77), (255, 173, 127))
 
 
 def _paste_hand(out: np.ndarray, canvas: np.ndarray, res: np.ndarray, box: tuple) -> bool:
@@ -117,8 +287,8 @@ def _paste_hand(out: np.ndarray, canvas: np.ndarray, res: np.ndarray, box: tuple
     if tx0 < 0 or ty0 < 0 or tx1 > W or ty1 > H:
         return False
     m = np.zeros((bh, bw), np.uint8)
-    cv2.ellipse(m, (bw // 2, bh // 2), (int(bw * 0.47), int(bh * 0.47)), 0, 0, 360, 255, -1)
-    m = cv2.GaussianBlur(m, (0, 0), max(2, min(bw, bh) * 0.12)).astype(np.float32) * (1 / 255)
+    cv2.ellipse(m, (bw // 2, bh // 2), (int(bw * 0.40), int(bh * 0.40)), 0, 0, 360, 255, -1)
+    m = cv2.GaussianBlur(m, (0, 0), max(2, min(bw, bh) * 0.08)).astype(np.float32) * (1 / 255)
     # Seam check: if what surrounds the hand changed (e.g. new garment under it), a pasted patch would show edges.
     src, dst = canvas[y0:y1, x0:x1].astype(np.int16), out[ty0:ty1, tx0:tx1].astype(np.int16)
     ring = (m > 0.05) & (m < 0.5)
@@ -126,13 +296,22 @@ def _paste_hand(out: np.ndarray, canvas: np.ndarray, res: np.ndarray, box: tuple
     if seam > 28:
         logger.info("head_lock: surroundings of the hand changed (seam %.1f), keeping generated hand", seam)
         return False
+    # Paste only where the model kept roughly the same pixel (the hand): never drag original body pixels over a new garment.
+    near = (np.abs(src - dst).mean(axis=2) < 38).astype(np.uint8) * 255
+    core = m > 0.5
+    if near[core].mean() / 255 < 0.45:
+        logger.info("head_lock: generated hand area differs from the original, keeping generated hand")
+        return False
+    near = cv2.GaussianBlur(cv2.morphologyEx(near, cv2.MORPH_OPEN, np.ones((5, 5), np.uint8)), (0, 0), max(1.5, min(bw, bh) * 0.03))
+    m = m * near.astype(np.float32) * (1 / 255)
     out[ty0:ty1, tx0:tx1] = cv2.blendLinear(canvas[y0:y1, x0:x1], out[ty0:ty1, tx0:tx1], m, 1 - m)
     logger.info("head_lock: original hand restored (match %.2f, seam %.1f, shift %d,%d)", score, seam, dx, dy)
     return True
 
 
-def prepare(person_bytes: bytes, long_garment: bool, hands: list = None, paste_hands: bool = True) -> tuple:
-    """Returns (canvas_png_bytes, meta) with top safe margin and optional bottom extension."""
+def prepare(person_bytes: bytes, long_garment: bool, hands: list = None, paste_hands=True, pose: bool = False, freeze: list = None) -> tuple:
+    """paste_hands: bool for all hands, or one bool per hand box (False = the model may redraw that hand)."""
+    # Returns (canvas_png_bytes, meta) with top safe margin and optional bottom extension.
     im = np.array(_open_small(person_bytes, PERSON_OUT_SIDE).convert("RGB"))
     h, w = im.shape[:2]
     top = max(TOP_PAD_MIN_PX, int(h * TOP_PAD_RATIO))
@@ -153,11 +332,20 @@ def prepare(person_bytes: bytes, long_garment: bool, hands: list = None, paste_h
     else:
         mask[: top + int(h * HEAD_SAFE_ZONE)] = 255
     # Hand boxes (normalised 0-1000 [ymin, xmin, ymax, xmax] on the photo) -> canvas pixels.
-    hand_c = []
-    for b in hands or []:
+    # Frozen garment zones (normalised boxes) -> canvas pixels; the top part may be covered by the new top's hem.
+    freeze_c = []
+    for z in freeze or []:
+        y0, x0, y1, x1 = (max(0.0, min(1000.0, float(v))) / 1000 for v in z["box"])
+        if x1 - x0 > 0.02 and y1 - y0 > 0.02:
+            freeze_c.append((int(x0 * w), int(y0 * h) + top, int(x1 * w), int(y1 * h) + top, float(z.get("top_free", 0))))
+    hand_c, paste_c = [], []
+    keep = paste_hands if isinstance(paste_hands, list) else [paste_hands] * len(hands or [])
+    for b, k in zip(hands or [], keep):
         y0, x0, y1, x1 = (max(0.0, min(1000.0, float(v))) / 1000 for v in b)
         if x1 - x0 > 0.01 and y1 - y0 > 0.01:
             hand_c.append((int(x0 * w), int(y0 * h) + top, int(x1 * w), int(y1 * h) + top))
+            if k:
+                paste_c.append(hand_c[-1])
     # A hand/phone overlapping the chin must not be pasted back (the model may move it -> ghost bar): carve it out, eyes/nose stay locked.
     y_keep = int(face[1] + top + face[3] * 0.6) if face else 0
     for x0, y0, x1, y1 in hand_c:
@@ -172,7 +360,7 @@ def prepare(person_bytes: bytes, long_garment: bool, hands: list = None, paste_h
     face_c = (face[0], face[1] + top, face[2], face[3]) if face else None
     del im
     gc.collect()
-    return buf.getvalue(), {"canvas": canvas, "mask": mask, "face": face_c, "hands": hand_c if paste_hands else []}
+    return buf.getvalue(), {"canvas": canvas, "mask": mask, "face": face_c, "hands": paste_c, "pose": pose, "pads_px": (top, bottom), "freeze": freeze_c}
 
 
 def _match_head_colour(canvas: np.ndarray, res: np.ndarray, mask: np.ndarray) -> np.ndarray:
@@ -186,15 +374,18 @@ def _match_head_colour(canvas: np.ndarray, res: np.ndarray, mask: np.ndarray) ->
     ring = m < 8
     ring[(y0 + y1) // 2 - Y0:] = False  # upper half only: below the chin the garment changed
     if ring.sum() < 400:
-        return canvas
+        return canvas, 0.0
     c = canvas[Y0:Y1, X0:X1]
-    gain = (np.median(res[Y0:Y1, X0:X1][ring], 0) + 1) / (np.median(c[ring], 0) + 1)
+    r = res[Y0:Y1, X0:X1][ring].astype(np.float32)
+    gain = (np.median(r, 0) + 1) / (np.median(c[ring], 0) + 1)
     gain = np.clip(gain, 0.75, 1.33)
+    # Scene drift: how different the background around the head still is after the colour match (new scene -> halo risk).
+    drift = float(np.median(np.abs(c[ring].astype(np.float32) * gain - r).mean(axis=1)))
     if np.abs(gain - 1).max() < 0.02:
-        return canvas
+        return canvas, drift
     canvas = canvas.copy()
     canvas[Y0:Y1, X0:X1] = np.clip(c.astype(np.float32) * gain, 0, 255).astype(np.uint8)
-    return canvas
+    return canvas, drift
 
 
 def finalize(result_bytes: bytes, meta: dict) -> bytes:
@@ -216,7 +407,10 @@ def finalize(result_bytes: bytes, meta: dict) -> bytes:
     else:
         res = cv2.resize(res, (W, H), interpolation=cv2.INTER_LANCZOS4)
     # If the model zoomed/shifted the person, scale+move the result so its face lands exactly on the original face.
-    rf, of = _face_box(res), meta.get("face")
+    of = meta.get("face")
+    # Match the generated face to the ORIGINAL one by position (not by detector rank: a poster/mirror face must not win).
+    cand = _faces(res)
+    rf = min(cand, key=lambda b: (_centre(b)[0] - _centre(of)[0]) ** 2 + (_centre(b)[1] - _centre(of)[1]) ** 2) if (cand and of) else (cand[0] if cand else None)
     head_at = of  # where the ORIGINAL head will be pasted
     aligned = not of  # no detected face: only the top safe-zone band is restored
     if rf and of and 0.6 < of[2] / rf[2] < 1.6:
@@ -224,7 +418,10 @@ def finalize(result_bytes: bytes, meta: dict) -> bytes:
         sc = of[2] / rf[2]
         ocx, ocy = of[0] + of[2] / 2, of[1] + of[3] / 2
         rcx, rcy = rf[0] + rf[2] / 2, rf[1] + rf[3] / 2
-        if abs(sc - 1) > 0.02 or abs(ocx - rcx) > 3 or abs(ocy - rcy) > 3:
+        if meta.get("pose"):
+            # Posed photo: original pixels stay untouched; the generated image is moved onto the original framing.
+            res = _align_pose(canvas, res)
+        elif abs(sc - 1) > 0.02 or abs(ocx - rcx) > 3 or abs(ocy - rcy) > 3:
             # Keep the generated full body (hem, feet) and move the ORIGINAL head onto the generated face position.
             k = 1 / sc
             M = np.float32([[k, 0, rcx - k * ocx], [0, k, rcy - k * ocy]])
@@ -248,12 +445,35 @@ def finalize(result_bytes: bytes, meta: dict) -> bytes:
             if rf2:
                 (cx, cy), (ox, oy) = _centre(rf2), _centre(of)
                 aligned = abs(cx - ox) < 0.35 * of[2] and abs(cy - oy) < 0.35 * of[3]
+    if meta.get("pose"):
+        # Posed photo: never keep a generated face. Misaligned or new scene -> flag so the render loop regenerates.
+        out, frac = (_pose_composite(canvas, res, head_at, meta.get("pads_px", (0, 0)), meta.get("freeze", ())) if aligned and head_at else (res, 1.0))
+        logger.info("head_lock: pose composite changed=%.2f aligned=%s", frac, aligned)
+        del res, canvas, mask
+        meta.clear()
+        meta["drift"] = 0.0
+        meta["pose_fail"] = frac > POSE_CHANGE_MAX
+        buf = io.BytesIO()
+        Image.fromarray(out).save(buf, "PNG")
+        del out
+        gc.collect()
+        return buf.getvalue()
     if not aligned:
         # Pasting the original head onto a misplaced generated one would create a double face: keep the model output.
         logger.warning("head_lock: generated head not aligned with original %s, skipping head paste", head_at)
         mask = np.zeros_like(mask)
+    drift = 0.0
     if mask.any():
-        canvas = _match_head_colour(canvas, res, mask)
+        canvas, drift = _match_head_colour(canvas, res, mask)
+        logger.info("head_lock: background drift around head %.1f", drift)
+        if drift > DRIFT_MAX and head_at:
+            # Background around the head changed: paste only a tight face oval so no old scene shows as a halo.
+            fx, fy, fw, fh = head_at
+            tight = np.zeros_like(mask)
+            cv2.ellipse(tight, (int(fx + fw / 2), int(fy + fh * 0.52)), (int(fw * 0.6), int(fh * 0.78)), 0, 0, 360, 255, -1)
+            tight = cv2.GaussianBlur(tight, (0, 0), max(3, fw / 14))
+            mask = np.minimum(mask, tight)
+            logger.info("head_lock: scene drift %.1f around the head, tight face paste only", drift)
     # Per-pixel blend on uint8 images with single-channel weights (no full-size float32 RGB copies).
     w = mask.astype(np.float32) * (1 / 255)
     out = cv2.blendLinear(canvas, res, w, 1 - w)
@@ -264,6 +484,7 @@ def finalize(result_bytes: bytes, meta: dict) -> bytes:
         _paste_hand(out, canvas, res, box)
     del w, res, canvas, mask
     meta.clear()
+    meta["drift"] = drift
     buf = io.BytesIO()
     Image.fromarray(out).save(buf, "PNG")
     del out

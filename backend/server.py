@@ -12,7 +12,7 @@ import base64
 import requests as http_requests
 from pathlib import Path
 from pydantic import BaseModel, Field, ConfigDict
-from typing import List, Optional
+from typing import List, Literal, Optional
 from datetime import datetime, timezone, timedelta
 from zoneinfo import ZoneInfo
 from emergentintegrations.llm.chat import LlmChat, UserMessage, ImageContent
@@ -24,6 +24,7 @@ from body_measure import brand_sizes, shoe_size
 import head_lock
 import receipt
 import payments_log
+import fashn
 import hem as hem_mod
 import size_fallback
 import tryon_quality
@@ -1604,6 +1605,108 @@ async def upload(kind: str = Query(..., regex="^(person|garment)$"), file: Uploa
     return {"path": result["path"]}
 
 
+class BookAddRequest(BaseModel):
+    path: str
+
+
+FACE_CHECK_MSG = {
+    "no_face": "Non vedo bene il tuo viso: ricarica una foto più luminosa con il viso visibile.",
+    "face_small": "Il viso è troppo piccolo nella foto: avvicinati un po' e ricarica.",
+    "dark": "Ricarica foto più luminosa.",
+    "blurry": "La foto è mossa sul viso: ricarica una foto più nitida.",
+    "low_conf": "Ricarica foto più luminosa.",
+}
+
+
+async def _pose_face_ok(user: User, path: str) -> dict:
+    cached = await db.face_checks.find_one({"path": path}, {"_id": 0})
+    if cached:
+        return cached
+    raw, _ = get_object(path)
+    ok, conf, reason = await run_in_threadpool(head_lock.face_check, raw)
+    doc = {"path": path, "ok": ok, "confidence": round(conf, 3), "reason": reason, "message": FACE_CHECK_MSG.get(reason, "")}
+    await db.face_checks.update_one({"path": path}, {"$set": doc}, upsert=True)
+    logger.info(f"pose face check {path}: ok={ok} conf={conf:.3f} reason={reason}")
+    return doc
+
+
+async def _require_pose_face(user: User, path: Optional[str]) -> None:
+    # CREDIT SAVER: no AI call and no credit when the posed photo's face is not reliable.
+    if path:
+        chk = await _pose_face_ok(user, path)
+        if not chk["ok"]:
+            raise HTTPException(status_code=422, detail=chk["message"] or "Ricarica foto più luminosa.")
+
+
+class PoseCheckIn(BaseModel):
+    path: str
+
+
+@api_router.post("/pose/check")
+async def pose_check(req: PoseCheckIn, user: User = Depends(get_current_user)):
+    await _require_account_paths(user, req.path)
+    return await _pose_face_ok(user, req.path)
+
+
+@api_router.get("/book")
+async def book_list(user: User = Depends(get_current_user)):
+    rows = await db.pose_book.find({"user_id": user.user_id}, {"_id": 0}).sort("created_at", -1).to_list(200)
+    return {"photos": rows}
+
+
+@api_router.post("/book")
+async def book_add(req: BookAddRequest, user: User = Depends(get_current_user)):
+    if _path_owner(req.path) != user.user_id or not await db.files.find_one(
+            {"storage_path": req.path, "user_id": user.user_id, "kind": "person", "is_deleted": {"$ne": True}}, {"_id": 1}):
+        raise HTTPException(status_code=403, detail="Accesso negato")
+    if req.path == ((await db.users.find_one({"user_id": user.user_id}, {"_id": 0, "avatar_path": 1})) or {}).get("avatar_path"):
+        raise HTTPException(status_code=400, detail="L'Avatar resta fisso: non va nel Book")
+    doc = {"id": str(uuid.uuid4()), "user_id": user.user_id, "path": req.path, "created_at": datetime.now(timezone.utc).isoformat()}
+    await db.pose_book.update_one({"user_id": user.user_id, "path": req.path}, {"$setOnInsert": doc}, upsert=True)
+    return await db.pose_book.find_one({"user_id": user.user_id, "path": req.path}, {"_id": 0})
+
+
+class OutfitBookIn(BaseModel):
+    kind: Literal["tryon", "outfit"]
+    ref_id: str
+
+
+@api_router.get("/outfit-book")
+async def outfit_book_list(user: User = Depends(get_current_user)):
+    rows = await db.book_outfits_my_atelier.find({"user_id": user.user_id}, {"_id": 0}).sort("created_at", -1).to_list(300)
+    return {"outfits": rows}
+
+
+@api_router.post("/outfit-book")
+async def outfit_book_add(req: OutfitBookIn, user: User = Depends(get_current_user)):
+    # Only AI results generated in My Atelier: the image comes from the user's own try-on/outfit record.
+    src = await (db.tryons if req.kind == "tryon" else db.outfits).find_one({"id": req.ref_id, "user_id": user.user_id}, {"_id": 0, "result_path": 1})
+    if not src or not src.get("result_path"):
+        raise HTTPException(status_code=404, detail="Prova non trovata")
+    doc = {"id": str(uuid.uuid4()), "user_id": user.user_id, "kind": req.kind, "ref_id": req.ref_id,
+           "result_path": src["result_path"], "created_at": datetime.now(timezone.utc).isoformat()}
+    await db.book_outfits_my_atelier.update_one({"user_id": user.user_id, "result_path": src["result_path"]}, {"$setOnInsert": doc}, upsert=True)
+    return await db.book_outfits_my_atelier.find_one({"user_id": user.user_id, "result_path": src["result_path"]}, {"_id": 0})
+
+
+@api_router.delete("/outfit-book/{entry_id}")
+async def outfit_book_delete(entry_id: str, user: User = Depends(get_current_user)):
+    if not (await db.book_outfits_my_atelier.delete_one({"id": entry_id, "user_id": user.user_id})).deleted_count:
+        raise HTTPException(status_code=404, detail="Outfit non trovato")
+    return {"deleted": True}
+
+
+@api_router.delete("/book/{photo_id}")
+async def book_delete(photo_id: str, user: User = Depends(get_current_user)):
+    doc = await db.pose_book.find_one_and_delete({"id": photo_id, "user_id": user.user_id})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Foto non trovata")
+    in_use = await db.tryons.find_one({"person_path": doc["path"]}, {"_id": 1}) or await db.outfits.find_one({"person_path": doc["path"]}, {"_id": 1})
+    if not in_use:  # keep the file if past try-ons still show it as "Tu"
+        await db.files.update_many({"storage_path": doc["path"], "user_id": user.user_id}, {"$set": {"is_deleted": True}})
+    return {"deleted": True}
+
+
 async def _account_owner_ids(account: User) -> set:
     subs = await db.users.find({"owner_id": account.user_id, "is_family_profile": True}, {"_id": 0, "user_id": 1}).to_list(10)
     return {account.user_id, *[x["user_id"] for x in subs]}
@@ -1677,6 +1780,8 @@ async def photos_delete_all(user: User = Depends(get_current_user)):
                 paths.add(d[k])
     await _mark_files_deleted(sorted(paths), uid)
     await db.tryons.delete_many({"user_id": uid})
+    await db.book_outfits_my_atelier.delete_many({"user_id": uid})
+    await db.pose_book.delete_many({"user_id": uid})
     await db.outfits.delete_many({"user_id": uid})
     await db.users.update_one({"user_id": uid}, {"$unset": {"avatar_path": "", "avatar_at": ""}})
     return {"deleted_photos": len(paths), "deleted_tryons": len(tryons), "deleted_outfits": len(outfits)}
@@ -1690,29 +1795,57 @@ async def files_delete(path: str, user: User = Depends(get_current_user)):
     return {"deleted": True}
 
 
-async def _hand_boxes(person_path: str, person_bytes: bytes) -> list:
-    # Hands are detected once per person photo (cached), then pasted back by head_lock when they stay in place.
-    cached = await db.hand_boxes.find_one({"path": person_path}, {"_id": 0, "boxes": 1})
-    if cached:
-        return cached["boxes"]
+async def _hand_info(person_path: str, person_bytes: bytes) -> dict:
+    # Hands are detected once per person photo (cached) -> {"boxes": [...], "phone": [bool per box]}.
+    cached = await db.hand_boxes.find_one({"path": person_path}, {"_id": 0, "boxes": 1, "phone": 1, "lower": 1, "shoes": 1})
+    if cached and "lower" in cached:
+        return cached
     small = await run_in_threadpool(head_lock.downscale, person_bytes, head_lock.GARMENT_MAX_SIDE)
     chat = LlmChat(api_key=EMERGENT_KEY, session_id=f"hands-{uuid.uuid4().hex[:8]}", system_message="You are a precise hand detector. Reply with JSON only.")
     chat.with_model("gemini", "gemini-3.8-flash")
     prompt = ("Detect every visible hand of the person in this photo (including a hand holding a phone, and hands in a mirror reflection of that person). "
-              "Return ONLY JSON: {\"hands\": [{\"box_2d\": [ymin, xmin, ymax, xmax]}]} normalised 0-1000, each box tightly containing the whole hand "
-              "(fingers to wrist). Return {\"hands\": []} if no hand is clearly visible.")
+              "Return ONLY JSON: {\"hands\": [{\"box_2d\": [ymin, xmin, ymax, xmax], \"phone\": bool}]} normalised 0-1000, each box tightly containing the whole hand "
+              "(fingers to wrist); phone = true if that hand holds or touches a smartphone. Return {\"hands\": []} if no hand is clearly visible. "
+              "Also add \"lower\": [ymin, xmin, ymax, xmax] tightly containing the trousers / skirt / shorts worn by the person (waistband to hem, "
+              "seated or crossed legs included, excluding shoes), or null; and \"shoes\": one box containing both shoes, or null.")
     try:
         reply = await chat.send_message(UserMessage(text=prompt, file_contents=[ImageContent(base64.b64encode(small).decode())]))
         data = _extract_json(reply)
     except Exception as e:
         logger.warning(f"hand detection failed: {e}")
-        return []
+        return {"boxes": [], "phone": [], "lower": None, "shoes": None}
     if not isinstance(data, dict):
-        return []
-    boxes = [h["box_2d"] for h in (data.get("hands") or [])[:4]
-             if isinstance(h, dict) and isinstance(h.get("box_2d"), list) and len(h["box_2d"]) == 4]
-    await db.hand_boxes.update_one({"path": person_path}, {"$set": {"boxes": boxes, "created_at": datetime.now(timezone.utc).isoformat()}}, upsert=True)
-    return boxes
+        return {"boxes": [], "phone": [], "lower": None, "shoes": None}
+    hands = [h for h in (data.get("hands") or [])[:4] if isinstance(h, dict) and isinstance(h.get("box_2d"), list) and len(h["box_2d"]) == 4]
+    box = lambda v: v if isinstance(v, list) and len(v) == 4 and all(isinstance(x, (int, float)) for x in v) else None  # noqa: E731
+    info = {"boxes": [h["box_2d"] for h in hands], "phone": [h.get("phone") is True for h in hands],
+            "lower": box(data.get("lower")), "shoes": box(data.get("shoes"))}
+    await db.hand_boxes.update_one({"path": person_path}, {"$set": {**info, "created_at": datetime.now(timezone.utc).isoformat()}}, upsert=True)
+    return info
+
+
+_LOWER_CATS = ("bottom", "dress", "suit")
+
+
+async def _lock_hands(person_path: str, person_bytes: bytes, has_bag: bool, posed: bool, cats=(), surgical: bool = False) -> tuple:
+    """(boxes, paste flags, extra prompt, frozen zones). Posed photos: a phone-holding hand is redrawn empty by the model,
+    never pasted back; garments the user is NOT trying on (trousers, shoes) are frozen to the original pixels."""
+    info = await _hand_info(person_path, person_bytes)
+    phone = [posed and not surgical and p for p in info["phone"]]
+    keep = [not has_bag and not p for p in phone]
+    cats = {(c or "").lower() for c in cats}
+    freeze, txt = [], (PHONE_RULE if any(phone) else "")
+    if surgical:
+        # Surgical try-on: hands stay original pixels, and no new bare skin may appear anywhere (holes stay holes).
+        freeze += [{"box": b, "top_free": 0.0} for b in info["boxes"]]
+        freeze.append({"box": [0, 0, 1000, 1000], "top_free": 1.0})
+    if posed and info.get("lower") and not cats & set(_LOWER_CATS):
+        # A coat may legitimately cover the trousers: then only "no new bare skin" is enforced on them.
+        freeze.append({"box": info["lower"], "top_free": 1.0 if "outerwear" in cats else 0.30})
+        txt += GARMENT_KEEP_RULE
+    if posed and info.get("shoes") and "shoes" not in cats and "dress" not in cats:
+        freeze.append({"box": info["shoes"], "top_free": 0.0})
+    return info["boxes"], keep, txt, freeze
 
 
 _TOP_WORDS = re.compile(r"\b(camici\w*|maglia|maglietta|t-?shirt|tee|shirt|polo|blusa|top|canotta|felpa)\b", re.I)
@@ -1740,29 +1873,36 @@ def _tuck_rule(items: list) -> str:
 _GARMENT_CATS = ("top", "bottom", "dress", "outerwear", "shoes", "bag", "suit")
 
 
-async def _classify_garment(garment_path: str, fallback: Optional[str]) -> str:
-    # The user no longer picks a category: AI reads it from the product photo.
-    cached = await db.garment_class.find_one({"path": garment_path}, {"_id": 0, "category": 1})
-    if cached:
-        return cached["category"]
+async def _garment_info(garment_path: str) -> dict:
+    # One cached AI look at the product photo -> {"category", "desc"} (the user no longer picks a category).
+    cached = await db.garment_class.find_one({"path": garment_path}, {"_id": 0, "category": 1, "desc": 1})
+    if cached and cached.get("desc"):
+        return cached
     try:
         raw, _ = get_object(garment_path)
         small = await run_in_threadpool(head_lock.downscale, raw, head_lock.GARMENT_MAX_SIDE)
         chat = LlmChat(api_key=EMERGENT_KEY, session_id=f"cls-{uuid.uuid4().hex[:8]}", system_message="You are a fashion product classifier. Reply with JSON only.")
         chat.with_model("gemini", "gemini-3.8-flash")
-        prompt = ("Classify the product in this image. Return ONLY JSON {\"category\": \"...\"} with one of: "
+        prompt = ("Classify the product in this image. Return ONLY JSON {\"category\": \"...\", \"desc\": \"...\"}. category is one of: "
                   "suit (complete suit / tailleur: jacket AND matching trousers or skirt shown together, often with shirt/tie), "
                   "top (shirt, t-shirt, polo, sweater, blouse), bottom (trousers, jeans, shorts, skirt), dress (dress, jumpsuit), "
-                  "outerwear (jacket, blazer, coat alone), shoes, bag (handbag, backpack, clutch).")
+                  "outerwear (jacket, blazer, coat alone), shoes, bag (handbag, backpack, clutch). "
+                  "desc is a short precise English description of the item with colour, material, cut and LENGTH "
+                  "(e.g. 'light-blue ripped denim shorts, mid-thigh length').")
         reply = await chat.send_message(UserMessage(text=prompt, file_contents=[ImageContent(base64.b64encode(small).decode())]))
-        cat = ((_extract_json(reply) or {}).get("category") or "").lower().strip()
+        d = _extract_json(reply) or {}
     except Exception as e:
         logger.warning(f"garment classification failed: {e}")
-        return fallback or "top"
-    if cat not in _GARMENT_CATS:
-        return fallback or "top"
-    await db.garment_class.update_one({"path": garment_path}, {"$set": {"category": cat}}, upsert=True)
-    return cat
+        return {}
+    cat = (d.get("category") or "").lower().strip()
+    info = {"category": cat if cat in _GARMENT_CATS else None, "desc": str(d.get("desc") or "")[:120]}
+    if info["category"]:
+        await db.garment_class.update_one({"path": garment_path}, {"$set": info}, upsert=True)
+    return info
+
+
+async def _classify_garment(garment_path: str, fallback: Optional[str]) -> str:
+    return (await _garment_info(garment_path)).get("category") or fallback or "top"
 
 
 def _bag_rule(items: list) -> str:
@@ -1867,13 +2007,96 @@ class TryOnRequest(BaseModel):
     notes: Optional[str] = None
     chosen_size: Optional[str] = None
     garment_id: Optional[str] = None
+    preserve_pose: bool = False
+
+
+POSE_RULE = (
+    "POSED PHOTO — FREE POSE TRY-ON (preserve_pose: true):\n"
+    "• IMAGE 1 is a natural, in-motion / Instagram-style pose (e.g. hand on hip, crossed legs, weight on one leg, turned shoulders, walking). "
+    "Keep that EXACT pose skeleton: same body angle, limb positions, head tilt, hand gestures and leg crossing. Do NOT straighten the person, "
+    "do NOT turn them into a front-facing mannequin, do NOT re-centre or re-frame.\n"
+    "• KEEP 100% IDENTICAL: face, hands with 5 fingers, body shape, pose, background, lighting and camera angle of IMAGE 1. "
+    "Replace ONLY the clothes, draping and folding them naturally on this same pose (fabric follows bent arms and legs, tension where the body bends, "
+    "correct occlusion of crossed limbs). The new clothes must NOT cover or alter the hands, the face or the neck.\n"
+    "• IDENTITY — FIXED RULES: same face identity, never change, blur or distort the face. Do NOT add a beard or stubble that is not in IMAGE 1. "
+    "Keep the hair / head exactly as IMAGE 1 (a shaved head stays shaved). Keep glasses exactly as in IMAGE 1 (same frame, same position) and never add or remove glasses.\n"
+    "• SKIN — NO INVENTED TATTOOS: arms and legs keep exactly the skin of IMAGE 1; NEVER add tattoos on arms or legs and remove any tattoo that is not "
+    "visible in IMAGE 1. Keep only tattoos really visible in IMAGE 1 (e.g. a neck tattoo).\n"
+    "• Output quality: photorealistic, high resolution, Red Carpet editorial quality, 8k detail, sharp focus, natural light, no cartoon, no filter.\n"
+    "• NEGATIVE: stiff straight pose, symmetrical mannequin stance, changed arm or leg position, rotated body, new background, deformed hands, "
+    "6 fingers, extra fingers, extra limbs, deformed face, face distortion, blurry face, changing identity, added beard, arm tattoos, leg tattoos, "
+    "cartoon, filter, halo, blur.\n"
+)
+
+SURGICAL_RULE = (
+    "SURGICAL TRY-ON — ONLY THE CLOTHING AREA CHANGES:\n"
+    "• Do NOT touch face, hair, skin, identity, hands or arms: they stay pixel-identical to IMAGE 1 (face lock 100%). Keep the pose exactly as IMAGE 1.\n"
+    "• Replace ONLY the clothing with the requested garments. If a garment has holes or rips, keep them as holes in the fabric: NEVER show bare skin "
+    "under trousers or shirts unless IMAGE 1 already shows skin there. No transparent clothes.\n"
+    "• Output: one photorealistic image, 4K detail, no deformation.\n"
+    "• NEGATIVE: tattoo, deformed face, deformed hands, extra fingers, extra limbs, nude skin under clothes, transparent clothes, blurry face, changed identity.\n"
+)
+
+GARMENT_KEEP_RULE = (
+    "KEEP THE PERSON'S OWN TROUSERS / SKIRT 100% IDENTICAL: they are not being changed. Same colour, same print / paint splashes / pattern "
+    "in the same places, same folds for this (seated) pose. NEVER open holes or show skin through them, never rip or shorten them.\n"
+)
+
+PHONE_RULE = (
+    "SMARTPHONE REMOVAL — MANDATORY (overrides every other instruction above about keeping the phone or keeping that hand as in IMAGE 1):\n"
+    "• A hand in IMAGE 1 holds a smartphone. REMOVE the phone completely (no phone, no case, no screen glow, no reflection left anywhere). "
+    "Do NOT keep the gripping pose: redraw THAT hand only in a new, relaxed, elegant pose — resting softly on the hip or hanging naturally along the body, "
+    "fingers soft and slightly open. Exactly 5 fingers, anatomically perfect, clean photorealistic skin, no tattoos, no jewellery, no artifacts. "
+    "If the phone covered part of the body or the new clothes, reconstruct that area naturally. The OTHER hand stays exactly as in IMAGE 1.\n"
+    "• NEGATIVE: phone, smartphone, phone in hand, gripping fingers, 6 fingers, fused fingers, deformed hand.\n"
+)
+
+
+async def _fashn_render(user_id: str, person_path: str, garments: list, cats: list) -> str:
+    """Owner-only surgical try-on on the dedicated FASHN engine: one generation per garment, no retries, no fix loop;
+    then original pixels everywhere except the changed clothing (face/hair/skin/hands/background = original)."""
+    usable = [(p, c) for p, c in garments if (c or "").lower() in fashn.CATEGORY]
+    if not usable:
+        raise HTTPException(status_code=422, detail="Il motore di prova dedicato veste top, pantaloni, gonne, abiti e giacche: scarpe e borse non sono supportate.")
+    person_bytes, _ = get_object(person_path)
+    info = await _hand_info(person_path, person_bytes)
+    cats_l = {(c or "").lower() for c in cats}
+    freeze = [{"box": b, "top_free": -1.0} for b in info["boxes"]] + [{"box": [0, 0, 1000, 1000], "top_free": 1.0}]
+    if info.get("lower") and not cats_l & set(_LOWER_CATS):
+        freeze.append({"box": info["lower"], "top_free": 1.0 if "outerwear" in cats_l else 0.30})
+    if info.get("shoes"):
+        freeze.append({"box": info["shoes"], "top_free": 0.0})
+    model_jpeg = await run_in_threadpool(head_lock.downscale, person_bytes, head_lock.PERSON_MAX_SIDE)
+    current = model_jpeg
+    try:
+        for p, c in usable:
+            g, _ = get_object(p)
+            g = await run_in_threadpool(head_lock.downscale, g, head_lock.GARMENT_MAX_SIDE)
+            current = await asyncio.to_thread(fashn.tryon, current, g, c)
+    except fashn.InsufficientCredits:
+        raise HTTPException(status_code=402, detail="Saldo Universal Key esaurito: ricarica il saldo per usare il motore di prova dedicato.")
+    except fashn.TryOnError as e:
+        logger.error(f"fashn try-on failed: {e}")
+        raise HTTPException(status_code=502, detail="Prova non riuscita sul motore dedicato: premi Riprova. Nessun credito usato.")
+    put_object(f"{APP_NAME}/tryon_raw/{user_id}/{uuid.uuid4().hex}.png", current, "image/png")  # engine output kept for offline merge checks
+    out = await run_in_threadpool(head_lock.surgical_merge, model_jpeg, current, freeze)
+    out = await run_in_threadpool(tryon_quality.watermark, out, await _mark_for(user_id))
+    result_path = f"{APP_NAME}/tryon/{user_id}/{uuid.uuid4().hex}.jpg"
+    put_object(result_path, out, "image/jpeg")
+    return result_path
 
 
 async def _render_single(user_id: str, person_path: str, garment_path: str, category_in: Optional[str], name: Optional[str], m_doc: dict, extra: str = "") -> str:
+    if SURGICAL_RULE in extra:
+        cat = category_in or await _classify_garment(garment_path, None)
+        return await _fashn_render(user_id, person_path, [(garment_path, cat)], [cat])
     # Load both images
     person_bytes, person_ct = get_object(person_path)
     garment_bytes, garment_ct = get_object(garment_path)
-    canvas_bytes, lock = await run_in_threadpool(head_lock.prepare, person_bytes, head_lock.is_long(category_in, name or ""), await _hand_boxes(person_path, person_bytes), (category_in or "").lower() != "bag")
+    surgical = SURGICAL_RULE in extra
+    boxes, keep, phone_txt, freeze = await _lock_hands(person_path, person_bytes, (category_in or "").lower() == "bag", POSE_RULE in extra or surgical, [category_in], surgical)
+    extra += phone_txt
+    canvas_bytes, lock = await run_in_threadpool(head_lock.prepare, person_bytes, head_lock.is_long(category_in, name or ""), boxes, keep, POSE_RULE in extra or surgical, freeze)
     garment_bytes = await run_in_threadpool(head_lock.downscale, garment_bytes, head_lock.GARMENT_MAX_SIDE)
     person_b64 = base64.b64encode(canvas_bytes).decode('utf-8')
     garment_b64 = base64.b64encode(garment_bytes).decode('utf-8')
@@ -1921,6 +2144,8 @@ async def _render_single(user_id: str, person_path: str, garment_path: str, cate
     try:
         out_bytes = await tryon_quality.render(system, prompt, [ImageContent(person_b64), ImageContent(garment_b64)], lock,
                                                f"{category}: {name or category}", f"tryon-{user_id}", await _mark_for(user_id))
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Try-on generation error: {e}")
         raise HTTPException(status_code=500, detail=f"Image generation failed: {str(e)}")
@@ -1941,9 +2166,11 @@ async def _tryon_generate(req: TryOnRequest, user: User):
     status = await get_subscription_status(user.account_id)
     if status["is_blocked"]:
         raise HTTPException(status_code=402, detail="Quota exhausted — subscribe or buy an extra try-on.")
+    if req.preserve_pose and _is_owner_email(user.email):
+        await _require_pose_face(user, req.person_path)
     m_doc = await _get_measurements(user.user_id)
     req.garment_category = await _classify_garment(req.garment_path, req.garment_category)
-    result_path = await _render_single(user.user_id, req.person_path, req.garment_path, req.garment_category, req.garment_name, m_doc)
+    result_path = await _render_single(user.user_id, req.person_path, req.garment_path, req.garment_category, req.garment_name, m_doc, _owner_extra(user, req.preserve_pose))
 
     rec_size = recommend_size(m_doc, "top" if req.garment_category == "suit" else req.garment_category)
     tryon_id = str(uuid.uuid4())
@@ -1953,6 +2180,7 @@ async def _tryon_generate(req: TryOnRequest, user: User):
         "id": tryon_id,
         "user_id": user.user_id,
         "person_path": req.person_path,
+        "preserve_pose": req.preserve_pose,
         "garment_path": req.garment_path,
         "result_path": result_path,
         "garment_name": req.garment_name,
@@ -2089,13 +2317,16 @@ async def _render_copylook(user_id: str, person_path: str, model_path: str, item
         "• Garments not listed stay as they are in IMAGE 1. Exactly ONE person in the output.\n\n"
         f"{HANDS_RULE}{_tuck_rule(items)}{head_lock.HEAD_LOCK_RULE}{_measurements_desc(m_doc)}{extra}"
     )
-    canvas_bytes, lock = await run_in_threadpool(head_lock.prepare, person_bytes, any(head_lock.is_long(i["category"], i["name"]) for i in items), await _hand_boxes(person_path, person_bytes), not any((i.get("category") or "").lower() == "bag" for i in items))
+    boxes, keep, _, _ = await _lock_hands(person_path, person_bytes, any((i.get("category") or "").lower() == "bag" for i in items), False)
+    canvas_bytes, lock = await run_in_threadpool(head_lock.prepare, person_bytes, any(head_lock.is_long(i["category"], i["name"]) for i in items), boxes, keep)
     contents = [ImageContent(base64.b64encode(canvas_bytes).decode()), ImageContent(base64.b64encode(model_bytes).decode())]
     del person_bytes, model_bytes, canvas_bytes
     try:
         out_bytes = await tryon_quality.render(
             "You are a professional fashion virtual try-on generator. Re-dress the SAME person of IMAGE 1, never the model.",
             prompt, contents, lock, "; ".join(f"{i['category']}: {i['name']}" for i in items), f"copylook-{user_id}", await _mark_for(user_id))
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"copylook apply error: {e}")
         raise HTTPException(status_code=500, detail=f"Image generation failed: {str(e)}")
@@ -2848,9 +3079,19 @@ async def _compose_outfit(user: User, person_path: Optional[str], items: list, l
             person_path = last_file["storage_path"]
     if not person_path:
         raise HTTPException(status_code=400, detail="Crea prima il tuo Avatar nella Home")
+    if extra and SURGICAL_RULE in extra:
+        # Order: bottoms/one-pieces first, then tops, then jackets (FASHN dresses one garment per pass).
+        rank = {"bottom": 0, "dress": 0, "suit": 0, "top": 1, "outerwear": 2}
+        its = sorted(items, key=lambda g: rank.get((g.get("category") or "").lower(), 9))
+        return person_path, await _fashn_render(user.user_id, person_path, [(g["image_path"], g.get("category")) for g in its], [g.get("category") for g in its])
     # Build the multi-image prompt
     person_bytes, _ = get_object(person_path)
-    canvas_bytes, lock = await run_in_threadpool(head_lock.prepare, person_bytes, any(head_lock.is_long(g.get("category"), g.get("name") or "") for g in items), await _hand_boxes(person_path, person_bytes), not any((g.get("category") or "").lower() == "bag" for g in items))
+    surgical = bool(extra) and SURGICAL_RULE in extra
+    posed = (bool(extra) and POSE_RULE in extra) or surgical
+    boxes, keep, phone_txt, freeze = await _lock_hands(person_path, person_bytes, any((g.get("category") or "").lower() == "bag" for g in items), posed,
+                                                       [g.get("category") for g in items], surgical)
+    extra += phone_txt
+    canvas_bytes, lock = await run_in_threadpool(head_lock.prepare, person_bytes, any(head_lock.is_long(g.get("category"), g.get("name") or "") for g in items), boxes, keep, posed, freeze)
     file_contents = [ImageContent(base64.b64encode(canvas_bytes).decode("utf-8"))]
     del person_bytes, canvas_bytes
     layer_lines = []
@@ -2892,6 +3133,8 @@ async def _compose_outfit(user: User, person_path: Optional[str], items: list, l
         out_bytes = await tryon_quality.render(system, prompt, file_contents, lock,
                                                "; ".join(f"{g.get('category','top')}: {(g.get('brand') or '')} {g.get('name') or ''}".strip() for g in items),
                                                f"outfit-{user.user_id}", await _mark_for(user.user_id))
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Outfit generation error: {e}")
         raise HTTPException(status_code=500, detail=f"Generazione outfit non riuscita: {e}")
@@ -2926,7 +3169,7 @@ async def _outfit_generate(req: OutfitGenerateRequest, user: User):
         items.append(g)
     # Order items for layering (bottoms first, outerwear last)
     items.sort(key=lambda g: _LAYER_ORDER.get((g.get("category") or "top").lower(), 2))
-    person_path, result_path = await _compose_outfit(user, req.person_path, items)
+    person_path, result_path = await _compose_outfit(user, req.person_path, items, _DEFAULT_LAYER_TEXT, _owner_extra(user, False))
 
     total_price = sum((g.get("price") or 0) for g in items)
     outfit_id = str(uuid.uuid4())
@@ -2971,6 +3214,7 @@ class GridItem(BaseModel):
 class GridOutfitRequest(BaseModel):
     person_path: Optional[str] = None
     items: List[GridItem]
+    preserve_pose: bool = False
 
 
 @api_router.post("/outfit/generate-from-uploads")
@@ -2988,14 +3232,20 @@ async def _outfit_generate_from_uploads(req: GridOutfitRequest, user: User):
     status = await get_subscription_status(user.account_id)
     if status["is_blocked"]:
         raise HTTPException(status_code=402, detail="Quota esaurita — sblocca o attiva un piano")
+    if req.preserve_pose and _is_owner_email(user.email):
+        if not req.person_path:
+            raise HTTPException(status_code=400, detail="Scatta o carica prima la tua foto in posa")
+        await _require_pose_face(user, req.person_path)
+    descs = {k: (await _garment_info(slots[k])).get("desc") for k in slots}
     items = [{
-        "slot": k, "image_path": slots[k], "category": _GRID_SLOTS[k][0], "name": _GRID_SLOTS[k][1], "brand": None,
+        "slot": k, "image_path": slots[k], "category": _GRID_SLOTS[k][0], "name": descs[k] or _GRID_SLOTS[k][1], "brand": None,
     } for k in _GRID_ORDER if k in slots]
-    person_path, result_path = await _compose_outfit(user, req.person_path, items, _GRID_LAYER_TEXT)
+    person_path, result_path = await _compose_outfit(user, req.person_path, items, _GRID_LAYER_TEXT, _owner_extra(user, req.preserve_pose))
     doc = {
         "id": str(uuid.uuid4()),
         "user_id": user.user_id,
         "person_path": person_path,
+        "preserve_pose": req.preserve_pose,
         "result_path": result_path,
         "items": [{
             "garment_id": None, "slot": g["slot"], "image_path": g["image_path"], "name": g["name"], "brand": None,
@@ -3305,6 +3555,21 @@ async def tryon_retry(tryon_id: str, body: RetryIn, user: User = Depends(get_cur
     return await _start_render_job(user, _tryon_retry(tryon_id, body, user))
 
 
+def _owner_extra(user: User, preserve_pose: bool) -> str:
+    # Foto in Posa + surgical clothes-only try-on are owner-only until approved.
+    if not _is_owner_email(user.email):
+        return ""
+    return (POSE_RULE if preserve_pose else "") + SURGICAL_RULE
+
+
+def _retry_extra(doc: dict, reason: str, user: User) -> str:
+    base = _owner_extra(user, bool(doc.get("preserve_pose")))
+    txt = RETRY_REASONS[reason]
+    if base:
+        txt = txt.replace(" and grip as IMAGE 1 (phone held as in IMAGE 1)", " as IMAGE 1")
+    return base + txt
+
+
 async def _tryon_retry(tryon_id: str, body: RetryIn, user: User):
     doc = await db.tryons.find_one({"id": tryon_id, "user_id": user.user_id}, {"_id": 0})
     if not doc:
@@ -3317,7 +3582,7 @@ async def _tryon_retry(tryon_id: str, body: RetryIn, user: User):
     if not lock.modified_count:
         raise HTTPException(status_code=409, detail="Riprova gratuita già usata")
     m_doc = await _get_measurements(user.user_id)
-    extra = RETRY_REASONS[body.reason]
+    extra = _retry_extra(doc, body.reason, user)
     try:
         if doc.get("garment_category") == "look":
             items = [{"name": i["name"], "category": i["category"]} for i in doc.get("copied_items", [])]
@@ -3350,7 +3615,7 @@ async def _outfit_retry(outfit_id: str, body: RetryIn, user: User):
     items = sorted(doc["items"], key=lambda g: _LAYER_ORDER.get((g.get("category") or "top").lower(), 2))
     text = _GRID_LAYER_TEXT if doc.get("source") == "grid" else _DEFAULT_LAYER_TEXT
     try:
-        _p, new_path = await _compose_outfit(user, doc["person_path"], items, text, RETRY_REASONS[body.reason])
+        _p, new_path = await _compose_outfit(user, doc["person_path"], items, text, _retry_extra(doc, body.reason, user))
     except Exception:
         await db.outfits.update_one({"id": outfit_id}, {"$unset": {"retry_used": ""}})
         raise

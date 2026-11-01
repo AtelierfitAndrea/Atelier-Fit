@@ -421,3 +421,12 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 ## 2026-10-29 — Pantaloni freeze + background jobs (PREVIEW ONLY)
 - _hand_info also returns lower (trousers/skirt) and shoes boxes (same cached call). Pose mode: garments not tried on are frozen to original pixels in _pose_composite (top 30% band allows new top hem but never new skin; outerwear -> only no-new-skin); GARMENT_KEEP_RULE in prompt.
 - Background renders: postRender stores job in localStorage (atelier_render_job), clears pending draft, hands over to global JobWatcher (AppShell) when user leaves the page; watcher polls /render-jobs/{id}, shows progress pill, on done navigates to /tryon/{id} or shows outfit modal with SaveBookBar. Not deployed.
+
+## 2026-11-01 — Restore after support rollback + surgical owner-only (PREVIEW)
+- Support (ticket 297435) restored code to 28 Oct; re-applied all files from commit 2e845cc (Foto in Posa, Books, face lock, background jobs, trousers freeze).
+- Owner-only gating: BookButton, JobWatcher, askBook (setBookEnabled), job resume (setJobResume), PersonSource selector (3 radio: Avatar fisso CONSIGLIATO / Galleria / Scatta ora + subtext). Server: _owner_extra adds SURGICAL_RULE (+POSE_RULE) only for owner; surgical => composite on all modes, hands frozen, no-new-skin, ONE generation (no QC/fix/regen) in tryon_quality.render.
+- First real surgical avatar test (tryon ebdbaa9e) FAILED visually: model changed body scale -> ghost limbs, hand-box freeze pasted chest skin inside tee, dark replicated border. Awaiting user decision (fix composite vs dedicated fal virtual try-on model). Not deployed.
+
+## 2026-11-01 — Dedicated try-on engine (owner, PREVIEW)
+- fashn.py: fal-ai/fashn/tryon/v1.6 via Emergent Universal Key proxy (segmentation_free False, quality, 1 submit, no retry). Owner surgical path in _render_single/_compose_outfit -> _fashn_render (one pass per garment, bottoms->tops->jackets; shoes/bag unsupported -> 422) -> head_lock.surgical_merge (resize/align + _pose_composite with hand-skin lock (top_free -1), no-new-skin, trousers/shoes freeze) -> watermark. Raw engine output saved under tryon_raw/.
+- Test 1 (tryon 702a01c8): body/background identical, no ghosts; defect: hand box pasted chest skin into tee -> fixed (hand lock only skin-in-both). Awaiting user approval for next single generation. Not deployed.
