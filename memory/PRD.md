@@ -483,3 +483,8 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 - head_lock.crop_screenshot (auto-crop embedded photo) applied in _render_single/_compose_outfit/_multipass.
 - ALL surgical rejections removed (pose deviation + pose_fail only logged); multipass legs<4 -> single-pass fallback.
 - Test on screenshot photo: delivered, raised leg kept (dev 0.23). Seam ghosting at crop edges minor; slippers on rug removed by legs pass. Preview only (not deployed to My Atelier).
+
+## 2026-11-01 (9) — SLEEVE LOCK
+- pose_lock.arm_masks: DWPose shoulder->elbow->85% wrist strip forced to model sleeve; hand kept = hull of finger points (wrist root excluded, cuff covers wrist tattoo).
+- head_lock._pose_composite(arms=...) used in surgical posed finalize; multipass legs pass restores pass-1 sleeves/hands (strip & changed-vs-orig) so elbows on knees never repainted.
+- Test 22:46 leg-raised screenshot photo (floral/jeans/white shoes): elbow hole closed, full sleeves, raised leg kept (dev 0.17). Preview only.

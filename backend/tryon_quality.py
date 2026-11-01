@@ -241,6 +241,8 @@ async def render(system: str, prompt: str, contents: list, lock: dict, garments_
                        "It is a guide only: NEVER draw lines, dots or the skeleton in the output.\n")
     raw = await _image_call(system, prompt + QUALITY_RULES, contents, tag, aspect)
     snap = _snapshot(base)
+    if surgical and snap["pose"]:
+        snap["arms"] = await run_in_threadpool(pose_lock.arm_masks, base["canvas"])
     out = await run_in_threadpool(head_lock.finalize, raw, snap)
     if surgical:
         # STOP rule: exactly ONE generation, no regeneration, no automatic fix loop. Not usable -> error, no credit.

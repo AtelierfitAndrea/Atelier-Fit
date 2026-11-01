@@ -131,7 +131,7 @@ def _head_zones(head: np.ndarray, zone: np.ndarray, face: tuple) -> None:
     zone[int(fy + fh * 0.95):] = 0
 
 
-def _pose_composite(canvas: np.ndarray, res: np.ndarray, face: tuple, pads: tuple = (0, 0), freeze: list = ()):
+def _pose_composite(canvas: np.ndarray, res: np.ndarray, face: tuple, pads: tuple = (0, 0), freeze: list = (), arms=None):
     """FACE LOCK for posed photos: original pixels everywhere, generated pixels ONLY where the clothes changed.
     Head (hair, ears, glasses, face) is never taken from the model. Returns (image, changed_fraction)."""
     H, W = canvas.shape[:2]
@@ -183,6 +183,12 @@ def _pose_composite(canvas: np.ndarray, res: np.ndarray, face: tuple, pads: tupl
             band = ch[Y0:yf, X0:X1]
             band[(_skin(res[Y0:yf, X0:X1]) > 0) & (_skin(canvas[Y0:yf, X0:X1]) == 0)] = 0
         ch[yf:Y1, X0:X1] = 0
+    if arms is not None:
+        # SLEEVE LOCK: along shoulder->elbow->wrist the new sleeve always comes from the model (no original skin/tattoo holes);
+        # only the hand itself (DWPose finger points) stays original. The head stays original.
+        force, hands = arms
+        ch[force > 0] = 255
+        ch[(hands > 0) | (head > 0) | (zone > 0)] = 0
     # Top/bottom pad bands are not part of the photo: always the model's continuation of the scene.
     if pads[0]:
         ch[:pads[0]] = 255
@@ -448,7 +454,7 @@ def finalize(result_bytes: bytes, meta: dict) -> bytes:
     reg = _register(canvas, res) if meta.get("pose") else None
     if reg is not None:
         # Posed photo registered on the background: composite directly (face position no longer needed for alignment).
-        out, frac = _pose_composite(canvas, reg, meta.get("face"), meta.get("pads_px", (0, 0)), meta.get("freeze", ()))
+        out, frac = _pose_composite(canvas, reg, meta.get("face"), meta.get("pads_px", (0, 0)), meta.get("freeze", ()), meta.get("arms"))
         logger.info("head_lock: pose composite (registered) changed=%.2f", frac)
         meta.clear()
         meta["drift"] = 0.0
@@ -509,7 +515,7 @@ def finalize(result_bytes: bytes, meta: dict) -> bytes:
                 aligned = abs(cx - ox) < 0.35 * of[2] and abs(cy - oy) < 0.35 * of[3]
     if meta.get("pose"):
         # Posed photo: never keep a generated face. Misaligned or new scene -> flag so the render loop regenerates.
-        out, frac = (_pose_composite(canvas, res, head_at, meta.get("pads_px", (0, 0)), meta.get("freeze", ())) if aligned and head_at else (res, 1.0))
+        out, frac = (_pose_composite(canvas, res, head_at, meta.get("pads_px", (0, 0)), meta.get("freeze", ()), meta.get("arms")) if aligned and head_at else (res, 1.0))
         logger.info("head_lock: pose composite changed=%.2f aligned=%s", frac, aligned)
         del res, canvas, mask
         meta.clear()

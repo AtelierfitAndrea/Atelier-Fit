@@ -124,3 +124,31 @@ def deviation(orig: np.ndarray, res: np.ndarray, upper_only: bool = False):
     fit = src @ M[:, :2].T + M[:, 2] if M is not None else src
     devs = np.hypot(*(fit - dst).T) / torso
     return float(devs.max())
+
+
+def arm_masks(rgb: np.ndarray):
+    """(sleeve_force, hand_keep) full-size masks: sleeve strip shoulder->elbow->near wrist, hand = hull of the finger points."""
+    kp = keypoints(rgb)
+    if kp is None:
+        return None
+    H, W = rgb.shape[:2]
+    force, hands = np.zeros((H, W), np.uint8), np.zeros((H, W), np.uint8)
+    for sh, el, wr in ((5, 7, 9), (6, 8, 10)):
+        if kp[sh, 2] < MIN_SCORE or kp[el, 2] < MIN_SCORE:
+            continue
+        upper = float(np.hypot(*(kp[sh, :2] - kp[el, :2])))
+        pts = [kp[sh, :2], kp[el, :2]]
+        if kp[wr, 2] >= MIN_SCORE:
+            pts.append(kp[el, :2] + 0.85 * (kp[wr, :2] - kp[el, :2]))
+        cv2.polylines(force, [np.int32(pts)], False, 255, max(6, int(0.45 * upper)), cv2.LINE_AA)
+    for lo in (92, 113):  # finger points of each hand (wrist root excluded: the cuff covers it)
+        pts = kp[lo:lo + 20]
+        pts = pts[pts[:, 2] > 0.3]
+        if len(pts) < 6:
+            continue
+        hull = cv2.convexHull(np.int32(pts[:, :2]))
+        cv2.fillConvexPoly(hands, hull, 255)
+        span = max(np.ptp(pts[:, 0]), np.ptp(pts[:, 1]))
+        hands = cv2.dilate(hands, np.ones((max(3, int(0.12 * span)),) * 2, np.uint8))
+    force[hands > 0] = 0
+    return force, hands

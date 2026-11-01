@@ -3140,6 +3140,13 @@ async def _multipass_outfit(user: User, person_path: str, items: list, layer_ord
         by0, bx0, by1, bx1 = (v / 1000 for v in b)
         fz.append((int(bx0 * w) - X0, int(by0 * h) - Y0, int(bx1 * w) - X0, int(by1 * h) - Y0, -1.0))
     legs_out, frac = await run_in_threadpool(head_lock._pose_composite, crop, reg, None, (0, 0), [z for z in fz if z[2] > 0 and z[3] > 0 and z[0] < cw_ and z[1] < ch_])
+    am = await run_in_threadpool(pose_lock.arm_masks, orig)
+    if am is not None:
+        # Arms/hands resting on the legs keep the pass-1 sleeves and hands (the legs pass never repaints an elbow).
+        sleeve = (np.abs(base[Y0:Y1, X0:X1].astype(np.int16) - orig[Y0:Y1, X0:X1].astype(np.int16)).mean(axis=2) > 24).astype(np.uint8) * 255
+        keep = cv2.dilate(np.maximum(am[0][Y0:Y1, X0:X1] & sleeve, am[1][Y0:Y1, X0:X1]), np.ones((9, 9), np.uint8))
+        kw = cv2.GaussianBlur(keep, (0, 0), 2.0).astype(np.float32)[..., None] / 255
+        legs_out = (crop * kw + legs_out * (1 - kw)).astype(np.uint8)
     # Feathered paste of the dressed crop (edges that touch the photo border stay hard).
     wgt = np.ones((ch_, cw_), np.float32)
     f = max(8, int(0.06 * min(cw_, ch_)))
