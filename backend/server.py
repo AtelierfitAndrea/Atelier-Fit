@@ -3095,7 +3095,8 @@ LEGS_PASS_RULE = (
     "the same legs in the same positions (a raised leg or a foot on the bed stays exactly there, bent knees stay bent, crossed legs stay crossed), "
     "same background, floor, bed, rug and lighting, same hands and same shirt hem. Never move, straighten, lower or re-pose a leg.\n"
     "• Trousers: solid opaque fabric fully covering hips, thighs and legs down to the shoes, realistic size and fit for this body, waistband under "
-    "the shirt hem, no holes or skin showing (bare legs in IMAGE 1 become fully dressed).\n"
+    "the shirt hem, no holes or skin showing (bare legs in IMAGE 1 become fully dressed). Crossed / folded legs: realistic draping and folds over "
+    "the crossed knees and shins, each leg dressed separately, no bare skin between them.\n"
     "• Shoes: each shoe exactly on that foot, anchored to the ankle, real scale, sole on the surface the foot touches, natural contact shadow.\n"
     "• NEGATIVE: moved leg, lowered leg, straightened pose, extra legs, extra feet, floating shoes, cropped person, new background, skeleton lines.\n"
 )
@@ -3131,6 +3132,8 @@ async def _multipass_outfit(user: User, person_path: str, items: list, layer_ord
     bw, bh = x1 - x0, y1 - y0
     X0, X1 = int(max(0, x0 - 0.35 * bw - 0.05 * w)), int(min(w, x1 + 0.35 * bw + 0.05 * w))
     Y0, Y1 = int(max(0, y0 - 0.12 * bh)), int(min(h, y1 + 0.12 * bh + 0.04 * h))
+    if kp[5, 2] > pose_lock.MIN_SCORE and kp[11, 2] > pose_lock.MIN_SCORE:  # include the waist band above the hips
+        Y0 = int(max(0, min(Y0, kp[11, 1] - 0.35 * (kp[11, 1] - kp[5, 1]))))
     crop = base[Y0:Y1, X0:X1].copy()
     ch_, cw_ = crop.shape[:2]
     logger.info(f"multipass legs crop x={X0}-{X1} y={Y0}-{Y1} ({cw_}x{ch_}) joints={len(legs)}")

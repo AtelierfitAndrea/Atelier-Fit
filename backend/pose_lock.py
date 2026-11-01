@@ -177,4 +177,16 @@ def legs_mask(kp: np.ndarray, shape) -> np.ndarray:
             cv2.circle(m, tuple(np.int32(p)), max(8, int(0.3 * thigh)), 255, -1)
         if len(pts) >= 2:
             cv2.fillConvexPoly(m, cv2.convexHull(np.int32(pts)), 255)
+    # Folded / crossed legs hide ankles and shins: the whole lower-body hull (hips, knees, any foot point seen) is trousers too,
+    # plus the waist band just above the hips (old waistband / top hem must not survive between shirt and trousers).
+    pts = [kp[i, :2] for i in range(11, 23) if kp[i, 2] > 0.2]
+    if len(pts) >= 3:
+        hull = np.zeros((H, W), np.uint8)
+        cv2.fillConvexPoly(hull, cv2.convexHull(np.int32(pts)), 255)
+        m |= cv2.dilate(hull, np.ones((max(5, int(0.3 * thigh)),) * 2, np.uint8))
+    if ok(5) and ok(6) and ok(11) and ok(12):
+        hip_y = (kp[11, 1] + kp[12, 1]) / 2
+        band = int(0.22 * (hip_y - (kp[5, 1] + kp[6, 1]) / 2))
+        x0, x1 = int(min(kp[11, 0], kp[12, 0]) - 0.3 * thigh), int(max(kp[11, 0], kp[12, 0]) + 0.3 * thigh)
+        cv2.rectangle(m, (max(0, x0), max(0, int(hip_y) - band)), (min(W - 1, x1), int(hip_y)), 255, -1)
     return m

@@ -508,3 +508,7 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 - crop_screenshot trims letterbox bars (flat rows/cols) before screenshot detection.
 - Sleeve lock per arm segment (upper/fore): segment kept same as photo -> forearm stays ORIGINAL (no invented tattoos on short sleeves); segment changed -> whole segment new sleeve. Verified offline on floral long-sleeve (no holes) and black tee (original forearm tattoos).
 - Not done: light/quality enhancement (would alter original pixels).
+
+## 2026-11-01 (14) — Crossed legs full outfit
+- legs_mask: + dilated hull of all lower-body points (score>0.2) for hidden shins/ankles + waist band above hips; multipass crop Y0 extended to 35% torso above hips; LEGS_PASS_RULE crossed-legs draping line.
+- Test 23:39 crossed-legs bed (floral 43e5182f + BLACK CRAFT 868517 + white 2d56df): legs fully covered & crossed, shoes on feet, no old waistband, bg identical (dev 0.05). 2 generations used (first 23:37 failed: bare shins + tank hem).
