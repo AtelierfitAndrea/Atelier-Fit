@@ -2061,28 +2061,37 @@ async def _fashn_render(user_id: str, person_path: str, garments: list, cats: li
     person_bytes, _ = get_object(person_path)
     info = await _hand_info(person_path, person_bytes)
     cats_l = {(c or "").lower() for c in cats}
-    freeze = [{"box": b, "top_free": -1.0} for b in info["boxes"]] + [{"box": [0, 0, 1000, 1000], "top_free": 1.0}]
+    freeze = [{"box": b, "top_free": -2.0 if ph else -1.0} for b, ph in zip(info["boxes"], info["phone"])] + [{"box": [0, 0, 1000, 1000], "top_free": 1.0}]
     if info.get("lower") and not cats_l & set(_LOWER_CATS):
         freeze.append({"box": info["lower"], "top_free": 1.0 if "outerwear" in cats_l else 0.30})
     if info.get("shoes"):
         freeze.append({"box": info["shoes"], "top_free": 0.0})
     model_jpeg = await run_in_threadpool(head_lock.downscale, person_bytes, head_lock.PERSON_MAX_SIDE)
-    current = model_jpeg
+    if not await run_in_threadpool(head_lock.has_face, model_jpeg):
+        # Face lock needs the face: refuse BEFORE any paid generation.
+        raise HTTPException(status_code=422, detail="Non vedo bene il tuo viso: usa una foto più luminosa con il viso visibile. Nessun credito usato.")
+    current, done = model_jpeg, 0
     try:
         for p, c in usable:
             g, _ = get_object(p)
             g = await run_in_threadpool(head_lock.downscale, g, head_lock.GARMENT_MAX_SIDE)
             current = await asyncio.to_thread(fashn.tryon, current, g, c)
+            done += 1
     except fashn.InsufficientCredits:
         raise HTTPException(status_code=402, detail="Saldo Universal Key esaurito: ricarica il saldo per usare il motore di prova dedicato.")
     except fashn.TryOnError as e:
-        logger.error(f"fashn try-on failed: {e}")
-        raise HTTPException(status_code=502, detail="Prova non riuscita sul motore dedicato: premi Riprova. Nessun credito usato.")
-    put_object(f"{APP_NAME}/tryon_raw/{user_id}/{uuid.uuid4().hex}.png", current, "image/png")  # engine output kept for offline merge checks
+        logger.error(f"fashn try-on failed after {done} garment(s): {e}")
+        raise HTTPException(status_code=502, detail="Prova non riuscita sul motore dedicato: premi Riprova. Nessuna prova scalata dal tuo piano"
+                            + (" (il saldo AI dei capi già elaborati è stato usato)." if done else "."))
+    raw_path = f"{APP_NAME}/tryon_raw/{user_id}/{uuid.uuid4().hex}.png"
+    put_object(raw_path, current, "image/png")  # engine output kept for offline merge checks
+    logger.info(f"fashn raw output stored at {raw_path}")
     out = await run_in_threadpool(head_lock.surgical_merge, model_jpeg, current, freeze)
     out = await run_in_threadpool(tryon_quality.watermark, out, await _mark_for(user_id))
     result_path = f"{APP_NAME}/tryon/{user_id}/{uuid.uuid4().hex}.jpg"
     put_object(result_path, out, "image/jpeg")
+    await db.tryon_raw.insert_one({"result_path": result_path, "raw_path": raw_path, "person_path": person_path, "freeze": freeze,
+                                   "created_at": datetime.now(timezone.utc).isoformat()})
     return result_path
 
 

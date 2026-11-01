@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="2" skipped="0" tests="15" time="1.334" timestamp="2026-11-01T12:22:57.911254+00:00" hostname="agent-env-f3c230d8-1a44-433c-8c23-1801fcf76593"><testcase classname="tests.test_surgical_fashn_unit.TestGatingAndEngine" name="test_non_owner_gets_no_surgical" time="0.460" /><testcase classname="tests.test_surgical_fashn_unit.TestPoseCompositeSynthetic" name="test_face_stays_original" time="0.043" /><testcase classname="tests.test_surgical_fashn_unit.TestPoseCompositeSynthetic" name="test_below_chin_takes_result" time="0.030" /><testcase classname="tests.test_surgical_fashn_unit.TestPoseCompositeSynthetic" name="test_ghost_hair_beside_head_locked" time="0.031" /><testcase classname="tests.test_surgical_fashn_unit.TestPoseCompositeSynthetic" name="test_hand_skin_locked_chest_not_pasted" time="0.044" /><testcase classname="tests.test_surgical_fashn_unit.TestPoseCompositeSynthetic" name="test_old_behaviour_top_free_zero_would_paste_rectangle" time="0.049" /><testcase classname="tests.test_surgical_fashn_unit.TestPoseCompositeSynthetic" name="test_held_phone_inside_hand_box_kept" time="0.035"><failure message="AssertionError: phone overwritten by garment: [15 15 15]&#10;assert np.False_&#10; +  where np.False_ = _close(array([15, 15, 15]), (120, 90, 50), 10)&#10; +    where array([15, 15, 15]) = _px(array([[[200, 200, 200],\n        [200, 200, 200],\n        [200, 200, 200],\n        ...,\n        [200, 200, 200],\n     ...   ...,\n        [200, 200, 200],\n        [200, 200, 200],\n        [200, 200, 200]]], shape=(1000, 800, 3), dtype=uint8), 430, 460)">self = &lt;tests.test_surgical_fashn_unit.TestPoseCompositeSynthetic object at 0xfae1c86f9310&gt;
+scene = (array([[[200, 200, 200],
+        [200, 200, 200],
+        [200, 200, 200],
+        ...,
+        [200, 200, 200],
+    ...  ...,
+        [200, 200, 200],
+        [200, 200, 200],
+        [200, 200, 200]]], shape=(1000, 800, 3), dtype=uint8))
+
+    def test_held_phone_inside_hand_box_kept(self, scene):
+        # Rule "only clothing changes": a phone (non-skin) held in the hand box must keep original pixels.
+        canvas, res = scene
+        canvas, res = canvas.copy(), res.copy()
+        canvas[400:500, 440:480] = (120, 90, 50)   # brown phone over chest, partly above the hand
+        res[400:450, 440:480] = BLACK              # model paints the tee over the lower part of the phone
+        out, _ = head_lock._pose_composite(canvas, res, FACE, (0, 0), [(420, 395, 520, 560, -1.0), (0, 0, W, H, 1.0)])
+&gt;       assert _close(_px(out, 430, 460), (120, 90, 50), 10), f"phone overwritten by garment: {_px(out, 430, 460)}"
+E       AssertionError: phone overwritten by garment: [15 15 15]
+E       assert np.False_
+E        +  where np.False_ = _close(array([15, 15, 15]), (120, 90, 50), 10)
+E        +    where array([15, 15, 15]) = _px(array([[[200, 200, 200],\n        [200, 200, 200],\n        [200, 200, 200],\n        ...,\n        [200, 200, 200],\n     ...   ...,\n        [200, 200, 200],\n        [200, 200, 200],\n        [200, 200, 200]]], shape=(1000, 800, 3), dtype=uint8), 430, 460)
+
+tests/test_surgical_fashn_unit.py:104: AssertionError</failure></testcase><testcase classname="tests.test_surgical_fashn_unit.TestPoseCompositeSynthetic" name="test_no_new_skin_holes" time="0.032" /><testcase classname="tests.test_surgical_fashn_unit.TestGatingAndEngine" name="test_owner_gets_surgical" time="0.000" /><testcase classname="tests.test_surgical_fashn_unit.TestGatingAndEngine" name="test_fashn_single_submit_no_retry_on_error" time="0.000" /><testcase classname="tests.test_surgical_fashn_unit.TestGatingAndEngine" name="test_fashn_402_insufficient" time="0.000" /><testcase classname="tests.test_surgical_fashn_unit.TestGatingAndEngine" name="test_fashn_untrusted_queue_url" time="0.000" /><testcase classname="tests.test_surgical_fashn_unit.TestGatingAndEngine" name="test_fashn_render_422_shoes_bag_only" time="0.001" /><testcase classname="tests.test_surgical_fashn_unit.TestGatingAndEngine" name="test_fashn_render_one_call_per_garment_and_error_maps_502" time="0.002" /><testcase classname="tests.test_surgical_fashn_unit.TestGatingAndEngine" name="test_fashn_poll_http_error_is_not_tryon_error" time="0.001"><failure message="AssertionError: status-poll HTTP error escapes as requests.HTTPError -&gt; 500 instead of 502&#10;assert False&#10; +  where False = isinstance(HTTPError('503'), &lt;class 'fashn.TryOnError'&gt;)&#10; +    where HTTPError('503') = &lt;ExceptionInfo HTTPError('503') tblen=3&gt;.value&#10; +    and   &lt;class 'fashn.TryOnError'&gt; = fashn.TryOnError">self = &lt;tests.test_surgical_fashn_unit.TestGatingAndEngine object at 0xfc8347703790&gt;
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0xfc833c3706d0&gt;
+
+    def test_fashn_poll_http_error_is_not_tryon_error(self, monkeypatch):
+        # Code review probe: a 5xx on the STATUS poll raises requests.HTTPError (not TryOnError) -&gt; generic 500 upstream.
+        import requests as rq
+    
+        class P:
+            status_code = 200
+            text = ""
+            def json(self):
+                return {"status_url": fashn.QUEUE_BASE + "/s", "response_url": fashn.QUEUE_BASE + "/r"}
+    
+        class S:
+            status_code = 503
+            def raise_for_status(self):
+                raise rq.HTTPError("503")
+        monkeypatch.setattr(fashn.requests, "post", lambda *a, **k: P())
+        monkeypatch.setattr(fashn.requests, "get", lambda *a, **k: S())
+        with pytest.raises(Exception) as e:
+            fashn.tryon(b"x", b"y", "top", timeout_s=5)
+        print("poll error type:", type(e.value).__name__)
+&gt;       assert isinstance(e.value, fashn.TryOnError), "status-poll HTTP error escapes as requests.HTTPError -&gt; 500 instead of 502"
+E       AssertionError: status-poll HTTP error escapes as requests.HTTPError -&gt; 500 instead of 502
+E       assert False
+E        +  where False = isinstance(HTTPError('503'), &lt;class 'fashn.TryOnError'&gt;)
+E        +    where HTTPError('503') = &lt;ExceptionInfo HTTPError('503') tblen=3&gt;.value
+E        +    and   &lt;class 'fashn.TryOnError'&gt; = fashn.TryOnError
+
+tests/test_surgical_fashn_unit.py:218: AssertionError</failure></testcase></testsuite></testsuites>

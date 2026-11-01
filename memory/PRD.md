@@ -430,3 +430,7 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 ## 2026-11-01 — Dedicated try-on engine (owner, PREVIEW)
 - fashn.py: fal-ai/fashn/tryon/v1.6 via Emergent Universal Key proxy (segmentation_free False, quality, 1 submit, no retry). Owner surgical path in _render_single/_compose_outfit -> _fashn_render (one pass per garment, bottoms->tops->jackets; shoes/bag unsupported -> 422) -> head_lock.surgical_merge (resize/align + _pose_composite with hand-skin lock (top_free -1), no-new-skin, trousers/shoes freeze) -> watermark. Raw engine output saved under tryon_raw/.
 - Test 1 (tryon 702a01c8): body/background identical, no ghosts; defect: hand box pasted chest skin into tee -> fixed (hand lock only skin-in-both). Awaiting user approval for next single generation. Not deployed.
+
+## 2026-11-01 — Second surgical test (tryon result 3dd5fbf8)
+- Fixes: hand lock = largest eroded skin-in-both blob; phone hand (-2) also locks largest non-skin blob; fashn requests errors -> TryOnError (502); face check before paid submit (head_lock.has_face); raw output path stored in db.tryon_raw; data-URI mime detection.
+- Result: chest-skin rectangle gone, bib reduced; phone still partly painted over by tee + small light patch top-right of hand. Awaiting user decision. Not deployed.

@@ -59,12 +59,20 @@ def _get(url: str, deadline: float, timeout: int = 30) -> requests.Response:
     raise AssertionError("unreachable")
 
 
-def _data_uri(jpeg: bytes) -> str:
-    return "data:image/jpeg;base64," + base64.b64encode(jpeg).decode()
+def _data_uri(img: bytes) -> str:
+    mime = "image/png" if img[:8] == b"\x89PNG\r\n\x1a\n" else "image/webp" if img[8:12] == b"WEBP" else "image/jpeg"
+    return f"data:{mime};base64," + base64.b64encode(img).decode()
 
 
 def tryon(person_jpeg: bytes, garment_jpeg: bytes, category: str, timeout_s: int = 300) -> bytes:
     """Blocking: run in a worker thread. Exactly one submit (never retried); returns the result image bytes."""
+    try:
+        return _tryon(person_jpeg, garment_jpeg, category, timeout_s)
+    except requests.RequestException as e:
+        raise TryOnError(f"network/http error: {e}") from e
+
+
+def _tryon(person_jpeg: bytes, garment_jpeg: bytes, category: str, timeout_s: int) -> bytes:
     payload = {
         "model_image": _data_uri(person_jpeg),
         "garment_image": _data_uri(garment_jpeg),

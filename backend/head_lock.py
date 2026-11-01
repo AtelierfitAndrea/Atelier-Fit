@@ -114,6 +114,13 @@ def face_check(person_bytes: bytes) -> tuple:
     return True, conf, ""
 
 
+def _largest(m: np.ndarray) -> np.ndarray:
+    n, lab, stats, _ = cv2.connectedComponentsWithStats(m.astype(np.uint8), 8)
+    if n <= 1:
+        return np.zeros_like(m, np.uint8)
+    return (lab == 1 + int(np.argmax(stats[1:, cv2.CC_STAT_AREA]))).astype(np.uint8)
+
+
 def _pose_composite(canvas: np.ndarray, res: np.ndarray, face: tuple, pads: tuple = (0, 0), freeze: list = ()):
     """FACE LOCK for posed photos: original pixels everywhere, generated pixels ONLY where the clothes changed.
     Head (hair, ears, glasses, face) is never taken from the model. Returns (image, changed_fraction)."""
@@ -151,9 +158,14 @@ def _pose_composite(canvas: np.ndarray, res: np.ndarray, face: tuple, pads: tupl
         px, py = max(2, int((x1 - x0) * 0.04)), max(2, int((y1 - y0) * 0.03))
         X0, Y0, X1, Y1 = max(0, x0 - px), max(0, y0 - py), min(W, x1 + px), min(H, y1 + py)
         if top_free < 0:
-            # Hand box: lock only the hand itself (skin in both images), never paste the body skin around it over a new garment.
+            # Hand box: lock only the hand itself (largest skin-in-both blob, eroded so no chest skin/tattoo halo comes back),
+            # plus, for a phone hand (-2), the held phone (largest non-skin blob of the original inside the box).
             box = ch[Y0:Y1, X0:X1]
-            box[(_skin(res[Y0:Y1, X0:X1]) > 0) & (_skin(canvas[Y0:Y1, X0:X1]) > 0)] = 0
+            so = _skin(canvas[Y0:Y1, X0:X1])
+            lock = _largest(cv2.erode((_skin(res[Y0:Y1, X0:X1]) > 0).astype(np.uint8) & (so > 0).astype(np.uint8), np.ones((5, 5), np.uint8)))
+            if top_free <= -2:
+                lock |= cv2.dilate(_largest(cv2.morphologyEx((so == 0).astype(np.uint8), cv2.MORPH_OPEN, np.ones((5, 5), np.uint8))), np.ones((3, 3), np.uint8))
+            box[lock > 0] = 0
             continue
         yf = Y0 + int((Y1 - Y0) * top_free)
         if yf > Y0:
@@ -490,3 +502,7 @@ def finalize(result_bytes: bytes, meta: dict) -> bytes:
     del out
     gc.collect()
     return buf.getvalue()
+
+
+def has_face(jpeg: bytes) -> bool:
+    return _face_box(np.array(Image.open(io.BytesIO(jpeg)).convert("RGB"))) is not None
