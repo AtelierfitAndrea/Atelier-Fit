@@ -440,3 +440,10 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 - All render jobs (_start_render_job) now OWNER ONLY (403 for others, no credit used).
 - 1 test Avatar+black tee OK on face/legs/background; KNOWN BUG: surgical hand freeze box pastes a rectangle of original skin/tattoo over the new shirt (hand+phone area). Fix pending user approval.
 - Pending: seated mirror pose test, full outfit top+bottom+shoes.
+
+## 2026-11-01 (2) — Surgical composite fixes (owner only, preview)
+- Hand/phone lock now precise (only pixels unchanged between original and model): no chest/tattoo rectangle.
+- _pose_composite fills unchanged islands enclosed by new clothes (no skin holes); global no-new-skin freeze removed (pasted background over sleeves); dilate 7.
+- SURGICAL_RULE: opaque full coverage + PANTS LOCK + SHOES LOCK.
+- Surgical raw model output saved to /tmp/surgical_raw_<tag>.png for free offline re-merge.
+- Full outfit (red top+black pants+sneakers) re-merged offline from raw: clean. Seated test needs 1 regeneration to verify new rules.

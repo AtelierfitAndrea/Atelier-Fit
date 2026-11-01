@@ -1836,8 +1836,7 @@ async def _lock_hands(person_path: str, person_bytes: bytes, has_bag: bool, pose
     freeze, txt = [], (PHONE_RULE if any(phone) else "")
     if surgical:
         # Surgical try-on: hands stay original pixels, and no new bare skin may appear anywhere (holes stay holes).
-        freeze += [{"box": b, "top_free": 0.0} for b in info["boxes"]]
-        freeze.append({"box": [0, 0, 1000, 1000], "top_free": 1.0})
+        freeze += [{"box": b, "top_free": -2.0 if ph else -1.0} for b, ph in zip(info["boxes"], info["phone"])]
     if posed and info.get("lower") and not cats & set(_LOWER_CATS):
         # A coat may legitimately cover the trousers: then only "no new bare skin" is enforced on them.
         freeze.append({"box": info["lower"], "top_free": 1.0 if "outerwear" in cats else 0.30})
@@ -2033,8 +2032,15 @@ POSE_RULE = (
 SURGICAL_RULE = (
     "SURGICAL TRY-ON — ONLY THE CLOTHING AREA CHANGES:\n"
     "• Do NOT touch face, hair, skin, identity, hands or arms: they stay pixel-identical to IMAGE 1 (face lock 100%). Keep the pose exactly as IMAGE 1.\n"
-    "• Replace ONLY the clothing with the requested garments. If a garment has holes or rips, keep them as holes in the fabric: NEVER show bare skin "
-    "under trousers or shirts unless IMAGE 1 already shows skin there. No transparent clothes.\n"
+    "• Replace ONLY the clothing with the requested garments. The new garments are SOLID, OPAQUE fabric that FULLY covers the body area they cover, "
+    "even where IMAGE 1 shows bare skin (e.g. the person wears only underwear): trousers cover hips, thighs and legs completely down to the shoes, "
+    "a top covers chest, belly and its full sleeves, and its hem overlaps the trousers waistband. NEVER leave holes, rips, cut-outs, gaps or patches of "
+    "bare skin or underwear inside or between the new garments. No transparent clothes.\n"
+    "• PANTS LOCK: trousers follow the EXACT leg length, thigh/knee/ankle positions and bend of IMAGE 1 (seated legs stay seated, same knee height); "
+    "realistic size and fit for this body (not skin-tight, not oversized), hem reaching the shoe: never cut short above a boot, the hem rests on or "
+    "tucks naturally over the boot shaft.\n"
+    "• SHOES LOCK: each shoe sits exactly where that foot is in IMAGE 1, anchored to the ankle and standing on the floor with its sole and a contact "
+    "shadow — never floating, never resized; real shoe scale for this foot (no oversized or tiny shoes).\n"
     "• Output: one photorealistic image, 4K detail, no deformation.\n"
     "• NEGATIVE: tattoo, deformed face, deformed hands, extra fingers, extra limbs, nude skin under clothes, transparent clothes, blurry face, changed identity.\n"
 )

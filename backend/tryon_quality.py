@@ -225,6 +225,8 @@ async def render(system: str, prompt: str, contents: list, lock: dict, garments_
     out = await run_in_threadpool(head_lock.finalize, raw, snap)
     if "SURGICAL TRY-ON" in prompt:
         # STOP rule: exactly ONE generation, no regeneration, no automatic fix loop. Not usable -> error, no credit.
+        with open(f"/tmp/surgical_raw_{tag}.png", "wb") as f:  # model output kept for free offline merge checks
+            f.write(raw)
         del raw, contents, base
         if snap.get("pose_fail"):
             raise HTTPException(status_code=422, detail="Non riesco a mantenere identica la tua foto. Premi Riprova o usa una foto più luminosa: nessun credito usato.")

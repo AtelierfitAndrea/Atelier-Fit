@@ -138,9 +138,12 @@ def _pose_composite(canvas: np.ndarray, res: np.ndarray, face: tuple, pads: tupl
     keep = stats[:, cv2.CC_STAT_AREA] >= 0.002 * sw * sh
     keep[0] = False
     ch = keep[lab].astype(np.uint8) * 255
+    # Unchanged islands enclosed by new clothes (skin-coloured prints, labels, hem gap) are fabric, never original skin: fill them.
+    cnts, _ = cv2.findContours(ch, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    cv2.drawContours(ch, cnts, -1, 255, -1)
     del cs, rs, d, lab
     frac = float((ch > 0).mean())
-    ch = cv2.dilate(ch, np.ones((3, 3), np.uint8))
+    ch = cv2.dilate(ch, np.ones((7, 7), np.uint8))
     ch = cv2.resize(ch, (W, H), interpolation=cv2.INTER_LINEAR)
     fx, fy, fw, fh = face
     cx = int(fx + fw / 2)
@@ -161,10 +164,13 @@ def _pose_composite(canvas: np.ndarray, res: np.ndarray, face: tuple, pads: tupl
             # Hand box: lock only the hand itself (largest skin-in-both blob, eroded so no chest skin/tattoo halo comes back),
             # plus, for a phone hand (-2), the held phone (largest non-skin blob of the original inside the box).
             box = ch[Y0:Y1, X0:X1]
-            so = _skin(canvas[Y0:Y1, X0:X1])
-            lock = _largest(cv2.erode((_skin(res[Y0:Y1, X0:X1]) > 0).astype(np.uint8) & (so > 0).astype(np.uint8), np.ones((5, 5), np.uint8)))
+            co, ro = canvas[Y0:Y1, X0:X1], res[Y0:Y1, X0:X1]
+            so = _skin(co)
+            # Only pixels the model left where they were (the hand/phone itself): chest/tattoo behind it that got new fabric never comes back.
+            same = (cv2.GaussianBlur(np.abs(co.astype(np.int16) - ro.astype(np.int16)).mean(axis=2).astype(np.float32), (0, 0), 1.5) < 30).astype(np.uint8)
+            lock = _largest(cv2.erode((_skin(ro) > 0).astype(np.uint8) & (so > 0).astype(np.uint8) & same, np.ones((5, 5), np.uint8)))
             if top_free <= -2:
-                lock |= cv2.dilate(_largest(cv2.morphologyEx((so == 0).astype(np.uint8), cv2.MORPH_OPEN, np.ones((5, 5), np.uint8))), np.ones((3, 3), np.uint8))
+                lock |= cv2.dilate(_largest(cv2.morphologyEx((so == 0).astype(np.uint8) & same, cv2.MORPH_OPEN, np.ones((5, 5), np.uint8))), np.ones((3, 3), np.uint8))
             box[lock > 0] = 0
             continue
         yf = Y0 + int((Y1 - Y0) * top_free)
