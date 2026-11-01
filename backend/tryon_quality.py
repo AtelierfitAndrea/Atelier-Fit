@@ -251,10 +251,8 @@ async def render(system: str, prompt: str, contents: list, lock: dict, garments_
         dev = await run_in_threadpool(_pose_dev, base["canvas"], out, "HALF-BODY PHOTO" in prompt)
         logger.info(f"{tag}: pose lock deviation {dev} raw={raw_file}")
         del raw, contents, base
-        if dev is not None and dev > pose_lock.POSE_DEV_MAX:
-            raise HTTPException(status_code=422, detail="La posa non è rimasta identica alla tua foto: risultato scartato, nessuna prova scalata. Premi Riprova.")
-        if snap.get("pose_fail"):
-            raise HTTPException(status_code=422, detail="Non riesco a mantenere identica la tua foto. Premi Riprova o usa una foto più luminosa: nessun credito usato.")
+        # Owner request: no automatic rejection on pose/scene checks, values are only logged.
+        logger.info(f"{tag}: pose_fail={snap.get('pose_fail')} (not blocking)")
         logger.info(f"{tag}: surgical one-shot render delivered")
         if mark is None:  # multi-pass: un-signed PNG of the canvas, the caller finishes it
             return out

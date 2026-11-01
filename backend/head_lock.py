@@ -556,3 +556,33 @@ def finalize(result_bytes: bytes, meta: dict) -> bytes:
 
 def has_face(jpeg: bytes) -> bool:
     return _face_box(np.array(Image.open(io.BytesIO(jpeg)).convert("RGB"))) is not None
+
+
+def crop_screenshot(data: bytes) -> bytes:
+    """Phone screenshot of an app showing the photo (UI bars, text, buttons): keep only the embedded photo."""
+    img = Image.open(io.BytesIO(data)).convert("RGB")
+    W, H = img.size
+    small = np.array(img.resize((max(1, W // 2), max(1, H // 2))))
+    g = cv2.cvtColor(small, cv2.COLOR_RGB2GRAY)
+    edges = cv2.dilate(cv2.Canny(g, 30, 100), np.ones((3, 3), np.uint8))
+    cnts, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    sh, sw = g.shape
+    best = None
+    for c in cnts:
+        x, y, w, h = cv2.boundingRect(c)
+        if 0.18 * sw * sh < w * h < 0.85 * sw * sh and w > 0.6 * sw and cv2.contourArea(cv2.convexHull(c)) > 0.9 * w * h:
+            if best is None or w * h > best[2] * best[3]:
+                best = (x, y, w, h)
+    if best is None:
+        return data
+    x, y, w, h = best
+    # The UI around the photo must be mostly flat (white/grey bars), otherwise this is a normal photo.
+    ring = np.ones((sh, sw), bool)
+    ring[y:y + h, x:x + w] = False
+    if g[ring].std() > 45 and (np.abs(g[ring].astype(int) - int(np.median(g[ring]))) < 12).mean() < 0.7:
+        return data
+    box = (2 * x + 6, 2 * y + 6, 2 * (x + w) - 6, 2 * (y + h) - 6)
+    logger.info("head_lock: screenshot detected, using embedded photo %s of %sx%s", box, W, H)
+    buf = io.BytesIO()
+    img.crop(box).save(buf, "JPEG", quality=95)
+    return buf.getvalue()

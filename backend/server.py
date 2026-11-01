@@ -2088,6 +2088,7 @@ async def _half_body(person_bytes: bytes, cats) -> bool:
 async def _render_single(user_id: str, person_path: str, garment_path: str, category_in: Optional[str], name: Optional[str], m_doc: dict, extra: str = "") -> str:
     # Load both images
     person_bytes, person_ct = get_object(person_path)
+    person_bytes = await run_in_threadpool(head_lock.crop_screenshot, person_bytes)
     garment_bytes, garment_ct = get_object(garment_path)
     surgical = SURGICAL_RULE in extra
     half = surgical and await _half_body(person_bytes, [category_in])
@@ -3079,6 +3080,7 @@ async def _multipass_outfit(user: User, person_path: str, items: list, layer_ord
     lowers = [g for g in items if (g.get("category") or "").lower() in _LEG_CATS]
     uppers = [g for g in items if g not in lowers]
     person_bytes, _ = get_object(person_path)
+    person_bytes = await run_in_threadpool(head_lock.crop_screenshot, person_bytes)
     orig = np.array(head_lock._open_small(person_bytes, head_lock.PERSON_OUT_SIDE).convert("RGB"))
     h, w = orig.shape[:2]
     if uppers:
@@ -3093,7 +3095,13 @@ async def _multipass_outfit(user: User, person_path: str, items: list, layer_ord
     kp = await run_in_threadpool(pose_lock.keypoints, orig)
     legs = [i for i in (11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22) if kp is not None and kp[i, 2] > pose_lock.MIN_SCORE]
     if len(legs) < 4:
-        raise HTTPException(status_code=422, detail="Non riconosco bene gambe e piedi nella foto: nessuna prova scalata. Usa una foto con le gambe visibili.")
+        # Legs not readable: dress the whole outfit in one pass instead of blocking.
+        logger.info(f"multipass: only {len(legs)} leg joints found, single-pass fallback")
+        _, p_all = await _compose_outfit(user, person_path, items, layer_order_text, extra, raw=True)
+        signed = await run_in_threadpool(tryon_quality.watermark, p_all, await _mark_for(user.user_id))
+        result_path = f"{APP_NAME}/outfit/{user.user_id}/{uuid.uuid4().hex}.jpg"
+        put_object(result_path, signed, "image/jpeg")
+        return result_path
     (x0, y0), (x1, y1) = kp[legs, :2].min(0), kp[legs, :2].max(0)
     bw, bh = x1 - x0, y1 - y0
     X0, X1 = int(max(0, x0 - 0.35 * bw - 0.05 * w)), int(min(w, x1 + 0.35 * bw + 0.05 * w))
@@ -3148,8 +3156,6 @@ async def _multipass_outfit(user: User, person_path: str, items: list, layer_ord
     final[Y0:Y1, X0:X1] = cv2.blendLinear(legs_out, base[Y0:Y1, X0:X1], wgt, 1 - wgt)
     dev = await run_in_threadpool(pose_lock.deviation, orig, final)
     logger.info(f"multipass legs changed={frac:.2f} pose deviation={dev}")
-    if dev is not None and dev > pose_lock.POSE_DEV_MAX:
-        raise HTTPException(status_code=422, detail="La posa delle gambe non è rimasta identica: risultato scartato, nessuna prova scalata. Premi Riprova.")
     out = io.BytesIO()
     Image.fromarray(final).save(out, "PNG")
     signed = await run_in_threadpool(tryon_quality.watermark, out.getvalue(), await _mark_for(user.user_id))
@@ -3175,6 +3181,7 @@ async def _compose_outfit(user: User, person_path: Optional[str], items: list, l
         raise HTTPException(status_code=400, detail="Crea prima il tuo Avatar nella Home")
     # Build the multi-image prompt
     person_bytes, _ = get_object(person_path)
+    person_bytes = await run_in_threadpool(head_lock.crop_screenshot, person_bytes)
     surgical = bool(extra) and SURGICAL_RULE in extra
     half = surgical and await _half_body(person_bytes, [g.get("category") for g in items])
     if surgical and not half and not raw and any((g.get("category") or "").lower() in _LEG_CATS for g in items):

@@ -477,3 +477,9 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 - server._multipass_outfit: full-figure surgical outfits with bottom/shoes -> pass1 uppers via _compose_outfit(raw=True) (legs frozen), pass2 Gemini on DWPose legs crop (LEGS_PASS_RULE + skeleton), _register + _pose_composite (hands locked) + feathered paste, full pose check, watermark.
 - Test 14:31: leg raised on bed -> KEPT (dev 0.14) delivered; central -> OK (dev 0.14); half-body -> Gemini changed pose/scene (dev 0.75) rejected, no credit.
 - Deployed owner-only.
+
+## 2026-11-01 (8)
+- 22:25 failure root cause: owner uploaded a SCREENSHOT of the app as pose photo -> model returned only the embedded photo -> registered scale 0.5, changed 0.91 -> pose_fail. NOT a leg/underwear filter.
+- head_lock.crop_screenshot (auto-crop embedded photo) applied in _render_single/_compose_outfit/_multipass.
+- ALL surgical rejections removed (pose deviation + pose_fail only logged); multipass legs<4 -> single-pass fallback.
+- Test on screenshot photo: delivered, raised leg kept (dev 0.23). Seam ghosting at crop edges minor; slippers on rug removed by legs pass. Preview only (not deployed to My Atelier).
