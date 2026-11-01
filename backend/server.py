@@ -24,7 +24,6 @@ from body_measure import brand_sizes, shoe_size
 import head_lock
 import receipt
 import payments_log
-import fashn
 import hem as hem_mod
 import size_fallback
 import tryon_quality
@@ -1959,6 +1958,9 @@ _render_tasks: set = set()
 
 async def _start_render_job(user: User, coro) -> dict:
     coro_close = getattr(coro, "close", None)
+    if not _is_owner_email(user.email):
+        coro_close and coro_close()
+        raise HTTPException(status_code=403, detail="Le prove sono momentaneamente in manutenzione. Nessun credito usato.")
     now = datetime.now(timezone.utc)
     # One render at a time per user (unique partial index): quota is checked inside the job, parallel jobs would bypass it.
     await db.render_jobs.update_many({"user_id": user.user_id, "status": "running", "started_at": {"$lt": now - timedelta(minutes=10)}},
@@ -2052,53 +2054,7 @@ PHONE_RULE = (
 )
 
 
-async def _fashn_render(user_id: str, person_path: str, garments: list, cats: list) -> str:
-    """Owner-only surgical try-on on the dedicated FASHN engine: one generation per garment, no retries, no fix loop;
-    then original pixels everywhere except the changed clothing (face/hair/skin/hands/background = original)."""
-    usable = [(p, c) for p, c in garments if (c or "").lower() in fashn.CATEGORY]
-    if not usable:
-        raise HTTPException(status_code=422, detail="Il motore di prova dedicato veste top, pantaloni, gonne, abiti e giacche: scarpe e borse non sono supportate.")
-    person_bytes, _ = get_object(person_path)
-    info = await _hand_info(person_path, person_bytes)
-    cats_l = {(c or "").lower() for c in cats}
-    freeze = [{"box": b, "top_free": -2.0 if ph else -1.0} for b, ph in zip(info["boxes"], info["phone"])] + [{"box": [0, 0, 1000, 1000], "top_free": 1.0}]
-    if info.get("lower") and not cats_l & set(_LOWER_CATS):
-        freeze.append({"box": info["lower"], "top_free": 1.0 if "outerwear" in cats_l else 0.30})
-    if info.get("shoes"):
-        freeze.append({"box": info["shoes"], "top_free": 0.0})
-    model_jpeg = await run_in_threadpool(head_lock.downscale, person_bytes, head_lock.PERSON_MAX_SIDE)
-    if not await run_in_threadpool(head_lock.has_face, model_jpeg):
-        # Face lock needs the face: refuse BEFORE any paid generation.
-        raise HTTPException(status_code=422, detail="Non vedo bene il tuo viso: usa una foto più luminosa con il viso visibile. Nessun credito usato.")
-    current, done = model_jpeg, 0
-    try:
-        for p, c in usable:
-            g, _ = get_object(p)
-            g = await run_in_threadpool(head_lock.downscale, g, head_lock.GARMENT_MAX_SIDE)
-            current = await asyncio.to_thread(fashn.tryon, current, g, c)
-            done += 1
-    except fashn.InsufficientCredits:
-        raise HTTPException(status_code=402, detail="Saldo Universal Key esaurito: ricarica il saldo per usare il motore di prova dedicato.")
-    except fashn.TryOnError as e:
-        logger.error(f"fashn try-on failed after {done} garment(s): {e}")
-        raise HTTPException(status_code=502, detail="Prova non riuscita sul motore dedicato: premi Riprova. Nessuna prova scalata dal tuo piano"
-                            + (" (il saldo AI dei capi già elaborati è stato usato)." if done else "."))
-    raw_path = f"{APP_NAME}/tryon_raw/{user_id}/{uuid.uuid4().hex}.png"
-    put_object(raw_path, current, "image/png")  # engine output kept for offline merge checks
-    logger.info(f"fashn raw output stored at {raw_path}")
-    out = await run_in_threadpool(head_lock.surgical_merge, model_jpeg, current, freeze)
-    out = await run_in_threadpool(tryon_quality.watermark, out, await _mark_for(user_id))
-    result_path = f"{APP_NAME}/tryon/{user_id}/{uuid.uuid4().hex}.jpg"
-    put_object(result_path, out, "image/jpeg")
-    await db.tryon_raw.insert_one({"result_path": result_path, "raw_path": raw_path, "person_path": person_path, "freeze": freeze,
-                                   "created_at": datetime.now(timezone.utc).isoformat()})
-    return result_path
-
-
 async def _render_single(user_id: str, person_path: str, garment_path: str, category_in: Optional[str], name: Optional[str], m_doc: dict, extra: str = "") -> str:
-    if SURGICAL_RULE in extra:
-        cat = category_in or await _classify_garment(garment_path, None)
-        return await _fashn_render(user_id, person_path, [(garment_path, cat)], [cat])
     # Load both images
     person_bytes, person_ct = get_object(person_path)
     garment_bytes, garment_ct = get_object(garment_path)
@@ -3088,11 +3044,6 @@ async def _compose_outfit(user: User, person_path: Optional[str], items: list, l
             person_path = last_file["storage_path"]
     if not person_path:
         raise HTTPException(status_code=400, detail="Crea prima il tuo Avatar nella Home")
-    if extra and SURGICAL_RULE in extra:
-        # Order: bottoms/one-pieces first, then tops, then jackets (FASHN dresses one garment per pass).
-        rank = {"bottom": 0, "dress": 0, "suit": 0, "top": 1, "outerwear": 2}
-        its = sorted(items, key=lambda g: rank.get((g.get("category") or "").lower(), 9))
-        return person_path, await _fashn_render(user.user_id, person_path, [(g["image_path"], g.get("category")) for g in its], [g.get("category") for g in its])
     # Build the multi-image prompt
     person_bytes, _ = get_object(person_path)
     surgical = bool(extra) and SURGICAL_RULE in extra

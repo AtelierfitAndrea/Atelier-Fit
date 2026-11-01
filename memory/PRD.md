@@ -434,3 +434,9 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 ## 2026-11-01 — Second surgical test (tryon result 3dd5fbf8)
 - Fixes: hand lock = largest eroded skin-in-both blob; phone hand (-2) also locks largest non-skin blob; fashn requests errors -> TryOnError (502); face check before paid submit (head_lock.has_face); raw output path stored in db.tryon_raw; data-URI mime detection.
 - Result: chest-skin rectangle gone, bib reduced; phone still partly painted over by tee + small light patch top-right of hand. Awaiting user decision. Not deployed.
+
+## 2026-11-01 — FASHN/fal.ai REMOVED
+- fashn.py deleted, no fal.ai calls. Try-on back on Gemini Nano Banana (tryon_quality.render) with head_lock surgical freeze.
+- All render jobs (_start_render_job) now OWNER ONLY (403 for others, no credit used).
+- 1 test Avatar+black tee OK on face/legs/background; KNOWN BUG: surgical hand freeze box pastes a rectangle of original skin/tattoo over the new shirt (hand+phone area). Fix pending user approval.
+- Pending: seated mirror pose test, full outfit top+bottom+shoes.
