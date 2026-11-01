@@ -196,8 +196,8 @@ def _pose_composite(canvas: np.ndarray, res: np.ndarray, face: tuple, pads: tupl
                 continue
             same = float((diff[sel] < 20).mean())
             if same > 0.5:
-                if kind == "fore":
-                    ch[sel] = 0
+                if kind == "fore":  # bare forearm: only the arm skin itself (skin in photo and result), never the shirt beside it
+                    ch[sel & (_skin(canvas) > 0) & (_skin(res) > 0)] = 0
             else:
                 ch[sel] = 255
         del diff

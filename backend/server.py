@@ -3158,6 +3158,8 @@ async def _multipass_outfit(user: User, person_path: str, items: list, layer_ord
     except Exception as e:
         logger.error(f"multipass legs pass failed: {e}")
         raise HTTPException(status_code=502, detail="Prova non riuscita: premi Riprova. Nessuna prova scalata.")
+    with open(f"/tmp/legs_raw_{uuid.uuid4().hex[:6]}.png", "wb") as fh:  # kept for free offline re-merge checks
+        fh.write(res_bytes)
     res = np.array(Image.open(io.BytesIO(res_bytes)).convert("RGB"))
     reg = await run_in_threadpool(head_lock._register, crop, res)
     if reg is None:
@@ -3171,17 +3173,23 @@ async def _multipass_outfit(user: User, person_path: str, items: list, layer_ord
     am = await run_in_threadpool(pose_lock.arm_masks, orig)
     if am is not None:
         # Arms/hands resting on the legs keep the pass-1 sleeves and hands (the legs pass never repaints an elbow).
-        sleeve = (np.abs(base[Y0:Y1, X0:X1].astype(np.int16) - orig[Y0:Y1, X0:X1].astype(np.int16)).mean(axis=2) > 24).astype(np.uint8) * 255
-        strip = np.zeros(orig.shape[:2], np.uint8)
+        # CLEAN HAND EDGES: keep the exact arm/hand silhouette (skin segmentation, sharp edge), never a blurred halo strip.
+        sk = cv2.morphologyEx(head_lock._skin(crop), cv2.MORPH_OPEN, np.ones((3, 3), np.uint8)) > 0
+        sleeve = np.abs(crop.astype(np.int16) - orig[Y0:Y1, X0:X1].astype(np.int16)).mean(axis=2) > 24
+        keep = cv2.erode(((am[1][Y0:Y1, X0:X1] > 0) & sk).astype(np.uint8), np.ones((3, 3), np.uint8)) > 0
         for _, m in am[0]:
-            strip |= m
-        keep = cv2.dilate(np.maximum(strip[Y0:Y1, X0:X1] & sleeve, am[1][Y0:Y1, X0:X1]), np.ones((9, 9), np.uint8))
-        kw = cv2.GaussianBlur(keep, (0, 0), 2.0).astype(np.float32)[..., None] / 255
+            core = m[Y0:Y1, X0:X1] > 0
+            if not core.any():
+                continue
+            if sk[core].mean() <= 0.5:  # new sleeve over the legs (bare arms need no keep, the legs pass leaves them)
+                inner = cv2.erode(core.astype(np.uint8), np.ones((9, 9), np.uint8)) > 0
+                keep |= inner & sleeve  # new sleeve: inner part only, edges come from the legs pass
+        kw = cv2.GaussianBlur(keep.astype(np.uint8) * 255, (0, 0), 0.8).astype(np.float32)[..., None] / 255
         legs_out = (crop * kw + legs_out * (1 - kw)).astype(np.uint8)
     # CLEAN EDGES: only the legs/feet area of the skeleton takes the new pixels (background, mirror frame, floor objects stay
     # pixel-identical, no ghost lines), feathered; edges that touch the photo border stay hard.
     lm = pose_lock.legs_mask(kp, orig.shape)[Y0:Y1, X0:X1]
-    wgt = cv2.GaussianBlur(lm, (0, 0), max(3.0, 0.012 * max(cw_, ch_))).astype(np.float32) / 255
+    wgt = cv2.GaussianBlur(lm, (0, 0), 2.5).astype(np.float32) / 255
     f = max(8, int(0.06 * min(cw_, ch_)))
     ramp = np.linspace(0, 1, f, dtype=np.float32)
     if X0 > 0:
