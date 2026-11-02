@@ -452,7 +452,8 @@ def _register(canvas: np.ndarray, res: np.ndarray):
     if M is None or inl is None or int(inl.sum()) < 25:
         return None
     scale = float(np.hypot(M[0, 0], M[1, 0]))
-    if not (0.4 < scale < 2.5) or abs(np.degrees(np.arctan2(M[1, 0], M[0, 0]))) > 4:
+    ref = max(W / rw, H / rh)  # the model may answer at any resolution: judge the zoom relative to a plain fit
+    if not (0.4 < scale / ref < 2.5) or abs(np.degrees(np.arctan2(M[1, 0], M[0, 0]))) > 4:
         return None
     logger.info("head_lock: registered result scale=%.3f shift=(%.0f, %.0f) inliers=%d", scale, M[0, 2], M[1, 2], int(inl.sum()))
     return cv2.warpAffine(res, M, (W, H), flags=cv2.INTER_LANCZOS4, borderMode=cv2.BORDER_REPLICATE)

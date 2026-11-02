@@ -517,3 +517,8 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 - Ghost bands beside forearms: pass1 bare-forearm segment forced ch=0 on whole strip (incl. shirt beside arm) -> now only pixels skin in both photo and result.
 - Pass2 keep: hands = finger hull & skin (eroded, 0.8px feather); bare arms no keep; sleeves inner part only. Legs paste feather fixed 2.5px (sharp hem/pants edge).
 - Legs raw saved to /tmp/legs_raw_*.png. Offline pass1 check OK (side ghosts gone). Not verified with a new generation.
+
+## 2026-11-02 (16) — Hands halo
+- ROOT CAUSE: _register rejected any model output with a different resolution (scale range on absolute px) -> legs pass fell back to STRETCH resize -> misaligned hands/bed -> halos. Now scale judged relative to plain fit.
+- Pass2: no hand box lock; hand keep = finger hull (dilate 0.04 span) & skin & same-as-legs-pass (<40) ; legs mask dilated 0.5 thigh; feet radius 0.45 thigh.
+- Offline re-merge (raws in /app/memory/raw) of 23:59 crossed-legs camo result: halo under fingertips gone, shoes complete, bed seam gone; outfit 582858b4 result replaced (free).

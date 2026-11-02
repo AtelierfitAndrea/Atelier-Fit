@@ -141,7 +141,7 @@ def arm_masks(rgb: np.ndarray):
         one = np.zeros((H, W), np.uint8)
         cv2.fillConvexPoly(one, cv2.convexHull(np.int32(pts[:, :2])), 255)
         span = max(np.ptp(pts[:, 0]), np.ptp(pts[:, 1]))
-        hands |= cv2.dilate(one, np.ones((max(3, int(0.12 * span)),) * 2, np.uint8))
+        hands |= cv2.dilate(one, np.ones((max(3, int(0.04 * span)),) * 2, np.uint8))
     for sh, el, wr in ((5, 7, 9), (6, 8, 10)):
         if kp[sh, 2] < MIN_SCORE or kp[el, 2] < MIN_SCORE:
             continue
@@ -174,7 +174,7 @@ def legs_mask(kp: np.ndarray, shape) -> np.ndarray:
     for ank, feet in ((15, (17, 18, 19)), (16, (20, 21, 22))):
         pts = [kp[i, :2] for i in (ank, *feet) if ok(i)]
         for p in pts:
-            cv2.circle(m, tuple(np.int32(p)), max(8, int(0.3 * thigh)), 255, -1)
+            cv2.circle(m, tuple(np.int32(p)), max(8, int(0.45 * thigh)), 255, -1)
         if len(pts) >= 2:
             cv2.fillConvexPoly(m, cv2.convexHull(np.int32(pts)), 255)
     # Folded / crossed legs hide ankles and shins: the whole lower-body hull (hips, knees, any foot point seen) is trousers too,

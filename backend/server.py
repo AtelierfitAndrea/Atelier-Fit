@@ -3164,19 +3164,18 @@ async def _multipass_outfit(user: User, person_path: str, items: list, layer_ord
     reg = await run_in_threadpool(head_lock._register, crop, res)
     if reg is None:
         reg = cv2.resize(res, (cw_, ch_), interpolation=cv2.INTER_LANCZOS4)
-    info = await _hand_info(person_path, person_bytes)
-    fz = []
-    for b in info["boxes"]:  # hands inside the crop stay the original ones
-        by0, bx0, by1, bx1 = (v / 1000 for v in b)
-        fz.append((int(bx0 * w) - X0, int(by0 * h) - Y0, int(bx1 * w) - X0, int(by1 * h) - Y0, -1.0))
-    legs_out, frac = await run_in_threadpool(head_lock._pose_composite, crop, reg, None, (0, 0), [z for z in fz if z[2] > 0 and z[3] > 0 and z[0] < cw_ and z[1] < ch_])
+    # Hands are restored afterwards from the exact finger hull: no box lock here (it pasted skin under the fingertips).
+    legs_out, frac = await run_in_threadpool(head_lock._pose_composite, crop, reg, None, (0, 0), [])
     am = await run_in_threadpool(pose_lock.arm_masks, orig)
     if am is not None:
         # Arms/hands resting on the legs keep the pass-1 sleeves and hands (the legs pass never repaints an elbow).
         # CLEAN HAND EDGES: keep the exact arm/hand silhouette (skin segmentation, sharp edge), never a blurred halo strip.
         sk = cv2.morphologyEx(head_lock._skin(crop), cv2.MORPH_OPEN, np.ones((3, 3), np.uint8)) > 0
         sleeve = np.abs(crop.astype(np.int16) - orig[Y0:Y1, X0:X1].astype(np.int16)).mean(axis=2) > 24
-        keep = cv2.erode(((am[1][Y0:Y1, X0:X1] > 0) & sk).astype(np.uint8), np.ones((3, 3), np.uint8)) > 0
+        # Finger hull, but only where the legs pass shows the same hand (aligned): skin below the fingertips is not the hand.
+        same_hand = np.abs(cv2.GaussianBlur(crop, (0, 0), 1.2).astype(np.int16) - cv2.GaussianBlur(reg, (0, 0), 1.2).astype(np.int16)).mean(axis=2) < 40
+        keep = (am[1][Y0:Y1, X0:X1] > 0) & sk & same_hand
+        keep = cv2.morphologyEx(keep.astype(np.uint8), cv2.MORPH_CLOSE, np.ones((5, 5), np.uint8)) > 0
         for _, m in am[0]:
             core = m[Y0:Y1, X0:X1] > 0
             if not core.any():
@@ -3188,7 +3187,9 @@ async def _multipass_outfit(user: User, person_path: str, items: list, layer_ord
         legs_out = (crop * kw + legs_out * (1 - kw)).astype(np.uint8)
     # CLEAN EDGES: only the legs/feet area of the skeleton takes the new pixels (background, mirror frame, floor objects stay
     # pixel-identical, no ghost lines), feathered; edges that touch the photo border stay hard.
-    lm = pose_lock.legs_mask(kp, orig.shape)[Y0:Y1, X0:X1]
+    lm = pose_lock.legs_mask(kp, orig.shape)
+    thigh = max(10.0, float(np.hypot(*(kp[11, :2] - kp[13, :2]))))
+    lm = cv2.dilate(lm, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (int(0.5 * thigh) | 1,) * 2))[Y0:Y1, X0:X1]
     wgt = cv2.GaussianBlur(lm, (0, 0), 2.5).astype(np.float32) / 255
     f = max(8, int(0.06 * min(cw_, ch_)))
     ramp = np.linspace(0, 1, f, dtype=np.float32)
