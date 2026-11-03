@@ -5,7 +5,6 @@ import { I18nProvider } from "@/lib/i18n";
 import { SubscriptionProvider } from "@/lib/subscription";
 import { AvatarProvider } from "@/lib/avatar";
 import PaywallModal from "@/components/PaywallModal";
-import Landing from "@/pages/Landing";
 import AuthCallback from "@/pages/AuthCallback";
 import Dashboard from "@/pages/Dashboard";
 import Profile from "@/pages/Profile";
@@ -64,7 +63,7 @@ function AppRouter() {
   if (!user && location.pathname !== "/termini" && Date.now() < LAUNCH_AT) return <ComingSoon />;
   return (
     <Routes>
-      <Route path="/" element={<Landing />} />
+      <Route path="/" element={<MaintenancePage />} />
       <Route path="/termini" element={<Terms />} />
       <Route path="/dashboard" element={<Protected><Dashboard /></Protected>} />
       <Route path="/profile" element={<Protected><Profile /></Protected>} />
