@@ -25,6 +25,7 @@ import Support from "@/pages/Support";
 import PaymentResult from "@/pages/PaymentResult";
 import Renew from "@/pages/Renew";
 import TestPose from "@/pages/TestPose";
+import MaintenancePage from "@/pages/MaintenancePage";
 import SessionRevokedNotice from "@/components/SessionRevokedNotice";
 import "@/App.css";
 
@@ -47,6 +48,7 @@ function Protected({ children }) {
 function AppRouter() {
   const location = useLocation();
   const { user, loading } = useAuth();
+  return <MaintenancePage />;
   if (location.hash?.includes("session_id=")) {
     return <AuthCallback />;
   }
