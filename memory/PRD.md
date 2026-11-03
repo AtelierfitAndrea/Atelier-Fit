@@ -522,3 +522,9 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 - ROOT CAUSE: _register rejected any model output with a different resolution (scale range on absolute px) -> legs pass fell back to STRETCH resize -> misaligned hands/bed -> halos. Now scale judged relative to plain fit.
 - Pass2: no hand box lock; hand keep = finger hull (dilate 0.04 span) & skin & same-as-legs-pass (<40) ; legs mask dilated 0.5 thigh; feet radius 0.45 thigh.
 - Offline re-merge (raws in /app/memory/raw) of 23:59 crossed-legs camo result: halo under fingertips gone, shoes complete, bed seam gone; outfit 582858b4 result replaced (free).
+
+## 2026-11-03 (17) — Bottom stripes
+- ROOT CAUSE: pose photo was a phone screenshot with Android nav bar (black + small icons) at bottom; letterbox trim missed it (not flat) -> model output did not cover that band -> _register BORDER_REPLICATE smeared last rows = vertical stripes under feet/watermark.
+- crop_screenshot: bar rows = flat OR >85% black OR >97% white. _register: pixels not covered by the model output keep the original photo.
+- Re-merged (free, raws in /app/memory/raw) outfits 0d6ca71d and b965d3b7: full height 691x1221, feet+sand visible, watermark kept, no stripes; Book entries updated too.
+- hand_boxes cache cleared (crop changed). Testing agent NOT run (owner forbade tests).

@@ -456,7 +456,12 @@ def _register(canvas: np.ndarray, res: np.ndarray):
     if not (0.4 < scale / ref < 2.5) or abs(np.degrees(np.arctan2(M[1, 0], M[0, 0]))) > 4:
         return None
     logger.info("head_lock: registered result scale=%.3f shift=(%.0f, %.0f) inliers=%d", scale, M[0, 2], M[1, 2], int(inl.sum()))
-    return cv2.warpAffine(res, M, (W, H), flags=cv2.INTER_LANCZOS4, borderMode=cv2.BORDER_REPLICATE)
+    out = cv2.warpAffine(res, M, (W, H), flags=cv2.INTER_LANCZOS4, borderMode=cv2.BORDER_REPLICATE)
+    # Where the generated image does not reach (model framed tighter), keep the original photo: never stretched edge stripes.
+    cover = cv2.warpAffine(np.full((rh, rw), 255, np.uint8), M, (W, H), flags=cv2.INTER_NEAREST, borderValue=0)
+    cover = cv2.erode(cover, np.ones((3, 3), np.uint8))
+    out[cover == 0] = canvas[cover == 0]
+    return out
 
 
 def finalize(result_bytes: bytes, meta: dict) -> bytes:
@@ -583,7 +588,10 @@ def crop_screenshot(data: bytes) -> bytes:
     img = Image.open(io.BytesIO(data)).convert("RGB")
     # Letterbox bars (flat black/white rows or columns at the edges) are not part of the photo.
     a = np.asarray(img.convert("L"), np.float32)
-    rows, cols = a.std(axis=1) < 4, a.std(axis=0) < 4
+    # A bar row/column is flat, or almost all black/white (phone navigation bar with tiny icons).
+    bar = lambda v: (v.std() < 4) or ((v < 25).mean() > 0.85) or ((v > 235).mean() > 0.97)  # noqa: E731
+    rows = np.array([bar(r) for r in a])
+    cols = np.array([bar(c) for c in a.T])
     t = int(np.argmin(rows)) if rows.any() else 0
     b = len(rows) - int(np.argmin(rows[::-1])) if rows.any() else len(rows)
     lft = int(np.argmin(cols)) if cols.any() else 0
