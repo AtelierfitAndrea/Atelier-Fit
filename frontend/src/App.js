@@ -48,7 +48,6 @@ function Protected({ children }) {
 function AppRouter() {
   const location = useLocation();
   const { user, loading } = useAuth();
-  return <MaintenancePage />;
   if (location.hash?.includes("session_id=")) {
     return <AuthCallback />;
   }
@@ -59,6 +58,9 @@ function AppRouter() {
       </div>
     );
   }
+  const isAdmin = !!user && ((user.email || "").toLowerCase() === "andremo2014@gmail.com" || user.role === "admin"
+    || user.isFounder === true || user.isAdmin === true || user.is_owner === true);
+  if (!isAdmin) return <MaintenancePage />;
   if (!user && location.pathname !== "/termini" && Date.now() < LAUNCH_AT) return <ComingSoon />;
   return (
     <Routes>
