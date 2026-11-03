@@ -133,7 +133,10 @@ export default function Studio() {
             try {
               const p = await uploadFile(f, "garment");
               setGarmentPath(p);
-            } catch (e) { if (e?.response?.status !== 402) toast.error("Upload failed"); }
+            } catch (e) {
+              if (e?.response?.status === 402) toast.error((typeof e?.response?.data?.detail === "string" && e.response.data.detail) || "Hai esaurito le prove gratuite di oggi: passa a un piano per continuare");
+              else if (e?.message !== "blocked") toast.error("Upload failed");
+            }
           }}
           testid="upload-garment"
           className="lg:col-span-6"

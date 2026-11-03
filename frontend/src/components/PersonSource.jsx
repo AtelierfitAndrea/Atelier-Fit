@@ -50,7 +50,10 @@ export default function PersonSource({ mode, setMode, posePath, setPosePath, upl
     try {
       const p = await uploadFile(f, "person");
       if (await faceOk(p)) { setPosePath(p); setAsking(p); }
-    } catch (e) { if (e?.message !== "blocked" && e?.response?.status !== 402) toast.error("Caricamento non riuscito"); }
+    } catch (e) {
+      if (e?.response?.status === 402) toast.error((typeof e?.response?.data?.detail === "string" && e.response.data.detail) || "Hai esaurito le prove gratuite di oggi: passa a un piano per continuare");
+      else if (e?.message !== "blocked") toast.error("Caricamento non riuscito");
+    }
     finally { setBusy(false); }
   };
   // Credit saver: the face must be clearly visible before any try-on can start.

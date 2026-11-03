@@ -920,7 +920,8 @@ async def get_subscription_status(user_id: str) -> dict:
     used = int(daily.get("used", 0) or 0) if daily.get("day") == today else 0
     boost = user_doc.get("boost") or {}
     boost_credits = int(boost.get("credits", 0) or 0) if boost.get("day") == today else 0
-    if plan in ("SINGLE", "FAMILY") or honeymoon_active:
+    if plan in ("SINGLE", "FAMILY") or honeymoon_active or _is_owner_email(user_doc.get("email")):
+        # Owner emails: never blocked, no limit.
         limit = None
         remaining = None
         is_blocked = False
