@@ -528,3 +528,9 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 - crop_screenshot: bar rows = flat OR >85% black OR >97% white. _register: pixels not covered by the model output keep the original photo.
 - Re-merged (free, raws in /app/memory/raw) outfits 0d6ca71d and b965d3b7: full height 691x1221, feet+sand visible, watermark kept, no stripes; Book entries updated too.
 - hand_boxes cache cleared (crop changed). Testing agent NOT run (owner forbade tests).
+
+## 2026-11-03 (18) — Heel cut + bag halo
+- multipass: feet >92% of height + shoes -> +8% floor (pass1 canvas extend, orig replicate); uncovered floor inpainted, and if the model drew no floor the image is cut just below the new shoes.
+- BAG IN HAND (bag in uppers): no original hand/forearm paste in pass1 (arms hands zero, fore segs dropped) and no hand keep in pass2 -> no ghost hand on bag.
+- head_lock arms: hand kept only where result still shows that hand.
+- Re-merged 35b100a6 (free): full red heels, clean bag corner, watermark kept (691x1245). No tests per owner.

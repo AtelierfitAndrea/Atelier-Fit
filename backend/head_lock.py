@@ -201,7 +201,9 @@ def _pose_composite(canvas: np.ndarray, res: np.ndarray, face: tuple, pads: tupl
             else:
                 ch[sel] = 255
         del diff
-        ch[(hands > 0) | (head > 0) | (zone > 0)] = 0
+        # The hand stays original only where the result still shows that hand (a bag or new grip there comes from the model).
+        hand_here = (hands > 0) & (_skin(canvas) > 0) & ((_skin(res) > 0) | (np.abs(canvas.astype(np.int16) - res.astype(np.int16)).mean(axis=2) < 40))
+        ch[hand_here | (head > 0) | (zone > 0)] = 0
     # Top/bottom pad bands are not part of the photo: always the model's continuation of the scene.
     if pads[0]:
         ch[:pads[0]] = 255

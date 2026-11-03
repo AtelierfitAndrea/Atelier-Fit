@@ -3110,13 +3110,32 @@ async def _multipass_outfit(user: User, person_path: str, items: list, layer_ord
     person_bytes = await run_in_threadpool(head_lock.crop_screenshot, person_bytes)
     orig = np.array(head_lock._open_small(person_bytes, head_lock.PERSON_OUT_SIDE).convert("RGB"))
     h, w = orig.shape[:2]
+    ext_flat = False
+    kp0 = await run_in_threadpool(pose_lock.keypoints, orig)
+    # Feet at the bottom edge + shoes: give the photo a little floor below so heels are never cut by the frame.
+    feet_y = [kp0[i, 1] for i in range(15, 23) if kp0 is not None and kp0[i, 2] > pose_lock.MIN_SCORE]
+    ext = int(0.08 * h) if uppers and feet_y and max(feet_y) > 0.92 * h and any((g.get("category") or "").lower() == "shoes" for g in lowers) else 0
+    bag = any((g.get("category") or "").lower() == "bag" for g in uppers)
+    if bag:
+        extra += "\nBAG IN HAND: the requested bag is carried naturally in one hand; that hand may change its grip to hold it.\n"
     if uppers:
-        _, p1 = await _compose_outfit(user, person_path, uppers, layer_order_text, extra, raw=True)
+        _, p1 = await _compose_outfit(user, person_path, uppers, layer_order_text, extra, raw=True, extend=ext / h)
         top = max(head_lock.TOP_PAD_MIN_PX, int(h * head_lock.TOP_PAD_RATIO))
-        base = np.array(Image.open(io.BytesIO(p1)).convert("RGB"))[top:top + h]
-        if base.shape[:2] != (h, w):
-            base = cv2.resize(base, (w, h), interpolation=cv2.INTER_LANCZOS4)
+        base = np.array(Image.open(io.BytesIO(p1)).convert("RGB"))[top:top + h + ext]
+        if base.shape[:2] != (h + ext, w):
+            base = cv2.resize(base, (w, h + ext), interpolation=cv2.INTER_LANCZOS4)
         del p1
+        if ext:
+            logger.info(f"multipass: +{ext}px floor below the feet")
+            # Floor rows the model did not draw (still the flat pad colour) are filled smoothly from the floor around them.
+            band = base[h - 6:]
+            flat = (np.abs(band.astype(np.int16) - np.median(base[h:].reshape(-1, 3), axis=0).astype(np.int16)).max(axis=2) < 6).astype(np.uint8)
+            flat[:6] = 0
+            ext_flat = flat.mean() > 0.5
+            if flat.any():
+                base[h - 6:] = cv2.inpaint(np.ascontiguousarray(band), cv2.dilate(flat, np.ones((3, 3), np.uint8)), 7, cv2.INPAINT_TELEA)
+            orig = cv2.copyMakeBorder(orig, 0, ext, 0, 0, cv2.BORDER_REPLICATE)
+            h += ext
     else:
         base = orig.copy()
     kp = await run_in_threadpool(pose_lock.keypoints, orig)
@@ -3175,7 +3194,7 @@ async def _multipass_outfit(user: User, person_path: str, items: list, layer_ord
         sleeve = np.abs(crop.astype(np.int16) - orig[Y0:Y1, X0:X1].astype(np.int16)).mean(axis=2) > 24
         # Finger hull, but only where the legs pass shows the same hand (aligned): skin below the fingertips is not the hand.
         same_hand = np.abs(cv2.GaussianBlur(crop, (0, 0), 1.2).astype(np.int16) - cv2.GaussianBlur(reg, (0, 0), 1.2).astype(np.int16)).mean(axis=2) < 40
-        keep = (am[1][Y0:Y1, X0:X1] > 0) & sk & same_hand
+        keep = (am[1][Y0:Y1, X0:X1] > 0) & sk & same_hand & (not bag)
         keep = cv2.morphologyEx(keep.astype(np.uint8), cv2.MORPH_CLOSE, np.ones((5, 5), np.uint8)) > 0
         for _, m in am[0]:
             core = m[Y0:Y1, X0:X1] > 0
@@ -3204,6 +3223,11 @@ async def _multipass_outfit(user: User, person_path: str, items: list, layer_ord
         wgt[-f:, :] *= ramp[::-1][:, None]
     final = base.copy()
     final[Y0:Y1, X0:X1] = cv2.blendLinear(legs_out, base[Y0:Y1, X0:X1], wgt, 1 - wgt)
+    if ext_flat:
+        # The model drew no floor below the feet: keep only a thin margin under the new shoes instead of a smeared band.
+        rows = np.where(cv2.cvtColor(np.abs(final.astype(np.int16) - base.astype(np.int16)).astype(np.uint8), cv2.COLOR_RGB2GRAY)[Y0:Y1].max(axis=1) > 40)[0]
+        cut = min(h, Y0 + int(rows.max()) + int(0.006 * h)) if len(rows) else h - ext
+        final, orig = final[:cut], orig[:cut]
     dev = await run_in_threadpool(pose_lock.deviation, orig, final)
     logger.info(f"multipass legs changed={frac:.2f} pose deviation={dev}")
     out = io.BytesIO()
@@ -3214,7 +3238,8 @@ async def _multipass_outfit(user: User, person_path: str, items: list, layer_ord
     return result_path
 
 
-async def _compose_outfit(user: User, person_path: Optional[str], items: list, layer_order_text: str = _DEFAULT_LAYER_TEXT, extra: str = "", raw: bool = False):
+async def _compose_outfit(user: User, person_path: Optional[str], items: list, layer_order_text: str = _DEFAULT_LAYER_TEXT, extra: str = "", raw: bool = False,
+                          extend: float = 0.0):
     """Layer the given garment images on the user's base photo; returns (person_path, result_path)."""
     # Resolve person photo — prefer explicit path, else latest person file for the user
     if not person_path:
@@ -3243,7 +3268,7 @@ async def _compose_outfit(user: User, person_path: Optional[str], items: list, l
                                                        [g.get("category") for g in items], surgical)
     extra += phone_txt + (HALF_BODY_RULE if half else "")
     canvas_bytes, lock = await run_in_threadpool(head_lock.prepare, person_bytes, any(head_lock.is_long(g.get("category"), g.get("name") or "") for g in items), boxes, keep, posed, freeze,
-                                                 HALF_EXTEND if half else 0.0)
+                                                 HALF_EXTEND if half else extend)
     file_contents = [ImageContent(base64.b64encode(canvas_bytes).decode("utf-8"))]
     del person_bytes, canvas_bytes
     layer_lines = []

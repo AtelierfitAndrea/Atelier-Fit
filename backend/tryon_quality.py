@@ -243,6 +243,10 @@ async def render(system: str, prompt: str, contents: list, lock: dict, garments_
     snap = _snapshot(base)
     if surgical and snap["pose"]:
         snap["arms"] = await run_in_threadpool(pose_lock.arm_masks, base["canvas"])
+        if snap["arms"] is not None and "BAG IN HAND" in prompt:
+            # Carrying a bag is the one case where hand and forearm may change: no original hand/forearm pasted (no ghost hand).
+            segs, hands = snap["arms"]
+            snap["arms"] = ([sg for sg in segs if sg[0] == "upper"], np.zeros_like(hands))
     out = await run_in_threadpool(head_lock.finalize, raw, snap)
     if surgical:
         # STOP rule: exactly ONE generation, no regeneration, no automatic fix loop. Not usable -> error, no credit.
