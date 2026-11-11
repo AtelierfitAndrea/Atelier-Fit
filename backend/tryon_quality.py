@@ -128,7 +128,8 @@ async def _qc(person_b64: str, result: bytes, garments_txt: str, phone: bool = F
         "False if IMAGE 2 still shows the ORIGINAL garment of IMAGE 1 where an expected garment should be (e.g. old long jeans instead of the expected shorts) — "
         "name it in issues as 'missing garment: ...'. "
         "ALSO False if a long trouser/jeans garment is expected but bare skin shows anywhere between the waist and the ankles "
-        "(faded or washed denim is fabric, not skin) — unless the expected garment is shorts, a skirt or explicitly ripped/distressed; "
+        "(faded or washed denim is fabric, not skin) — unless the expected garment is shorts or a skirt. Ripped, frayed or distressed LONG trousers must still be fully covered: "
+        "holes or rips showing skin are bare legs; "
         "name it in issues as 'bare legs: ...'."
     )
     chat = LlmChat(api_key=os.environ["EMERGENT_LLM_KEY"], session_id=f"qc-{uuid.uuid4().hex[:8]}",
@@ -212,7 +213,7 @@ async def legs_qc(crop_png: bytes, expect_untucked: bool, skin_ok: bool, garment
         "Return ONLY JSON: {\"bare_legs\": bool, \"shirt_tucked\": bool, \"issues\": \"short English list\"}\n"
         "bare_legs: true if bare skin is visible anywhere between the waistband and the ankles, i.e. the trousers are missing, transparent, "
         "cut off or have holes. Faded, washed, bleached, acid-wash, painted or printed fabric is NOT skin (false). "
-        + ("Shorts, skirts and ripped jeans may legitimately show skin: answer false for them.\n" if skin_ok else "\n")
+        + ("Shorts and skirts may legitimately show skin: answer false for them. Long trousers or jeans, even ripped or distressed, must never show skin through rips: answer true if they do.\n" if skin_ok else "\n")
         + "shirt_tucked: true if the shirt/top hem is tucked INSIDE the trousers (false if it hangs outside or no shirt is visible)."
     )
     try:
@@ -335,7 +336,7 @@ async def render(system: str, prompt: str, contents: list, lock: dict, garments_
             # Half-body: the photo has no legs, so there is no original skin to compare with (free check impossible).
             # AI check only, one-shot rule kept: it is logged, never blocks, never regenerates.
             try:
-                skin_ok = bool(RIPPED_WORDS.search(garments_txt) or BARE_LEG_WORDS.search(garments_txt))
+                skin_ok = bool(BARE_LEG_WORDS.search(garments_txt))
                 q = await legs_qc(await run_in_threadpool(head_lock.downscale, out, head_lock.GARMENT_MAX_SIDE), False, skin_ok, garments_txt)
                 log_legs_outcome("half_body", "delivered_with_warning" if q["bare_legs"] else "pass", tag=tag, ai_bare=q["bare_legs"], issues=q["issues"], skin_ok=skin_ok)
             except Exception as e:

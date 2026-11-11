@@ -3098,6 +3098,7 @@ LEGS_PASS_RULE = (
     "• Trousers: solid opaque fabric fully covering hips, thighs and legs down to the shoes, realistic size and fit for this body, waistband under "
     "the shirt hem, no holes or skin showing (bare legs in IMAGE 1 become fully dressed). Faded, washed, bleached, acid-wash, stone-wash, "
     "distressed-looking colour or painted/printed areas are FABRIC COLOUR: draw them as solid opaque cloth, never as holes or skin. "
+    "Rips, fraying, fading, paint and worn fabric on LONG trousers are rendered as fabric texture only (threads, frayed edges, lighter denim), never skin-coloured holes. "
     "Crossed / folded legs: realistic draping and folds over "
     "the crossed knees and shins, each leg dressed separately, no bare skin between them.\n"
     "• Shoes: each shoe exactly on that foot, anchored to the ankle, real scale, sole on the surface the foot touches, natural contact shadow.\n"
@@ -3116,7 +3117,8 @@ LEGS_SKIN_MAX = 0.2  # share of the original bare-leg skin that may still show b
 LEGS_FIX_RULE = (
     "\nCORRECTION — THE PREVIOUS ATTEMPT WAS REJECTED: {issues}\n"
     "• Redo the legs: the requested trousers are solid opaque fabric from the waistband down to the ankles on BOTH legs, no skin anywhere "
-    "between waist and ankle, even where the fabric is faded, washed or bleached (that is only a lighter fabric colour).\n"
+    "between waist and ankle, even where the fabric is faded, washed or bleached (that is only a lighter fabric colour). "
+    "Rips and fraying on long trousers are fabric texture only (threads, frayed edges, lighter denim), never skin-coloured holes.\n"
     "{tuck}"
 )
 
@@ -3126,8 +3128,8 @@ def _bottom_text(g: dict) -> str:
 
 
 def _skin_allowed(lowers: list) -> bool:
-    """Skin between waist and ankle is legitimate only for shorts/skirts or an explicitly ripped/distressed garment."""
-    return any(_RIPPED_WORDS.search(_bottom_text(g)) or _BARE_LEG_WORDS.search(_bottom_text(g)) for g in lowers if (g.get("category") or "").lower() == "bottom")
+    """Skin between waist and ankle is legitimate only for shorts/skirts. Ripped/distressed long trousers stay fully covered."""
+    return any(_BARE_LEG_WORDS.search(_bottom_text(g)) for g in lowers if (g.get("category") or "").lower() == "bottom")
 
 
 def _bare_legs_by_design(lowers: list) -> bool:
@@ -3246,7 +3248,7 @@ async def _multipass_outfit(user: User, person_path: str, items: list, layer_ord
     skin_ok = _skin_allowed(lowers)
     expect_untucked = _tuck_rule(items).startswith("UNTUCKED")
     garments_txt = "; ".join(f"{g.get('category')}: {g.get('brand') or ''} {g.get('name') or ''}".strip() for g in lowers)
-    prompt += ("This garment is ripped / short: skin may show only where the product shot shows it.\n" if skin_ok
+    prompt += ("This garment is short (shorts/skirt): skin may show only where the product shot shows it.\n" if skin_ok
                else "NO skin may show between the waist and the ankles: the trousers cover both legs completely.\n")
     if bottoms and expect_untucked:
         prompt += "The shirt hem stays OUTSIDE the trousers exactly as in IMAGE 1 (never tucked in).\n"

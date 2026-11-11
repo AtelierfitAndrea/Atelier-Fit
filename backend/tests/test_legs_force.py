@@ -1,4 +1,4 @@
-# Legs pass: bottom garments never keep original (bare skin) pixels inside the trouser zone; skin stays allowed for ripped/shorts.
+# Legs pass: bottom garments never keep original (bare skin) pixels inside the trouser zone; skin stays allowed only for shorts/skirts.
 import os
 import sys
 
@@ -48,7 +48,7 @@ def test_skin_left_metric_flags_bare_legs_and_ignores_dressed_legs():
     assert tryon_quality.legs_skin_left(dressed, dressed, ZONE) == -1.0
 
 
-def test_skin_allowed_only_for_ripped_or_short_garments():
+def test_skin_allowed_only_for_short_garments():
     os.environ.setdefault("MONGO_URL", "mongodb://localhost:27017")
     os.environ.setdefault("DB_NAME", "test")
     import server
@@ -56,8 +56,11 @@ def test_skin_allowed_only_for_ripped_or_short_garments():
     assert not server._skin_allowed(g("Moorer slim jeans"))
     assert not server._skin_allowed(g("ICON black faded jeans"))
     assert not server._skin_allowed(g("washed bleached acid wash jeans"))
-    assert server._skin_allowed(g("ICON ripped black jeans"))
-    assert server._skin_allowed(g("Jeans strappati"))
+    assert not server._skin_allowed(g("ICON ripped black jeans"))
+    assert not server._skin_allowed(g("Jeans strappati"))
+    assert not server._skin_allowed(g("distressed destroyed jeans"))
+    assert server._skin_allowed(g("ripped denim shorts"))
+    assert server._skin_allowed(g("Gonna strappata"))
     assert server._skin_allowed(g("Denim shorts"))
     assert server._bare_legs_by_design(g("Bermuda cotone")) and not server._bare_legs_by_design(g("ripped jeans"))
 
