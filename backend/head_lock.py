@@ -131,9 +131,11 @@ def _head_zones(head: np.ndarray, zone: np.ndarray, face: tuple) -> None:
     zone[int(fy + fh * 0.95):] = 0
 
 
-def _pose_composite(canvas: np.ndarray, res: np.ndarray, face: tuple, pads: tuple = (0, 0), freeze: list = (), arms=None):
+def _pose_composite(canvas: np.ndarray, res: np.ndarray, face: tuple, pads: tuple = (0, 0), freeze: list = (), arms=None, force: np.ndarray = None):
     """FACE LOCK for posed photos: original pixels everywhere, generated pixels ONLY where the clothes changed.
-    Head (hair, ears, glasses, face) is never taken from the model. Returns (image, changed_fraction)."""
+    Head (hair, ears, glasses, face) is never taken from the model. Returns (image, changed_fraction).
+    `force` (uint8 mask, same size): pixels that are ALWAYS the generated ones, whatever the colour distance says
+    (bottom garments: a faded / skin-toned pair must never fall back to the original bare legs)."""
     H, W = canvas.shape[:2]
     s = 512 / max(H, W)
     sw, sh = int(W * s), int(H * s)
@@ -204,6 +206,8 @@ def _pose_composite(canvas: np.ndarray, res: np.ndarray, face: tuple, pads: tupl
         # The hand stays original only where the result still shows that hand (a bag or new grip there comes from the model).
         hand_here = (hands > 0) & (_skin(canvas) > 0) & ((_skin(res) > 0) | (np.abs(canvas.astype(np.int16) - res.astype(np.int16)).mean(axis=2) < 40))
         ch[hand_here | (head > 0) | (zone > 0)] = 0
+    if force is not None:
+        ch[(force > 0) & (head == 0) & (zone == 0)] = 255
     # Top/bottom pad bands are not part of the photo: always the model's continuation of the scene.
     if pads[0]:
         ch[:pads[0]] = 255

@@ -158,6 +158,40 @@ def arm_masks(rgb: np.ndarray):
     return segs, hands
 
 
+def feet_zone(kp: np.ndarray, shape) -> np.ndarray:
+    """Ankles and feet (disk + hull around every ankle/foot point): below this line the shoe slot rules apply, not the trousers."""
+    H, W = shape[:2]
+    m = np.zeros((H, W), np.uint8)
+    ok = lambda i: kp[i, 2] > MIN_SCORE  # noqa: E731
+    thigh = max([float(np.hypot(*(kp[a, :2] - kp[b, :2]))) for a, b in ((11, 13), (12, 14)) if ok(a) and ok(b)] or [0.25 * H])
+    for ank, feet in ((15, (17, 18, 19)), (16, (20, 21, 22))):
+        pts = [kp[i, :2] for i in (ank, *feet) if ok(i)]
+        for p in pts:
+            cv2.circle(m, tuple(np.int32(p)), max(8, int(0.45 * thigh)), 255, -1)
+        if len(pts) >= 2:
+            cv2.fillConvexPoly(m, cv2.convexHull(np.int32(pts)), 255)
+    return m
+
+
+def trouser_core(kp: np.ndarray, shape) -> np.ndarray:
+    """Hip -> knee -> ankle centre strips (about leg width, no background), feet and waist band excluded:
+    the part of the body a long bottom garment must always cover."""
+    H, W = shape[:2]
+    m = np.zeros((H, W), np.uint8)
+    ok = lambda i: kp[i, 2] > MIN_SCORE  # noqa: E731
+    thigh = max([float(np.hypot(*(kp[a, :2] - kp[b, :2]))) for a, b in ((11, 13), (12, 14)) if ok(a) and ok(b)] or [0.25 * H])
+    t = max(6, int(0.3 * thigh))
+    for chain in ((11, 13, 15), (12, 14, 16)):
+        pts = [kp[i, :2] for i in chain if ok(i)]
+        if len(pts) >= 2:
+            cv2.polylines(m, [np.int32(pts)], False, 255, t, cv2.LINE_AA)
+    # Shoes/feet are the shoe slot's business: cut a disk around every ankle and foot point.
+    for pts in ([kp[i, :2] for i in (15, 17, 18, 19) if ok(i)], [kp[i, :2] for i in (16, 20, 21, 22) if ok(i)]):
+        for p in pts:
+            cv2.circle(m, tuple(np.int32(p)), max(8, int(0.3 * thigh)), 0, -1)
+    return m
+
+
 def legs_mask(kp: np.ndarray, shape) -> np.ndarray:
     """Where trousers and shoes can be: thick hip->knee->ankle->foot strips + feet, from the original skeleton."""
     H, W = shape[:2]

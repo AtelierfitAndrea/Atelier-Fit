@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import re
+import time
 import uuid
 
 import numpy as np
@@ -125,7 +126,10 @@ async def _qc(person_b64: str, result: bytes, garments_txt: str, phone: bool = F
         "hands_ok: every visible hand has exactly 5 well-formed fingers, no fused/extra/missing fingers (true if no hand is visible).\n"
         "garments_ok: every expected garment is worn with its colour, logo and pattern intact and no expected garment is missing. "
         "False if IMAGE 2 still shows the ORIGINAL garment of IMAGE 1 where an expected garment should be (e.g. old long jeans instead of the expected shorts) — "
-        "name it in issues as 'missing garment: ...'."
+        "name it in issues as 'missing garment: ...'. "
+        "ALSO False if a long trouser/jeans garment is expected but bare skin shows anywhere between the waist and the ankles "
+        "(faded or washed denim is fabric, not skin) — unless the expected garment is shorts, a skirt or explicitly ripped/distressed; "
+        "name it in issues as 'bare legs: ...'."
     )
     chat = LlmChat(api_key=os.environ["EMERGENT_LLM_KEY"], session_id=f"qc-{uuid.uuid4().hex[:8]}",
                    system_message="You are a strict photo quality inspector. Reply with JSON only.")
@@ -154,6 +158,74 @@ async def _qc(person_b64: str, result: bytes, garments_txt: str, phone: bool = F
         # Phone removal requested: a candidate still showing a phone is never acceptable.
         return {"ok": False, "score": -1, "issues": ("smartphone still visible — remove it; " + issues)[:400]}
     return {"ok": face and hands and garments, "score": 3 * garments + 3 * face + 2 * hands, "issues": issues}
+
+
+RIPPED_WORDS = re.compile(r"\b(rip(ped)?|distress(ed)?|destroyed|torn|strappat\w*|strappi|rott[oi]|stracciat\w*)\b", re.I)
+BARE_LEG_WORDS = re.compile(r"\b(shorts?|bermuda|pantaloncin\w*|hot ?pants|skirt|gonna|minigonna|mini ?skirt|culottes?)\b", re.I)
+metric_sink = None  # set by server: callable(dict) that stores the event (legs_qc_events collection)
+
+
+def log_legs_outcome(path: str, outcome: str, **kw) -> None:
+    """One structured line (+ DB event when a sink is set) per legs-QC decision, to tune the thresholds later.
+    outcome: pass | corrected | blocked | delivered_with_warning. path: multipass | fallback | half_body."""
+    ev = {"path": path, "outcome": outcome, "at": time.time(), **kw}
+    logger.info("LEGS_QC " + json.dumps(ev, default=str))
+    if metric_sink:
+        try:
+            metric_sink(ev)
+        except Exception as e:  # metrics never break a render
+            logger.warning(f"legs qc metric sink failed: {e}")
+
+
+def band_skin_left(orig: np.ndarray, result: np.ndarray, top: float = 0.5) -> float:
+    """Keypoint-free variant of legs_skin_left for photos without readable legs: lower part of the frame only.
+    Returns -1.0 when the original shows too little skin there to judge."""
+    H = orig.shape[0]
+    y0 = int(H * top)
+    zone = np.zeros(orig.shape[:2], bool)
+    zone[y0:] = True
+    sk = (head_lock._skin(orig) > 0) & zone
+    if sk.sum() < LEGS_BAND_MIN_SKIN * zone.sum():
+        return -1.0
+    return float(((head_lock._skin(result) > 0) & sk).sum() / sk.sum())
+
+
+LEGS_BAND_MIN_SKIN = 0.08  # original skin must cover this share of the lower half before the keypoint-free check judges
+LEGS_BAND_SKIN_MAX = 0.5   # looser than the keypoint check (0.2): hands and bare feet also count as skin in a plain band
+
+
+def legs_skin_left(final: np.ndarray, base: np.ndarray, zone: np.ndarray, hold: np.ndarray = None) -> float:
+    """Deterministic, free check: share of the original bare-leg skin (inside `zone`) that is still skin in the result.
+    Returns -1.0 when the original had too little bare skin there to judge (person already in trousers)."""
+    sk_base = (head_lock._skin(base) > 0) & (zone > 0)
+    if hold is not None:
+        sk_base &= ~(hold > 0)
+    if sk_base.sum() < 0.03 * max(1, int((zone > 0).sum())):
+        return -1.0
+    return float(((head_lock._skin(final) > 0) & sk_base).sum() / sk_base.sum())
+
+
+async def legs_qc(crop_png: bytes, expect_untucked: bool, skin_ok: bool, garments_txt: str) -> dict:
+    """Blocking QC for the legs pass: skin between waist and ankle, tucked-in shirt. A QC outage never blocks."""
+    prompt = (
+        f"IMAGE 1 is a crop (waist to feet) of an AI virtual try-on. Expected bottom/shoes: {garments_txt}.\n"
+        "Return ONLY JSON: {\"bare_legs\": bool, \"shirt_tucked\": bool, \"issues\": \"short English list\"}\n"
+        "bare_legs: true if bare skin is visible anywhere between the waistband and the ankles, i.e. the trousers are missing, transparent, "
+        "cut off or have holes. Faded, washed, bleached, acid-wash, painted or printed fabric is NOT skin (false). "
+        + ("Shorts, skirts and ripped jeans may legitimately show skin: answer false for them.\n" if skin_ok else "\n")
+        + "shirt_tucked: true if the shirt/top hem is tucked INSIDE the trousers (false if it hangs outside or no shirt is visible)."
+    )
+    try:
+        chat = LlmChat(api_key=os.environ["EMERGENT_LLM_KEY"], session_id=f"legsqc-{uuid.uuid4().hex[:8]}",
+                       system_message="You are a strict photo quality inspector. Reply with JSON only.")
+        chat.with_model("gemini", QC_MODEL)
+        d = _extract(await chat.send_message(UserMessage(text=prompt, file_contents=[ImageContent(base64.b64encode(crop_png).decode())])))
+    except Exception as e:
+        logger.warning(f"legs qc failed, not blocking: {e}")
+        return {"bare_legs": False, "shirt_tucked": False, "issues": ""}
+    return {"bare_legs": d.get("bare_legs") is True and not skin_ok,
+            "shirt_tucked": d.get("shirt_tucked") is True and expect_untucked,
+            "issues": str(d.get("issues") or "")[:300]}
 
 
 def _trim_pad_bands(im: Image.Image, pads=None) -> Image.Image:
@@ -259,6 +331,15 @@ async def render(system: str, prompt: str, contents: list, lock: dict, garments_
         del raw, contents, base
         # Owner request: no automatic rejection on pose/scene checks, values are only logged.
         logger.info(f"{tag}: pose_fail={snap.get('pose_fail')} (not blocking)")
+        if "HALF-BODY PHOTO" in prompt and re.search(r"\bbottom:", garments_txt):
+            # Half-body: the photo has no legs, so there is no original skin to compare with (free check impossible).
+            # AI check only, one-shot rule kept: it is logged, never blocks, never regenerates.
+            try:
+                skin_ok = bool(RIPPED_WORDS.search(garments_txt) or BARE_LEG_WORDS.search(garments_txt))
+                q = await legs_qc(await run_in_threadpool(head_lock.downscale, out, head_lock.GARMENT_MAX_SIDE), False, skin_ok, garments_txt)
+                log_legs_outcome("half_body", "delivered_with_warning" if q["bare_legs"] else "pass", tag=tag, ai_bare=q["bare_legs"], issues=q["issues"], skin_ok=skin_ok)
+            except Exception as e:
+                logger.warning(f"{tag}: half-body legs qc skipped: {e}")
         logger.info(f"{tag}: surgical one-shot render delivered")
         if mark is None:  # multi-pass: un-signed PNG of the canvas, the caller finishes it
             return out

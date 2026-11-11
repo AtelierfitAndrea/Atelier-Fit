@@ -3096,11 +3096,42 @@ LEGS_PASS_RULE = (
     "the same legs in the same positions (a raised leg or a foot on the bed stays exactly there, bent knees stay bent, crossed legs stay crossed), "
     "same background, floor, bed, rug and lighting, same hands and same shirt hem. Never move, straighten, lower or re-pose a leg.\n"
     "• Trousers: solid opaque fabric fully covering hips, thighs and legs down to the shoes, realistic size and fit for this body, waistband under "
-    "the shirt hem, no holes or skin showing (bare legs in IMAGE 1 become fully dressed). Crossed / folded legs: realistic draping and folds over "
+    "the shirt hem, no holes or skin showing (bare legs in IMAGE 1 become fully dressed). Faded, washed, bleached, acid-wash, stone-wash, "
+    "distressed-looking colour or painted/printed areas are FABRIC COLOUR: draw them as solid opaque cloth, never as holes or skin. "
+    "Crossed / folded legs: realistic draping and folds over "
     "the crossed knees and shins, each leg dressed separately, no bare skin between them.\n"
     "• Shoes: each shoe exactly on that foot, anchored to the ankle, real scale, sole on the surface the foot touches, natural contact shadow.\n"
     "• NEGATIVE: moved leg, lowered leg, straightened pose, extra legs, extra feet, floating shoes, cropped person, new background, skeleton lines.\n"
 )
+
+
+_RIPPED_WORDS, _BARE_LEG_WORDS = tryon_quality.RIPPED_WORDS, tryon_quality.BARE_LEG_WORDS
+def _legs_metric_sink(ev: dict) -> None:
+    asyncio.ensure_future(db.legs_qc_events.insert_one(dict(ev)))
+
+
+tryon_quality.metric_sink = _legs_metric_sink
+LEGS_BLOCKED_MSG = "Non sono riuscito a vestire bene le gambe con questo capo. Riprova con un'altra foto: nessuna prova scalata."
+LEGS_SKIN_MAX = 0.2  # share of the original bare-leg skin that may still show before the legs QC blocks the result
+LEGS_FIX_RULE = (
+    "\nCORRECTION — THE PREVIOUS ATTEMPT WAS REJECTED: {issues}\n"
+    "• Redo the legs: the requested trousers are solid opaque fabric from the waistband down to the ankles on BOTH legs, no skin anywhere "
+    "between waist and ankle, even where the fabric is faded, washed or bleached (that is only a lighter fabric colour).\n"
+    "{tuck}"
+)
+
+
+def _bottom_text(g: dict) -> str:
+    return f"{g.get('name') or ''} {g.get('brand') or ''} {g.get('desc') or ''}"
+
+
+def _skin_allowed(lowers: list) -> bool:
+    """Skin between waist and ankle is legitimate only for shorts/skirts or an explicitly ripped/distressed garment."""
+    return any(_RIPPED_WORDS.search(_bottom_text(g)) or _BARE_LEG_WORDS.search(_bottom_text(g)) for g in lowers if (g.get("category") or "").lower() == "bottom")
+
+
+def _bare_legs_by_design(lowers: list) -> bool:
+    return any(_BARE_LEG_WORDS.search(_bottom_text(g)) for g in lowers if (g.get("category") or "").lower() == "bottom")
 
 
 async def _multipass_outfit(user: User, person_path: str, items: list, layer_order_text: str, extra: str) -> str:
@@ -3144,6 +3175,40 @@ async def _multipass_outfit(user: User, person_path: str, items: list, layer_ord
         # Legs not readable: dress the whole outfit in one pass instead of blocking.
         logger.info(f"multipass: only {len(legs)} leg joints found, single-pass fallback")
         _, p_all = await _compose_outfit(user, person_path, items, layer_order_text, extra, raw=True)
+        bottoms_fb = [g for g in lowers if (g.get("category") or "").lower() == "bottom"]
+        if bottoms_fb and not _skin_allowed(lowers):
+            g_skin_fb = 0.0
+            for g in bottoms_fb:
+                gb, _ = get_object(g["image_path"])
+                gb = await run_in_threadpool(head_lock.downscale, gb, head_lock.GARMENT_MAX_SIDE)
+                g_skin_fb = max(g_skin_fb, float((head_lock._skin(np.array(Image.open(io.BytesIO(gb)).convert("RGB").resize((128, 128)))) > 0).mean()))
+            if g_skin_fb < 0.3:  # skin-toned product (beige) cannot be judged by colour
+                top_fb = max(head_lock.TOP_PAD_MIN_PX, int(h * head_lock.TOP_PAD_RATIO))
+
+                async def _fb_left(png: bytes) -> float:
+                    res = np.array(Image.open(io.BytesIO(png)).convert("RGB"))[top_fb:top_fb + h]
+                    if res.shape[:2] != (h, w):
+                        res = cv2.resize(res, (w, h), interpolation=cv2.INTER_LANCZOS4)
+                    reg = await run_in_threadpool(head_lock._register, orig, res)
+                    return tryon_quality.band_skin_left(orig, reg if reg is not None else res)
+                left = await _fb_left(p_all)
+                mkw = dict(user=user.user_id, garments="; ".join(f"{g.get('category')}: {g.get('name') or ''}" for g in lowers), g_skin=round(g_skin_fb, 3))
+                if left > tryon_quality.LEGS_BAND_SKIN_MAX:
+                    logger.warning(f"multipass fallback: bare legs ({left:.0%} of the original skin in the lower half still shows): one correction pass")
+                    left2 = left
+                    try:
+                        _, p2 = await _compose_outfit(user, person_path, items, layer_order_text, extra + LEGS_FIX_RULE.replace("{issues}", "bare legs after the first attempt").replace("{tuck}", ""), raw=True)
+                        left2 = await _fb_left(p2)
+                        if left2 < left:
+                            p_all = p2
+                    except HTTPException as e:
+                        logger.warning(f"multipass fallback correction failed, keeping the first result: {e.detail}")
+                    if min(left, left2) > tryon_quality.LEGS_BAND_SKIN_MAX:
+                        tryon_quality.log_legs_outcome("fallback", "blocked", first={"skin_left": round(left, 3)}, second={"skin_left": round(left2, 3)}, **mkw)
+                        raise HTTPException(status_code=422, detail=LEGS_BLOCKED_MSG)
+                    tryon_quality.log_legs_outcome("fallback", "corrected", first={"skin_left": round(left, 3)}, second={"skin_left": round(left2, 3)}, **mkw)
+                else:
+                    tryon_quality.log_legs_outcome("fallback", "pass", first={"skin_left": round(left, 3)}, **mkw)
         signed = await run_in_threadpool(tryon_quality.watermark, p_all, await _mark_for(user.user_id))
         result_path = f"{APP_NAME}/outfit/{user.user_id}/{uuid.uuid4().hex}.jpg"
         put_object(result_path, signed, "image/jpeg")
@@ -3161,9 +3226,13 @@ async def _multipass_outfit(user: User, person_path: str, items: list, layer_ord
     Image.fromarray(crop).save(buf, "PNG")
     contents = [ImageContent(base64.b64encode(buf.getvalue()).decode())]
     lines = []
+    g_skin = 0.0  # share of skin-coloured pixels in the bottom product shot (beige / nude fabric cannot be judged by colour)
     for idx, g in enumerate(lowers, start=2):
         g_bytes, _ = get_object(g["image_path"])
         g_bytes = await run_in_threadpool(head_lock.downscale, g_bytes, head_lock.GARMENT_MAX_SIDE)
+        if (g.get("category") or "").lower() == "bottom":
+            g_rgb = np.array(Image.open(io.BytesIO(g_bytes)).convert("RGB").resize((128, 128)))
+            g_skin = max(g_skin, float((head_lock._skin(g_rgb) > 0).mean()))
         contents.append(ImageContent(base64.b64encode(g_bytes).decode()))
         lines.append(f"IMAGE {idx} — {g.get('category')} — {g.get('name') or ''}")
     skel = await run_in_threadpool(pose_lock.skeleton_png, buf.getvalue())
@@ -3172,39 +3241,28 @@ async def _multipass_outfit(user: User, person_path: str, items: list, layer_ord
         contents.append(ImageContent(base64.b64encode(skel).decode()))
         prompt += "The LAST image is the leg skeleton of IMAGE 1 (guide only, never draw it): the dressed legs must overlay it exactly.\n"
     aspect = min(tryon_quality._RATIOS, key=lambda k: abs(tryon_quality._RATIOS[k] - cw_ / ch_))
-    try:
-        res_bytes = await tryon_quality._image_call("You dress only the legs and feet of the person in the crop, keeping their exact pose.",
-                                                    prompt, contents, f"legs-{user.user_id}", aspect)
-    except Exception as e:
-        logger.error(f"multipass legs pass failed: {e}")
-        raise HTTPException(status_code=502, detail="Prova non riuscita: premi Riprova. Nessuna prova scalata.")
-    with open(f"/tmp/legs_raw_{uuid.uuid4().hex[:6]}.png", "wb") as fh:  # kept for free offline re-merge checks
-        fh.write(res_bytes)
-    res = np.array(Image.open(io.BytesIO(res_bytes)).convert("RGB"))
-    reg = await run_in_threadpool(head_lock._register, crop, res)
-    if reg is None:
-        reg = cv2.resize(res, (cw_, ch_), interpolation=cv2.INTER_LANCZOS4)
-    # Hands are restored afterwards from the exact finger hull: no box lock here (it pasted skin under the fingertips).
-    legs_out, frac = await run_in_threadpool(head_lock._pose_composite, crop, reg, None, (0, 0), [])
+    legs_system = "You dress only the legs and feet of the person in the crop, keeping their exact pose."
+    bottoms = [g for g in lowers if (g.get("category") or "").lower() == "bottom"]
+    skin_ok = _skin_allowed(lowers)
+    expect_untucked = _tuck_rule(items).startswith("UNTUCKED")
+    garments_txt = "; ".join(f"{g.get('category')}: {g.get('brand') or ''} {g.get('name') or ''}".strip() for g in lowers)
+    prompt += ("This garment is ripped / short: skin may show only where the product shot shows it.\n" if skin_ok
+               else "NO skin may show between the waist and the ankles: the trousers cover both legs completely.\n")
+    if bottoms and expect_untucked:
+        prompt += "The shirt hem stays OUTSIDE the trousers exactly as in IMAGE 1 (never tucked in).\n"
+    # BOTTOM GARMENT: inside the trouser zone the generated pixels are ALWAYS used (never original / pass-1 pixels, whatever the colour
+    # distance says: faded or skin-toned fabric is fabric). Feet keep the shoe-slot rules, the waist band keeps the shirt hem.
+    force = None
+    zone_c = None
+    if bottoms and not _bare_legs_by_design(lowers):
+        sk_c = cv2.dilate((head_lock._skin(crop) > 0).astype(np.uint8), np.ones((9, 9), np.uint8)) > 0
+        zone_c = (pose_lock.trouser_core(kp, orig.shape)[Y0:Y1, X0:X1] > 0) | ((pose_lock.legs_mask(kp, orig.shape)[Y0:Y1, X0:X1] > 0) & sk_c)
+        zone_c &= pose_lock.feet_zone(kp, orig.shape)[Y0:Y1, X0:X1] == 0
+        hips = [kp[i, 1] for i in (11, 12) if kp[i, 2] > pose_lock.MIN_SCORE]
+        if hips:
+            zone_c[:max(0, int(min(hips) - 0.1 * float(np.hypot(*(kp[11, :2] - kp[13, :2]))) - Y0))] = False
+        force = zone_c.astype(np.uint8) * 255 if zone_c.any() else None
     am = await run_in_threadpool(pose_lock.arm_masks, orig)
-    if am is not None:
-        # Arms/hands resting on the legs keep the pass-1 sleeves and hands (the legs pass never repaints an elbow).
-        # CLEAN HAND EDGES: keep the exact arm/hand silhouette (skin segmentation, sharp edge), never a blurred halo strip.
-        sk = cv2.morphologyEx(head_lock._skin(crop), cv2.MORPH_OPEN, np.ones((3, 3), np.uint8)) > 0
-        sleeve = np.abs(crop.astype(np.int16) - orig[Y0:Y1, X0:X1].astype(np.int16)).mean(axis=2) > 24
-        # Finger hull, but only where the legs pass shows the same hand (aligned): skin below the fingertips is not the hand.
-        same_hand = np.abs(cv2.GaussianBlur(crop, (0, 0), 1.2).astype(np.int16) - cv2.GaussianBlur(reg, (0, 0), 1.2).astype(np.int16)).mean(axis=2) < 40
-        keep = (am[1][Y0:Y1, X0:X1] > 0) & sk & same_hand & (not bag)
-        keep = cv2.morphologyEx(keep.astype(np.uint8), cv2.MORPH_CLOSE, np.ones((5, 5), np.uint8)) > 0
-        for _, m in am[0]:
-            core = m[Y0:Y1, X0:X1] > 0
-            if not core.any():
-                continue
-            if sk[core].mean() <= 0.5:  # new sleeve over the legs (bare arms need no keep, the legs pass leaves them)
-                inner = cv2.erode(core.astype(np.uint8), np.ones((9, 9), np.uint8)) > 0
-                keep |= inner & sleeve  # new sleeve: inner part only, edges come from the legs pass
-        kw = cv2.GaussianBlur(keep.astype(np.uint8) * 255, (0, 0), 0.8).astype(np.float32)[..., None] / 255
-        legs_out = (crop * kw + legs_out * (1 - kw)).astype(np.uint8)
     # CLEAN EDGES: only the legs/feet area of the skeleton takes the new pixels (background, mirror frame, floor objects stay
     # pixel-identical, no ghost lines), feathered; edges that touch the photo border stay hard.
     lm = pose_lock.legs_mask(kp, orig.shape)
@@ -3221,8 +3279,92 @@ async def _multipass_outfit(user: User, person_path: str, items: list, layer_ord
         wgt[:f, :] *= ramp[:, None]
     if Y1 < h:
         wgt[-f:, :] *= ramp[::-1][:, None]
-    final = base.copy()
-    final[Y0:Y1, X0:X1] = cv2.blendLinear(legs_out, base[Y0:Y1, X0:X1], wgt, 1 - wgt)
+
+    async def _legs_attempt(fix: str = ""):
+        try:
+            res_bytes = await tryon_quality._image_call(legs_system, prompt + fix, contents, f"legs-{user.user_id}", aspect)
+        except Exception as e:
+            logger.error(f"multipass legs pass failed: {e}")
+            raise HTTPException(status_code=502, detail="Prova non riuscita: premi Riprova. Nessuna prova scalata.")
+        with open(f"/tmp/legs_raw_{uuid.uuid4().hex[:6]}.png", "wb") as fh:  # kept for free offline re-merge checks
+            fh.write(res_bytes)
+        res = np.array(Image.open(io.BytesIO(res_bytes)).convert("RGB"))
+        reg = await run_in_threadpool(head_lock._register, crop, res)
+        if reg is None:
+            reg = cv2.resize(res, (cw_, ch_), interpolation=cv2.INTER_LANCZOS4)
+        # Hands are restored afterwards from the exact finger hull: no box lock here (it pasted skin under the fingertips).
+        legs_out, frac = await run_in_threadpool(head_lock._pose_composite, crop, reg, None, (0, 0), [], None, force)
+        keep = None
+        if am is not None:
+            # Arms/hands resting on the legs keep the pass-1 sleeves and hands (the legs pass never repaints an elbow).
+            # CLEAN HAND EDGES: keep the exact arm/hand silhouette (skin segmentation, sharp edge), never a blurred halo strip.
+            sk = cv2.morphologyEx(head_lock._skin(crop), cv2.MORPH_OPEN, np.ones((3, 3), np.uint8)) > 0
+            sleeve = np.abs(crop.astype(np.int16) - orig[Y0:Y1, X0:X1].astype(np.int16)).mean(axis=2) > 24
+            # Finger hull, but only where the legs pass shows the same hand (aligned): skin below the fingertips is not the hand.
+            same_hand = np.abs(cv2.GaussianBlur(crop, (0, 0), 1.2).astype(np.int16) - cv2.GaussianBlur(reg, (0, 0), 1.2).astype(np.int16)).mean(axis=2) < 40
+            keep = (am[1][Y0:Y1, X0:X1] > 0) & sk & same_hand & (not bag)
+            keep = cv2.morphologyEx(keep.astype(np.uint8), cv2.MORPH_CLOSE, np.ones((5, 5), np.uint8)) > 0
+            for _, m in am[0]:
+                core = m[Y0:Y1, X0:X1] > 0
+                if not core.any():
+                    continue
+                if sk[core].mean() <= 0.5:  # new sleeve over the legs (bare arms need no keep, the legs pass leaves them)
+                    inner = cv2.erode(core.astype(np.uint8), np.ones((9, 9), np.uint8)) > 0
+                    keep |= inner & sleeve  # new sleeve: inner part only, edges come from the legs pass
+            kw = cv2.GaussianBlur(keep.astype(np.uint8) * 255, (0, 0), 0.8).astype(np.float32)[..., None] / 255
+            legs_out = (crop * kw + legs_out * (1 - kw)).astype(np.uint8)
+        cand = base.copy()
+        cand[Y0:Y1, X0:X1] = cv2.blendLinear(legs_out, base[Y0:Y1, X0:X1], wgt, 1 - wgt)
+        return cand, frac, keep
+
+    async def _legs_judge(cand, keep):
+        """BLOCKING QC: bare skin between waist and ankle, or a tucked-in shirt where it must be out. Returns (problems, (hard, score), detail)."""
+        fc = cand[Y0:Y1, X0:X1]
+        left = -1.0
+        if zone_c is not None and not skin_ok and g_skin < 0.3:  # skin-toned product (beige) cannot be judged by colour
+            hold = cv2.dilate(keep.astype(np.uint8), np.ones((5, 5), np.uint8)) if keep is not None else None
+            left = tryon_quality.legs_skin_left(fc, crop, zone_c, hold)
+        buf_q = io.BytesIO()
+        Image.fromarray(fc).save(buf_q, "PNG")
+        q = await tryon_quality.legs_qc(buf_q.getvalue(), expect_untucked, skin_ok, garments_txt)
+        problems = []
+        if left > LEGS_SKIN_MAX:
+            problems.append(f"bare legs: {left:.0%} of the original bare skin between waist and ankle is still visible")
+        if q["bare_legs"]:
+            problems.append("bare skin visible between waist and ankle " + q["issues"])
+        if q["shirt_tucked"]:
+            problems.append("the shirt is tucked into the trousers")
+        logger.info(f"multipass legs QC: skin_left={left:.2f} bare={q['bare_legs']} tucked={q['shirt_tucked']} skin_ok={skin_ok}")
+        hard = left > LEGS_SKIN_MAX  # the free pixel check failed (the AI check alone never blocks)
+        return problems, (hard, max(left, 0.0) + q["bare_legs"] + q["shirt_tucked"]), {"skin_left": round(left, 3), "ai_bare": q["bare_legs"], "ai_tucked": q["shirt_tucked"]}
+
+    final, frac, keep = await _legs_attempt()
+    if bottoms:
+        mkw = dict(user=user.user_id, garments=garments_txt, skin_ok=skin_ok, g_skin=round(g_skin, 3), untucked_expected=expect_untucked)
+        problems, rank, d1 = await _legs_judge(final, keep)
+        if not problems:
+            tryon_quality.log_legs_outcome("multipass", "pass", first=d1, **mkw)
+        else:
+            # One correction pass before delivery; the better of the two results (free check first, then score) is kept.
+            logger.warning(f"multipass legs QC failed ({'; '.join(problems)}): one correction pass")
+            fix = LEGS_FIX_RULE.replace("{issues}", "; ".join(problems)).replace("{tuck}", "• The shirt hem hangs OUTSIDE the trousers, never tucked in.\n" if expect_untucked else "")
+            d2 = None
+            try:
+                final2, frac2, keep2 = await _legs_attempt(fix)
+                problems2, rank2, d2 = await _legs_judge(final2, keep2)
+                if rank2 <= rank:
+                    final, frac, problems, rank = final2, frac2, problems2, rank2
+            except HTTPException as e:
+                logger.warning(f"multipass legs correction pass failed, keeping the first result: {e.detail}")
+            if not problems:
+                tryon_quality.log_legs_outcome("multipass", "corrected", first=d1, second=d2, **mkw)
+            elif rank[0]:
+                # Free skin-pixel check failed on the delivered candidate after the correction: never deliver bare legs.
+                tryon_quality.log_legs_outcome("multipass", "blocked", first=d1, second=d2, problems=problems, **mkw)
+                raise HTTPException(status_code=422, detail=LEGS_BLOCKED_MSG)
+            else:
+                logger.warning(f"multipass legs delivered after the correction pass with AI-only issues: {problems}")
+                tryon_quality.log_legs_outcome("multipass", "delivered_with_warning", first=d1, second=d2, problems=problems, **mkw)
     if ext_flat:
         # The model drew no floor below the feet: keep only a thin margin under the new shoes instead of a smeared band.
         rows = np.where(cv2.cvtColor(np.abs(final.astype(np.int16) - base.astype(np.int16)).astype(np.uint8), cv2.COLOR_RGB2GRAY)[Y0:Y1].max(axis=1) > 40)[0]
