@@ -548,3 +548,7 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 - Eliminato il pre-controllo viso nel frontend (PersonSource faceOk): la generazione parte sempre
 - Sotto ogni foto generata: "Prova generata - dimmi cosa correggere" (components/ResultNote.jsx: TryOnDetail, OutfitBuilder, OutfitGrid, JobWatcher, TestPose)
 - La posa resta intoccabile: nessuna correzione cambia la posa
+
+## 2026-11-12 — MODO DI VESTIRE BLOCCATO (DONE)
+- `DRESSING_RULE` (server.py) aggiunta a ogni prompt di prova: singola, outfit, passata gambe, copia look. Top aderente con orlo appoggiato sulla vita alta (né dentro né sopra), pantalone a vita alta che segue la posa, ricami intatti, proporzioni reali, giuntura pulita, posa identica
+- `_tuck_rule` UNTUCKED ora = orlo appoggiato sulla cintura (non più "fuori e lungo sui fianchi"); testo del controllo qualità allineato

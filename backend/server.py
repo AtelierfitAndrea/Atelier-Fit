@@ -1893,10 +1893,10 @@ def _tuck_rule(items: list) -> str:
     has_outer = any((i.get("category") or "").lower() == "outerwear" or _OUTER_WORDS.search(i.get("name") or "") for i in items)
     if not has_top or has_outer:
         return ""
-    return ("UNTUCKED TOP — MANDATORY:\n"
-            "• The shirt / t-shirt / top has NO jacket, blazer or coat over it, so it MUST be worn UNTUCKED: its hem hangs loose OUTSIDE "
-            "the trousers/skirt, covering the waistband. NEVER tuck it inside the trousers, not even partially (no front tuck). "
-            "NEGATIVE: tucked-in shirt, tucked t-shirt, half tuck, French tuck.\n")
+    return ("UNTUCKED TOP — MANDATORY (My Atelier dressing style):\n"
+            "• The top is NOT tucked inside and does NOT hang loose over the hips: its hem rests exactly on the waistband of the high-waisted "
+            "trousers / skirt, with a clean, sharp join between top and bottom — no fake overlap, no fabric bunching, no gap of skin.\n"
+            "• NEGATIVE: tucked-in shirt, half tuck, French tuck, baggy hem hanging over the hips, top overlapping the trousers.\n")
 
 
 _GARMENT_CATS = ("top", "bottom", "dress", "outerwear", "shoes", "bag", "suit")
@@ -2127,6 +2127,21 @@ def _covers_legs(items: list) -> bool:
     return False
 
 
+# MY ATELIER DRESSING STYLE — FIXED RULE (owner, 2026-11-12): applied to EVERY try-on, every pose, every brand. Model and garments
+# may change; this way of dressing never does.
+DRESSING_RULE = (
+    "MY ATELIER DRESSING STYLE — FIXED, ALWAYS:\n"
+    "• Every garment DRESSES the body, it does not cover or hide it: fitted to the real body shape, following its lines.\n"
+    "• Top: close to the torso, smooth, no strange folds, never widening or bulking the body; its hem rests cleanly on the waistband.\n"
+    "• Trousers: high-waisted, following the legs exactly in their pose (crossed, bent, seated or standing), no holes, no halos, never "
+    "stretching or straightening the legs.\n"
+    "• Embroidery, prints, logos and details of every garment stay intact and in place on the body (e.g. embroidered flowers on the legs).\n"
+    "• REAL PROPORTIONS: never lengthen, shorten or thicken the body, the limbs or the garments.\n"
+    "• Clean join between top and bottom, no fake overlaps.\n"
+    "• The pose of IMAGE 1 stays IDENTICAL: same body, same legs, same hands, same face position.\n"
+)
+
+
 HALF_EXTEND = 0.7
 HALF_BODY_RULE = (
     "HALF-BODY PHOTO — EXTEND TO FULL FIGURE: IMAGE 1 shows the person only down to the waist/thighs; a plain band was added at the bottom. "
@@ -2191,6 +2206,7 @@ async def _render_single(user_id: str, person_path: str, garment_path: str, cate
         f"{_tuck_rule([{'category': category, 'name': name or ''}])}"
         f"{_bag_rule([{'category': category}])}"
         f"{head_lock.HEAD_LOCK_RULE}"
+        f"{DRESSING_RULE}"
         f"{measurements_desc}"
         f"{extra}"
     )
@@ -2375,7 +2391,7 @@ async def _render_copylook(user_id: str, person_path: str, model_path: str, item
         "(natural drape, length and ease relative to the person's measurements), not like it fits the model.\n"
         "• Preserve colour, pattern, cut and material of each garment exactly as in IMAGE 2.\n"
         "• Garments not listed stay as they are in IMAGE 1. Exactly ONE person in the output.\n\n"
-        f"{HANDS_RULE}{_tuck_rule(items)}{head_lock.HEAD_LOCK_RULE}{_measurements_desc(m_doc)}{extra}"
+        f"{HANDS_RULE}{_tuck_rule(items)}{head_lock.HEAD_LOCK_RULE}{DRESSING_RULE}{_measurements_desc(m_doc)}{extra}"
     )
     boxes, keep, _, _ = await _lock_hands(person_path, person_bytes, any((i.get("category") or "").lower() == "bag" for i in items), False)
     canvas_bytes, lock = await run_in_threadpool(head_lock.prepare, person_bytes, any(head_lock.is_long(i["category"], i["name"]) for i in items), boxes, keep)
@@ -3270,7 +3286,7 @@ async def _multipass_outfit(user: User, person_path: str, items: list, layer_ord
         contents.append(ImageContent(base64.b64encode(g_bytes).decode()))
         lines.append(f"IMAGE {idx} — {g.get('category')} — {g.get('name') or ''}")
     skel = await run_in_threadpool(pose_lock.skeleton_png, buf.getvalue())
-    prompt = LEGS_PASS_RULE + "\n".join(lines) + "\n"
+    prompt = LEGS_PASS_RULE + "\n".join(lines) + "\n" + DRESSING_RULE
     if pose_lock.is_seated(kp):
         prompt += SEATED_RULE
     if skel:
@@ -3482,7 +3498,7 @@ async def _compose_outfit(user: User, person_path: Optional[str], items: list, l
         "• Preserve each garment's exact colour, pattern, cut and material from its product shot.\n"
         "• Natural fabric drape, folds and shadows that match IMAGE 1 lighting.\n\n"
         "FORBIDDEN: altering face/hands, replacing the background with a studio, cropping the head, adding items not provided.\n\n"
-        + HANDS_RULE + _tuck_rule(items) + _bag_rule(items) + head_lock.HEAD_LOCK_RULE + extra
+        + HANDS_RULE + _tuck_rule(items) + _bag_rule(items) + head_lock.HEAD_LOCK_RULE + DRESSING_RULE + extra
     )
 
     system = (
