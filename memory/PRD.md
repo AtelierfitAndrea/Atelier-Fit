@@ -563,3 +563,4 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 - Rimontaggio gratuito: base = risultato originale (maglia vera, pantaloni/scarpe intatti) + mani originali (silhouette DWPose, bordo scuro tolto). Script in /app/memory/p7/
 - DRESSING_RULE: + "REAL FABRIC, NEVER CARTOON" e "SLEEVES END AT THE WRIST" (niente strascico)
 - 2026-11-12: outfit 6223a9a6 — base = foto senza braccia (maglia non toccata) + 1 generazione di ritocco solo braccia/mani, composta SOLO nella zona avambracci/mani (script /app/memory/p7/arms.py)
+- 2026-11-12: foto corretta (outfit 6223a9a6) messa in cima (created_at aggiornato, is_reference=true) e salvata in "Le mie Pose" come foto di riferimento per i prossimi outfit; outfit fc4a4a69 (body nero) scartato. DRESSING_RULE + "NO OLD CLOTHES UNDER THE NEW ONES"
