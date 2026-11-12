@@ -562,3 +562,4 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 ## 2026-11-12 — Outfit 6223a9a6: maglia della 2a foto + mani della 1a (DONE, 0 generazioni)
 - Rimontaggio gratuito: base = risultato originale (maglia vera, pantaloni/scarpe intatti) + mani originali (silhouette DWPose, bordo scuro tolto). Script in /app/memory/p7/
 - DRESSING_RULE: + "REAL FABRIC, NEVER CARTOON" e "SLEEVES END AT THE WRIST" (niente strascico)
+- 2026-11-12: outfit 6223a9a6 — base = foto senza braccia (maglia non toccata) + 1 generazione di ritocco solo braccia/mani, composta SOLO nella zona avambracci/mani (script /app/memory/p7/arms.py)
