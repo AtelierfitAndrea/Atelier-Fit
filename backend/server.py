@@ -2228,8 +2228,6 @@ async def _tryon_generate(req: TryOnRequest, user: User):
     status = await get_subscription_status(user.account_id)
     if status["is_blocked"]:
         raise HTTPException(status_code=402, detail="Quota exhausted — subscribe or buy an extra try-on.")
-    if req.preserve_pose and _is_owner_email(user.email):
-        await _require_pose_face(user, req.person_path)
     m_doc = await _get_measurements(user.user_id)
     req.garment_category = await _classify_garment(req.garment_path, req.garment_category)
     result_path = await _render_single(user.user_id, req.person_path, req.garment_path, req.garment_category, req.garment_name, m_doc, _owner_extra(user, req.preserve_pose))
@@ -3149,7 +3147,6 @@ def _legs_metric_sink(ev: dict) -> None:
 
 
 tryon_quality.metric_sink = _legs_metric_sink
-LEGS_BLOCKED_MSG = "Non sono riuscito a vestire bene le gambe con questo capo. Riprova con un'altra foto: nessuna prova scalata."
 LEGS_SKIN_MAX = 0.2  # share of the original bare-leg skin that may still show before the legs QC blocks the result
 LEGS_FIX_RULE = (
     "\nCORRECTION — THE PREVIOUS ATTEMPT WAS REJECTED: {issues}\n"
@@ -3242,10 +3239,8 @@ async def _multipass_outfit(user: User, person_path: str, items: list, layer_ord
                             p_all = p2
                     except HTTPException as e:
                         logger.warning(f"multipass fallback correction failed, keeping the first result: {e.detail}")
-                    if min(left, left2) > tryon_quality.LEGS_BAND_SKIN_MAX:
-                        tryon_quality.log_legs_outcome("fallback", "blocked", first={"skin_left": round(left, 3)}, second={"skin_left": round(left2, 3)}, **mkw)
-                        raise HTTPException(status_code=422, detail=LEGS_BLOCKED_MSG)
-                    tryon_quality.log_legs_outcome("fallback", "corrected", first={"skin_left": round(left, 3)}, second={"skin_left": round(left2, 3)}, **mkw)
+                    # SHOW ALWAYS (owner rule): never block, the photo is delivered as it came out; only logged.
+                    tryon_quality.log_legs_outcome("fallback", "delivered_with_warning" if min(left, left2) > tryon_quality.LEGS_BAND_SKIN_MAX else "corrected", first={"skin_left": round(left, 3)}, second={"skin_left": round(left2, 3)}, **mkw)
                 else:
                     tryon_quality.log_legs_outcome("fallback", "pass", first={"skin_left": round(left, 3)}, **mkw)
         signed = await run_in_threadpool(tryon_quality.watermark, p_all, await _mark_for(user.user_id))
@@ -3405,11 +3400,8 @@ async def _multipass_outfit(user: User, person_path: str, items: list, layer_ord
                     break
             if not problems:
                 tryon_quality.log_legs_outcome("multipass", "corrected", first=d1, attempts=attempts_detail, **mkw)
-            elif rank[0]:
-                # Free skin-pixel check failed on the best candidate across all attempts: never deliver bare legs.
-                tryon_quality.log_legs_outcome("multipass", "blocked", first=d1, attempts=attempts_detail, problems=problems, **mkw)
-                raise HTTPException(status_code=422, detail=LEGS_BLOCKED_MSG)
             else:
+                # SHOW ALWAYS (owner rule): the best attempt is delivered even with bare legs; the owner judges it.
                 logger.warning(f"multipass legs delivered after {len(attempts_detail)} attempts with AI-only issues: {problems}")
                 tryon_quality.log_legs_outcome("multipass", "delivered_with_warning", first=d1, attempts=attempts_detail, problems=problems, **mkw)
     if ext_flat:
@@ -3605,7 +3597,6 @@ async def _outfit_generate_from_uploads(req: GridOutfitRequest, user: User):
     if req.preserve_pose and _is_owner_email(user.email):
         if not req.person_path:
             raise HTTPException(status_code=400, detail="Scatta o carica prima la tua foto in posa")
-        await _require_pose_face(user, req.person_path)
     descs = {k: (await _garment_info(slots[k])).get("desc") for k in slots}
     items = [{
         "slot": k, "image_path": slots[k], "category": _GRID_SLOTS[k][0], "name": descs[k] or _GRID_SLOTS[k][1], "brand": None,

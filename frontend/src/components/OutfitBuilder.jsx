@@ -12,6 +12,7 @@ import { postRender } from "@/lib/renderJob";
 import SaveToGallery from "@/components/SaveToGallery";
 import ShareLook from "@/components/ShareLook";
 import { askBook, SaveBookBar } from "@/components/PoseBook";
+import { ResultNote } from "./ResultNote";
 
 
 function priceFmt(n, cur = "EUR") {
@@ -265,6 +266,7 @@ function OutfitResult({ result, onSave, onShare, onClose, onRetry }) {
           <X size={16} weight="bold" />
         </button>
         <img src={fileUrl(result.result_path)} alt="" className="w-full h-auto block" data-testid="outfit-result-image" />
+        <div className="px-4"><ResultNote testid="outfit-result-note" /></div>
         <SaveBookBar kind="outfit" refId={result.id} />
         <SaveToGallery path={result.result_path} />
         <ShareLook path={result.result_path} className="bg-white" />

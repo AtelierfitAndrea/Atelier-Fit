@@ -4,6 +4,7 @@ import { CloudArrowUp, Play, ArrowsClockwise, FilePdf } from "@phosphor-icons/re
 import { exportPosePdf } from "@/lib/posePdf";
 import { api, fileUrl } from "@/lib/api";
 import { postRender } from "@/lib/renderJob";
+import { ResultNote } from "../components/ResultNote";
 
 const U = (id) => `https://images.unsplash.com/photo-${id}?auto=format&fit=crop&w=1400&q=85`;
 const POSES = [
@@ -109,6 +110,7 @@ function PoseCard({ pose, items, busy, setBusy, onResult }) {
           <ArrowsClockwise size={14} /> Cambia foto
         </FilePick>
       </div>
+      {result && <ResultNote testid={`pose-note-${pose.k}`} />}
       {result && <a href={fileUrl(result)} target="_blank" rel="noreferrer" className="mt-2 text-xs underline" data-testid={`pose-open-${pose.k}`}>Apri a tutta pagina</a>}
     </article>
   );

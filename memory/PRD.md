@@ -542,3 +542,9 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 - Regola 3 NIENTE GAMBE CHE SPUNTANO: `head_lock.seated_cover` copre di grigio la pelle nuda delle gambe nell'immagine inviata al modello + prompt `SEATED_RULE`/`SEATED_GREY_RULE` (server.py); controllo pixel gratuito `tryon_quality._seated_legs_check`: se resta pelle (>30%) UNA sola passata di copertura (`SEATED_FIX_PROMPT` + `seated_cover_merge`), mai di più
 - Attivo per prova singola e outfit a passata unica con capo lungo (abito/tuta/pantaloni lunghi, non mini/shorts/gonna); prompt anche nella passata gambe del multipass
 - Raw salvati in /tmp/surgical_raw_* e /tmp/seatfix_raw_* per ri-merge offline gratuiti; script in /app/memory/p6/
+
+## 2026-11-12 — REGOLA MADRE: MOSTRA SEMPRE LA FOTO (DONE)
+- Eliminati tutti i blocchi sulla foto generata: blocco gambe (LEGS_BLOCKED_MSG, multipass + fallback) e blocco volto/posa (pose_fail 422) → la foto si consegna sempre, i controlli restano solo nei log
+- Eliminato il pre-controllo viso nel frontend (PersonSource faceOk): la generazione parte sempre
+- Sotto ogni foto generata: "Prova generata - dimmi cosa correggere" (components/ResultNote.jsx: TryOnDetail, OutfitBuilder, OutfitGrid, JobWatcher, TestPose)
+- La posa resta intoccabile: nessuna correzione cambia la posa

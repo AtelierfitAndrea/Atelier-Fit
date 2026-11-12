@@ -12,6 +12,7 @@ import { postRender } from "@/lib/renderJob";
 import SaveToGallery from "@/components/SaveToGallery";
 import ShareLook from "@/components/ShareLook";
 import { askBook, SaveBookBar } from "@/components/PoseBook";
+import { ResultNote } from "./ResultNote";
 
 const SLOTS = [
   { k: "top", n: 1, l: "Maglia / Top" },
@@ -235,6 +236,7 @@ export default function OutfitGrid({ personPath, preservePose = false, uploadFil
         <div className="mt-10 grid grid-cols-1 lg:grid-cols-2 gap-8" data-testid="grid-result">
           <div className="space-y-4">
             <img src={fileUrl(result.result_path)} alt="Outfit" className="w-full border hairline" data-testid="grid-result-image" />
+            <ResultNote testid="grid-result-note" />
             <SaveBookBar kind="outfit" refId={result.id} />
             <SaveToGallery path={result.result_path} />
             <ShareLook path={result.result_path} />

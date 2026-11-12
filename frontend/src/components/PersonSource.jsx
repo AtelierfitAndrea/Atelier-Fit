@@ -56,15 +56,8 @@ export default function PersonSource({ mode, setMode, posePath, setPosePath, upl
     }
     finally { setBusy(false); }
   };
-  // Credit saver: the face must be clearly visible before any try-on can start.
-  const faceOk = async (p) => {
-    setFaceError(null);
-    const { data } = await api.post("/pose/check", { path: p });
-    if (data.ok) return true;
-    setFaceError(data.message || "Ricarica foto più luminosa.");
-    setPosePath(null);
-    return false;
-  };
+  // SHOW ALWAYS (owner rule): no face pre-check, every photo can start a try-on.
+  const faceOk = async () => { setFaceError(null); return true; };
   const pick = async (p) => { try { if (await faceOk(p.path)) setPosePath(p.path); } catch { toast.error("Controllo foto non riuscito"); } };
   const answer = async (save) => {
     const p = asking;

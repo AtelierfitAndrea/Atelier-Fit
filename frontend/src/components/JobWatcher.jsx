@@ -7,6 +7,7 @@ import { api, fileUrl } from "@/lib/api";
 import { JOB_EVENT, clearJob, liveJobs, loadJob } from "@/lib/renderJob";
 import { askBook, SaveBookBar } from "@/components/PoseBook";
 import ShareLook from "@/components/ShareLook";
+import { ResultNote } from "./ResultNote";
 
 const POLL_MS = 3000;
 const MAX_AGE_MS = 15 * 60 * 1000;
@@ -65,6 +66,7 @@ export default function JobWatcher() {
               <button onClick={() => setOutfit(null)} aria-label="Chiudi" data-testid="job-watcher-close"><X size={22} /></button>
             </div>
             <img src={fileUrl(outfit.result_path)} alt="" className="w-full h-auto" data-testid="job-watcher-image" />
+            <ResultNote testid="job-watcher-note" />
             <SaveBookBar kind="outfit" refId={outfit.id} />
             <ShareLook path={outfit.result_path} />
           </div>
