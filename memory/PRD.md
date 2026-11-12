@@ -571,3 +571,4 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 - Frontend: components/PoseBases.jsx nel pannello "foto in posa" (Studio) con codici visibili
 - 2026-11-12: BASE A + pantalone nero trasparente + zeppe: 1 generazione, sopra i fianchi pixel identico a BASE A (script /app/memory/p8/lower.py), salvato come nuovo outfit in cima
 - 2026-11-12: BASE A + pantalone nero OPACO + zeppe: 1 generazione (raw2), busto pixel identico, nuovo outfit in cima
+- 2026-11-12: BASE A + pantalone pizzo nero trasparente (prodotto df4efd9e) + zeppe: 1 generazione (raw3), busto pixel identico a BASE A, niente body nero

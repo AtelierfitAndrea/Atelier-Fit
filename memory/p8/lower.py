@@ -12,8 +12,10 @@ PROMPT = (
     "• KEEP EXACTLY: the same woman, face, expression, hair, skin tone; the red lace top unchanged (same lace, deep V-neck, long flared "
     "sleeves, knot at the waist, same fit and colour); the pose (seated on the floor, legs crossed, hands clasped in front: 2 hands, "
     "10 fingers, unchanged); the background and light; framing and image size.\n"
-    "• NEW TROUSERS: replace the white trousers with normal OPAQUE BLACK trousers: solid black fabric (NOT transparent, NOT sheer), "
-    "high waist, clean realistic fit on the crossed legs with natural matte folds, waistband and hems.\n"
+    "• NEW TROUSERS: replace the white trousers with the BLACK LACE TROUSERS of IMAGE 2 (black high waist, sheer black floral lace on the "
+    "legs): real transparent lace sitting ON TOP of the skin, her natural legs visible through it, clean and sharp, no opaque black patches.\n"
+    "• NOTHING UNDER THE TOP: no black bodysuit, swimsuit, leotard or base layer — under the V-neck and between the top and the trousers "
+    "only skin, exactly as in IMAGE 1.\n"
     "• The red lace top is real photographed fabric: never redraw it, never make it shiny, plastic, illustrated or saturated.\n"
     "• NEW SHOES: two black wedge sandals, one on each foot (2 feet, 2 shoes), same style on both, correctly placed on the feet even with "
     "crossed legs, realistic straps and wedge heel. Replace the red heels.\n"
@@ -24,12 +26,16 @@ PROMPT = (
 async def main():
     base = cv2.cvtColor(cv2.imread("/app/memory/p7/baseA.jpg"), cv2.COLOR_BGR2RGB)
     H, W = base.shape[:2]
+    GAR = []
+    if len(sys.argv) > 2:
+        gb, _ = server.get_object(sys.argv[2])
+        GAR = [ImageContent(base64.b64encode(head_lock.downscale(gb, head_lock.GARMENT_MAX_SIDE)).decode())]
     rp = D + f"raw{N}.png"
     if os.path.exists(rp):
         raw = open(rp, "rb").read()
     else:
         raw = await tryon_quality._image_call("You are a fashion retoucher: precise local garment edits, photorealistic.", PROMPT,
-                                              [ImageContent(base64.b64encode(tryon_quality._png(base)).decode())], f"p8-{N}", "9:16")
+                                              [ImageContent(base64.b64encode(tryon_quality._png(base)).decode()), *GAR], f"p8-{N}", "9:16")
         open(rp, "wb").write(raw)
     res = np.array(head_lock._open_small(raw, max(H, W)).convert("RGB"))
     reg = head_lock._register(base, res)
