@@ -2144,6 +2144,10 @@ DRESSING_RULE = (
     "(even wide bell or lace sleeves end above the wrist and leave the hands free), never cut, never merged with the garment or the legs. "
     "Both hands stay visible and complete exactly as in IMAGE 1 (e.g. joined in front, between the legs), 5 real fingers each; forearms "
     "whole with clean continuous skin from elbow to hand. A complicated garment is adapted to the body, the body never disappears.\n"
+    "• REAL FABRIC, NEVER CARTOON: every garment is real cloth with thickness, volume, natural shadows and folds (lace in relief, "
+    "see-through where the product is see-through); never flat, painted-on, sticker-like or glued to the body.\n"
+    "• SLEEVES END AT THE WRIST: wide / bell sleeves flare but end cleanly at the wrist — no trailing tails, no lace pieces hanging "
+    "down to the floor, no train.\n"
     "• NO HALOS, EVER: no brown stains, fake shadows, blurred or dark/light edges around hands, forearms or arms, nor where a sleeve ends; "
     "the sleeve rests naturally on the arm.\n"
 )

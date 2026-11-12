@@ -558,3 +558,7 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 - `_tuck_rule`: maglia FUORI, cade sopra la cintura (sostituisce "appoggiata sulla vita"); `DRESSING_RULE` + regola fissa mani/avambracci mai spariti, zero aloni, uomo/donna/ogni outfit
 - Outfit 6223a9a6 corretto con rimontaggio gratuito (pantaloni e scarpe identici). 3 generazioni provate sulla passata gambe: non migliori (pantaloni cambiati), scartate
 - Re-run gratuito: /app/memory/p7/rerun.py (sostituisce il modello con i raw salvati)
+
+## 2026-11-12 — Outfit 6223a9a6: maglia della 2a foto + mani della 1a (DONE, 0 generazioni)
+- Rimontaggio gratuito: base = risultato originale (maglia vera, pantaloni/scarpe intatti) + mani originali (silhouette DWPose, bordo scuro tolto). Script in /app/memory/p7/
+- DRESSING_RULE: + "REAL FABRIC, NEVER CARTOON" e "SLEEVES END AT THE WRIST" (niente strascico)
