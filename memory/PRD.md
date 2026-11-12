@@ -564,3 +564,8 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 - DRESSING_RULE: + "REAL FABRIC, NEVER CARTOON" e "SLEEVES END AT THE WRIST" (niente strascico)
 - 2026-11-12: outfit 6223a9a6 — base = foto senza braccia (maglia non toccata) + 1 generazione di ritocco solo braccia/mani, composta SOLO nella zona avambracci/mani (script /app/memory/p7/arms.py)
 - 2026-11-12: foto corretta (outfit 6223a9a6) messa in cima (created_at aggiornato, is_reference=true) e salvata in "Le mie Pose" come foto di riferimento per i prossimi outfit; outfit fc4a4a69 (body nero) scartato. DRESSING_RULE + "NO OLD CLOTHES UNDER THE NEW ONES"
+
+## 2026-11-12 — BASI DEFINITIVE posa seduta (DONE, 0 generazioni)
+- Collection `pose_bases`: MA-SEDUTA-A01 "BASE A - MAGLIA COMPLICATA" (da outfit 55ae6eda, UI telefono ritagliata) e MA-SEDUTA-B01 "BASE B - BRACCIA SCOPERTE" (da outfit 23482b0b); file anche in `files` (kind person)
+- GET /api/pose-bases; `_auto_base` in prova singola + outfit (griglia e guardaroba): se la foto scelta è una base -> capo con maniche = A, smanicato = B, dubbio = resta quella scelta
+- Frontend: components/PoseBases.jsx nel pannello "foto in posa" (Studio) con codici visibili

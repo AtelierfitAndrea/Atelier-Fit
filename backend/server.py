@@ -1902,6 +1902,40 @@ def _tuck_rule(items: list) -> str:
 _GARMENT_CATS = ("top", "bottom", "dress", "outerwear", "shoes", "bag", "suit")
 
 
+# BASI DEFINITIVE (owner, posa seduta a gambe incrociate): A = capi con maniche, B = braccia scoperte. Collection pose_bases.
+_SLEEVED = re.compile(r"\b(sleeves?|sleeved|long[- ]sleeve\w*|short[- ]sleeve\w*|bell[- ]sleeve\w*|manica|maniche|cardigan|shirt|camicia|"
+                      r"blouse|blusa|jacket|giacca|blazer|coat|cappotto|sweater|maglione|hoodie|felpa|pullover|lace top)\b", re.I)
+_SLEEVELESS = re.compile(r"\b(sleeveless|tank|canotta|canottiera|smanicat\w*|senza maniche|camisole|cami|halter|strapless|spaghetti|"
+                         r"bustier|corset|tube top|crop tank)\b", re.I)
+
+
+def _sleeve_kind(text: str):
+    """'B' sleeveless, 'A' sleeved, None unsure."""
+    if _SLEEVELESS.search(text or ""):
+        return "B"
+    if _SLEEVED.search(text or ""):
+        return "A"
+    return None
+
+
+async def _auto_base(user: User, person_path: str, garment_paths: list) -> str:
+    """If the chosen photo is one of the two definitive bases, swap to the right one: sleeves -> A, bare arms -> B, unsure -> keep."""
+    bases = {b["kind"]: b["path"] async for b in db.pose_bases.find({"user_id": user.user_id}, {"_id": 0, "kind": 1, "path": 1})}
+    if not person_path or person_path not in bases.values():
+        return person_path
+    kinds = [_sleeve_kind(f"{(await _garment_info(g)).get('desc') or ''}") for g in garment_paths]
+    want = "A" if "A" in kinds else ("B" if "B" in kinds else None)
+    if want and bases.get(want) and bases[want] != person_path:
+        logger.info(f"pose base auto-switch -> {want}")
+        return bases[want]
+    return person_path
+
+
+@api_router.get("/pose-bases")
+async def pose_bases(user: User = Depends(get_current_user)):
+    return [b async for b in db.pose_bases.find({"user_id": user.user_id}, {"_id": 0, "code": 1, "kind": 1, "label": 1, "path": 1}).sort("code", 1)]
+
+
 async def _garment_info(garment_path: str) -> dict:
     # One cached AI look at the product photo -> {"category", "desc"} (the user no longer picks a category).
     cached = await db.garment_class.find_one({"path": garment_path}, {"_id": 0, "category": 1, "desc": 1})
@@ -2259,6 +2293,7 @@ async def _tryon_generate(req: TryOnRequest, user: User):
         raise HTTPException(status_code=402, detail="Quota exhausted — subscribe or buy an extra try-on.")
     m_doc = await _get_measurements(user.user_id)
     req.garment_category = await _classify_garment(req.garment_path, req.garment_category)
+    req.person_path = await _auto_base(user, req.person_path, [req.garment_path])
     result_path = await _render_single(user.user_id, req.person_path, req.garment_path, req.garment_category, req.garment_name, m_doc, _owner_extra(user, req.preserve_pose))
 
     rec_size = recommend_size(m_doc, "top" if req.garment_category == "suit" else req.garment_category)
@@ -3574,6 +3609,7 @@ async def _outfit_generate(req: OutfitGenerateRequest, user: User):
         items.append(g)
     # Order items for layering (bottoms first, outerwear last)
     items.sort(key=lambda g: _LAYER_ORDER.get((g.get("category") or "top").lower(), 2))
+    req.person_path = await _auto_base(user, req.person_path, [i["image_path"] for i in items if i.get("category") in ("top", "outerwear", "dress", "suit") and i.get("image_path")])
     person_path, result_path = await _compose_outfit(user, req.person_path, items, _DEFAULT_LAYER_TEXT, _owner_extra(user, False))
 
     total_price = sum((g.get("price") or 0) for g in items)
@@ -3641,6 +3677,7 @@ async def _outfit_generate_from_uploads(req: GridOutfitRequest, user: User):
         if not req.person_path:
             raise HTTPException(status_code=400, detail="Scatta o carica prima la tua foto in posa")
     descs = {k: (await _garment_info(slots[k])).get("desc") for k in slots}
+    req.person_path = await _auto_base(user, req.person_path, [slots[k] for k in slots if _GRID_SLOTS[k][0] in ("top", "outerwear", "dress", "suit")])
     items = [{
         "slot": k, "image_path": slots[k], "category": _GRID_SLOTS[k][0], "name": descs[k] or _GRID_SLOTS[k][1], "brand": None,
     } for k in _GRID_ORDER if k in slots]

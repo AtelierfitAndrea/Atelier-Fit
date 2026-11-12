@@ -4,6 +4,7 @@ import { Camera, ImageSquare, UserCircle } from "@phosphor-icons/react";
 import { api } from "@/lib/api";
 import PoseCamera from "@/components/PoseCamera";
 import { BookGrid, useBook, BOOK_EVENT } from "@/components/PoseBook";
+import { PoseBases } from "@/components/PoseBases";
 
 const SOURCES = [
   { k: "avatar", icon: UserCircle, l: "Usa il mio Avatar fisso", d: "Sempre la stessa foto davanti allo specchio, zero deformazioni", rec: true },
@@ -96,6 +97,7 @@ export default function PersonSource({ mode, setMode, posePath, setPosePath, upl
           </button>
           {busy && <p className="label-caps text-neutral-500" data-testid="pose-uploading">Caricamento foto…</p>}
           {faceError && <p className="text-sm text-red-700 border border-red-200 bg-red-50 px-3 py-2 max-w-2xl" data-testid="pose-face-error">{faceError}</p>}
+          <PoseBases selected={posePath} onPick={pick} />
           {photos.length > 0 && (
             <div className="max-w-2xl">
               <div className="label-caps mb-3">Dalle mie Pose</div>
