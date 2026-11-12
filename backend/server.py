@@ -2095,6 +2095,38 @@ PHONE_RULE = (
 )
 
 
+# SEATED POSES — PERMANENT RULES (Posa 6 and every seated pose): applied automatically whenever the photo shows a seated person.
+SEATED_RULE = (
+    "SEATED POSE — PERMANENT RULES (the person sits on the floor / a chair / a bed, legs crossed or bent):\n"
+    "1. NO HALO ON THE HANDS: hands, fingers, wrists and forearms have exactly the same light, sharpness and skin tone as the rest of the body. "
+    "No light outline, glow, blur, soft edge or cut-out look around them.\n"
+    "2. NO GAPS BETWEEN HANDS AND FABRIC: where a hand rests on the garment the fabric continues UNDER and BETWEEN the fingers without "
+    "interruption. No holes, no slits of light, no background, no bare skin and no old clothing visible between the fingers, between the hands "
+    "and the fabric, or between the hands and the thighs. The hands press lightly into the fabric with soft contact shadows.\n"
+    "3. NO LEG PEEKING OUT: a long garment (long dress, long skirt, trousers, jumpsuit) covers BOTH legs symmetrically and continuously, "
+    "draping over the crossed / bent legs down to the ankles with real folds and weight. A bare leg, shin, calf or knee NEVER pokes out from "
+    "under it. A slit is allowed ONLY if the product shot clearly shows one, and then it is clean and intentional; otherwise the leg is fully "
+    "covered. Only the feet / toes may show below the hem.\n"
+    "• NEGATIVE: halo around hands, glowing finger outline, blurred hands, gaps between fingers, holes in the fabric under the hands, "
+    "bare leg showing through the dress, random skin under the hem, asymmetric hem uncovering one leg.\n"
+)
+SEATED_GREY_RULE = (
+    "• IMAGE 1 shows FLAT GREY areas on the legs: they mark bare skin that the garment MUST cover. Fill every grey area with the garment "
+    "fabric (never skin, never grey, never background). The pose of the legs under the fabric stays exactly as the skeleton shows.\n"
+)
+_SHORT_WORDS = re.compile(r"\b(mini|short|corto|corta|shorts?|bermuda|pantaloncin\w*|hot ?pants|skirt|gonna|minigonna|culottes?|knee[- ]length)\b", re.I)
+
+
+def _covers_legs(items: list) -> bool:
+    """Long lower garment (long dress, suit, long trousers): seated photos get the bare legs covered."""
+    for g in items:
+        cat = (g.get("category") or "").lower()
+        text = f"{g.get('name') or ''} {g.get('desc') or ''}"
+        if cat in ("dress", "suit", "bottom") and not _SHORT_WORDS.search(text):
+            return True
+    return False
+
+
 HALF_EXTEND = 0.7
 HALF_BODY_RULE = (
     "HALF-BODY PHOTO — EXTEND TO FULL FIGURE: IMAGE 1 shows the person only down to the waist/thighs; a plain band was added at the bottom. "
@@ -2121,7 +2153,12 @@ async def _render_single(user_id: str, person_path: str, garment_path: str, cate
     posed = (POSE_RULE in extra or surgical) and not half
     boxes, keep, phone_txt, freeze = await _lock_hands(person_path, person_bytes, (category_in or "").lower() == "bag", posed, [category_in], surgical)
     extra += phone_txt + (HALF_BODY_RULE if half else "")
-    canvas_bytes, lock = await run_in_threadpool(head_lock.prepare, person_bytes, head_lock.is_long(category_in, name or ""), boxes, keep, posed, freeze, HALF_EXTEND if half else 0.0)
+    desc = (await _garment_info(garment_path)).get("desc") or ""
+    cover = surgical and _covers_legs([{"category": category_in, "name": name, "desc": desc}])
+    canvas_bytes, lock = await run_in_threadpool(head_lock.prepare, person_bytes, head_lock.is_long(category_in, name or ""), boxes, keep, posed, freeze,
+                                                 HALF_EXTEND if half else 0.0, cover)
+    if lock.get("seated"):
+        extra += SEATED_RULE + SEATED_GREY_RULE
     garment_bytes = await run_in_threadpool(head_lock.downscale, garment_bytes, head_lock.GARMENT_MAX_SIDE)
     person_b64 = base64.b64encode(canvas_bytes).decode('utf-8')
     garment_b64 = base64.b64encode(garment_bytes).decode('utf-8')
@@ -3239,6 +3276,8 @@ async def _multipass_outfit(user: User, person_path: str, items: list, layer_ord
         lines.append(f"IMAGE {idx} — {g.get('category')} — {g.get('name') or ''}")
     skel = await run_in_threadpool(pose_lock.skeleton_png, buf.getvalue())
     prompt = LEGS_PASS_RULE + "\n".join(lines) + "\n"
+    if pose_lock.is_seated(kp):
+        prompt += SEATED_RULE
     if skel:
         contents.append(ImageContent(base64.b64encode(skel).decode()))
         prompt += "The LAST image is the leg skeleton of IMAGE 1 (guide only, never draw it): the dressed legs must overlay it exactly.\n"
@@ -3344,29 +3383,35 @@ async def _multipass_outfit(user: User, person_path: str, items: list, layer_ord
     if bottoms:
         mkw = dict(user=user.user_id, garments=garments_txt, skin_ok=skin_ok, g_skin=round(g_skin, 3), untucked_expected=expect_untucked)
         problems, rank, d1 = await _legs_judge(final, keep)
+        best_detail = d1
         if not problems:
             tryon_quality.log_legs_outcome("multipass", "pass", first=d1, **mkw)
         else:
-            # One correction pass before delivery; the better of the two results (free check first, then score) is kept.
-            logger.warning(f"multipass legs QC failed ({'; '.join(problems)}): one correction pass")
-            fix = LEGS_FIX_RULE.replace("{issues}", "; ".join(problems)).replace("{tuck}", "• The shirt hem hangs OUTSIDE the trousers, never tucked in.\n" if expect_untucked else "")
-            d2 = None
-            try:
-                final2, frac2, keep2 = await _legs_attempt(fix)
-                problems2, rank2, d2 = await _legs_judge(final2, keep2)
-                if rank2 <= rank:
-                    final, frac, problems, rank = final2, frac2, problems2, rank2
-            except HTTPException as e:
-                logger.warning(f"multipass legs correction pass failed, keeping the first result: {e.detail}")
+            # Up to two correction passes before delivery; the best-scoring result across all attempts is kept.
+            attempts_detail = [d1]
+            for attempt_n in (2, 3):
+                logger.warning(f"multipass legs QC failed ({'; '.join(problems)}): correction pass {attempt_n}")
+                fix = LEGS_FIX_RULE.replace("{issues}", "; ".join(problems)).replace("{tuck}", "• The shirt hem hangs OUTSIDE the trousers, never tucked in.\n" if expect_untucked else "")
+                try:
+                    final_n, frac_n, keep_n = await _legs_attempt(fix)
+                    problems_n, rank_n, d_n = await _legs_judge(final_n, keep_n)
+                    attempts_detail.append(d_n)
+                    if rank_n <= rank:
+                        final, frac, problems, rank = final_n, frac_n, problems_n, rank_n
+                        best_detail = d_n
+                except HTTPException as e:
+                    logger.warning(f"multipass legs correction pass {attempt_n} failed, keeping the best result so far: {e.detail}")
+                if not problems:
+                    break
             if not problems:
-                tryon_quality.log_legs_outcome("multipass", "corrected", first=d1, second=d2, **mkw)
+                tryon_quality.log_legs_outcome("multipass", "corrected", first=d1, attempts=attempts_detail, **mkw)
             elif rank[0]:
-                # Free skin-pixel check failed on the delivered candidate after the correction: never deliver bare legs.
-                tryon_quality.log_legs_outcome("multipass", "blocked", first=d1, second=d2, problems=problems, **mkw)
+                # Free skin-pixel check failed on the best candidate across all attempts: never deliver bare legs.
+                tryon_quality.log_legs_outcome("multipass", "blocked", first=d1, attempts=attempts_detail, problems=problems, **mkw)
                 raise HTTPException(status_code=422, detail=LEGS_BLOCKED_MSG)
             else:
-                logger.warning(f"multipass legs delivered after the correction pass with AI-only issues: {problems}")
-                tryon_quality.log_legs_outcome("multipass", "delivered_with_warning", first=d1, second=d2, problems=problems, **mkw)
+                logger.warning(f"multipass legs delivered after {len(attempts_detail)} attempts with AI-only issues: {problems}")
+                tryon_quality.log_legs_outcome("multipass", "delivered_with_warning", first=d1, attempts=attempts_detail, problems=problems, **mkw)
     if ext_flat:
         # The model drew no floor below the feet: keep only a thin margin under the new shoes instead of a smeared band.
         rows = np.where(cv2.cvtColor(np.abs(final.astype(np.int16) - base.astype(np.int16)).astype(np.uint8), cv2.COLOR_RGB2GRAY)[Y0:Y1].max(axis=1) > 40)[0]
@@ -3412,7 +3457,9 @@ async def _compose_outfit(user: User, person_path: Optional[str], items: list, l
                                                        [g.get("category") for g in items], surgical)
     extra += phone_txt + (HALF_BODY_RULE if half else "")
     canvas_bytes, lock = await run_in_threadpool(head_lock.prepare, person_bytes, any(head_lock.is_long(g.get("category"), g.get("name") or "") for g in items), boxes, keep, posed, freeze,
-                                                 HALF_EXTEND if half else extend)
+                                                 HALF_EXTEND if half else extend, surgical and _covers_legs(items))
+    if lock.get("seated"):
+        extra += SEATED_RULE + SEATED_GREY_RULE
     file_contents = [ImageContent(base64.b64encode(canvas_bytes).decode("utf-8"))]
     del person_bytes, canvas_bytes
     layer_lines = []

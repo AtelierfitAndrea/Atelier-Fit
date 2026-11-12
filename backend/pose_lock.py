@@ -158,6 +158,55 @@ def arm_masks(rgb: np.ndarray):
     return segs, hands
 
 
+def is_seated(kp: np.ndarray) -> bool:
+    """Seated (floor, chair, bed, crossed legs): every visible knee sits less than half a torso below the hips."""
+    ok = lambda i: kp[i, 2] > MIN_SCORE  # noqa: E731
+    if not all(ok(i) for i in (5, 6, 11, 12)) or not (ok(13) or ok(14)):
+        return False
+    torso = (np.hypot(*(kp[5, :2] - kp[11, :2])) + np.hypot(*(kp[6, :2] - kp[12, :2]))) / 2
+    hip_y = (kp[11, 1] + kp[12, 1]) / 2
+    return bool(max(kp[i, 1] for i in (13, 14) if ok(i)) - hip_y < 0.5 * torso)
+
+
+_FINGERS = ((0, 1, 2, 3, 4), (0, 5, 6, 7, 8), (0, 9, 10, 11, 12), (0, 13, 14, 15, 16), (0, 17, 18, 19, 20))
+
+
+def seated_masks(kp: np.ndarray, shape) -> tuple:
+    """([(lo, hand_mask)], forearms, feet): exact hand silhouettes (palm + finger bones), forearm strips, small feet zone (toes may show)."""
+    H, W = shape[:2]
+    hands, fore, feet = [], np.zeros((H, W), np.uint8), np.zeros((H, W), np.uint8)
+    for lo in (91, 112):
+        pts = kp[lo:lo + 21]
+        good = pts[:, 2] > 0.3
+        if good.sum() < 6:
+            continue
+        m = np.zeros((H, W), np.uint8)
+        span = max(np.ptp(pts[good, 0]), np.ptp(pts[good, 1]))
+        t = max(3, int(0.11 * span))
+        palm = [pts[i, :2] for i in (0, 1, 5, 9, 13, 17) if good[i]]
+        if len(palm) >= 3:
+            cv2.fillConvexPoly(m, cv2.convexHull(np.int32(palm)), 255)
+        for chain in _FINGERS:
+            c = [pts[i, :2] for i in chain if good[i]]
+            if len(c) >= 2:
+                cv2.polylines(m, [np.int32(c)], False, 255, t, cv2.LINE_AA)
+        hands.append((lo, m))
+    for sh, el, wr in ((5, 7, 9), (6, 8, 10)):
+        if min(kp[sh, 2], kp[el, 2], kp[wr, 2]) < MIN_SCORE:
+            continue
+        t = max(6, int(0.3 * float(np.hypot(*(kp[sh, :2] - kp[el, :2])))))
+        cv2.line(fore, tuple(np.int32(kp[el, :2])), tuple(np.int32(kp[wr, :2])), 255, t, cv2.LINE_AA)
+    ok = lambda i: kp[i, 2] > MIN_SCORE  # noqa: E731
+    thigh = max([float(np.hypot(*(kp[a, :2] - kp[b, :2]))) for a, b in ((11, 13), (12, 14)) if ok(a) and ok(b)] or [0.25 * H])
+    for idx in ((17, 18, 19), (20, 21, 22)):
+        pts = [kp[i, :2] for i in idx if ok(i)]
+        for p in pts:
+            cv2.circle(feet, tuple(np.int32(p)), max(6, int(0.16 * thigh)), 255, -1)
+        if len(pts) >= 2:
+            cv2.fillConvexPoly(feet, cv2.convexHull(np.int32(pts)), 255)
+    return hands, fore, feet
+
+
 def feet_zone(kp: np.ndarray, shape) -> np.ndarray:
     """Ankles and feet (disk + hull around every ankle/foot point): below this line the shoe slot rules apply, not the trousers."""
     H, W = shape[:2]

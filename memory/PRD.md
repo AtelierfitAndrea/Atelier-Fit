@@ -534,3 +534,11 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 - BAG IN HAND (bag in uppers): no original hand/forearm paste in pass1 (arms hands zero, fore segs dropped) and no hand keep in pass2 -> no ghost hand on bag.
 - head_lock arms: hand kept only where result still shows that hand.
 - Re-merged 35b100a6 (free): full red heels, clean bag corner, watermark kept (691x1245). No tests per owner.
+
+## 2026-11-12 — POSE SEDUTE: 3 regole permanenti (Posa 6) (DONE, test manuale offline + 3 generazioni)
+- Rilevamento automatico posa seduta: `pose_lock.is_seated` (ginocchia < mezzo busto sotto le anche)
+- Regola 1 NIENTE ALONI MANI: `head_lock._seated_hands` rimette le mani originali spostate sulla posizione delle mani generate (offset DWPose), silhouette esatta, bordo netto (sigma 0.9)
+- Regola 2 NIENTE BUCHI: `head_lock._seated_composite` — gambe, avambracci e spazi tra le dita sempre dal risultato (tessuto continuo); bordo del capo ridecisio pixel per pixel (niente scie)
+- Regola 3 NIENTE GAMBE CHE SPUNTANO: `head_lock.seated_cover` copre di grigio la pelle nuda delle gambe nell'immagine inviata al modello + prompt `SEATED_RULE`/`SEATED_GREY_RULE` (server.py); controllo pixel gratuito `tryon_quality._seated_legs_check`: se resta pelle (>30%) UNA sola passata di copertura (`SEATED_FIX_PROMPT` + `seated_cover_merge`), mai di più
+- Attivo per prova singola e outfit a passata unica con capo lungo (abito/tuta/pantaloni lunghi, non mini/shorts/gonna); prompt anche nella passata gambe del multipass
+- Raw salvati in /tmp/surgical_raw_* e /tmp/seatfix_raw_* per ri-merge offline gratuiti; script in /app/memory/p6/

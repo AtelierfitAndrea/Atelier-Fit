@@ -9,6 +9,7 @@ import re
 import time
 import uuid
 
+import cv2
 import numpy as np
 
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
@@ -80,9 +81,87 @@ def _fix_prompt(issues: str, garments_txt: str, phone: bool = False) -> str:
     )
 
 
+SEATED_SKIN_MAX = 0.3  # share of the original bare-leg skin still skin: ~0.2 = covered (toes, warm shadows), ~0.4 = a bare leg
+
+
+def _png(rgb: np.ndarray) -> bytes:
+    buf = io.BytesIO()
+    Image.fromarray(rgb).save(buf, "PNG")
+    return buf.getvalue()
+
+
+SEATED_FIX_PROMPT = (
+    "IMAGE 1 is a finished virtual try-on photo of a SEATED person. The FLAT GREY areas on the legs are bare skin that the garment must cover "
+    "(SEATED RULE: no leg may peek out from under a long garment). Fill EVERY grey area with the SAME garment fabric worn in IMAGE 1 "
+    "(IMAGE 2 is the product shot): same colour, sheen and weight, continuing the existing folds naturally over the crossed / bent legs down to "
+    "the ankles, so BOTH legs are fully and symmetrically covered. Only the feet / toes may show below the hem.\n"
+    "Change NOTHING else: face, hair, hands, fingers, arms, feet, background, floor, framing and image size stay pixel-identical to IMAGE 1. "
+    "Never draw skin in the grey areas, never leave any grey, no slit, no hole, no halo.\n"
+)
+
+
+async def _seated_legs_check(out: bytes, canvas: np.ndarray, seated: dict, garment: list, tag: str, aspect: str) -> bytes:
+    """SEATED RULE 3 (permanent): bare leg skin left under a long garment (free pixel check) -> ONE cover pass that only fills those
+    areas with the same fabric; everything else stays the first result. Never more than this single extra generation."""
+    fin = np.array(Image.open(io.BytesIO(out)).convert("RGB"))
+    if fin.shape[:2] != canvas.shape[:2]:
+        return out
+    left = legs_skin_left(fin, canvas, seated["bare"])
+    if left <= SEATED_SKIN_MAX:
+        log_legs_outcome("seated", "pass", tag=tag, skin_left=round(left, 3))
+        return out
+    sk = head_lock._skin(fin) > 0
+    grey = cv2.dilate(((seated["bare"] > 0) & sk).astype(np.uint8), np.ones((7, 7), np.uint8))
+    # Hands, feet, arms, face: only big real skin areas (a red/grey anti-aliased hem edge looks skin-toned but is not protected).
+    p = cv2.morphologyEx((sk & (seated["bare"] == 0) & (grey == 0)).astype(np.uint8), cv2.MORPH_OPEN, np.ones((5, 5), np.uint8))
+    n, lab, st, _ = cv2.connectedComponentsWithStats(p, 8)
+    big = st[:, cv2.CC_STAT_AREA] >= 0.002 * p.size
+    big[0] = False
+    protect = big[lab]
+    grey[protect] = 0
+    send = fin.copy()
+    send[grey > 0] = head_lock.SEATED_GREY
+    small = Image.fromarray(send)
+    small.thumbnail((head_lock.PERSON_MAX_SIDE, head_lock.PERSON_MAX_SIDE), Image.LANCZOS)
+    logger.info(f"{tag}: seated legs show skin ({left:.0%}), one cover pass")
+    try:
+        raw = await _image_call("You are a retoucher: you only fill the marked grey areas with the garment fabric.", SEATED_FIX_PROMPT,
+                                [ImageContent(base64.b64encode(_png(np.array(small))).decode()), *garment], f"{tag}-seatfix", aspect)
+    except Exception as e:
+        logger.warning(f"{tag}: seated cover pass failed, first result kept: {e}")
+        log_legs_outcome("seated", "delivered_with_warning", tag=tag, skin_left=round(left, 3))
+        return out
+    with open(f"/tmp/seatfix_raw_{tag}_{uuid.uuid4().hex[:6]}.png", "wb") as f:  # kept for free offline re-merge checks
+        f.write(raw)
+    fixed = await run_in_threadpool(seated_cover_merge, fin, raw, canvas, seated, grey, protect)
+    left2 = legs_skin_left(fixed, canvas, seated["bare"])
+    log_legs_outcome("seated", "corrected" if left2 <= SEATED_SKIN_MAX else "delivered_with_warning", tag=tag,
+                     first={"skin_left": round(left, 3)}, second={"skin_left": round(left2, 3)})
+    return _png(fixed) if left2 < left else out
+
+
+def seated_cover_merge(fin: np.ndarray, raw: bytes, canvas: np.ndarray, seated: dict, grey: np.ndarray, protect: np.ndarray) -> np.ndarray:
+    """The whole lower garment comes from the cover pass (grey areas + legs + every pixel either image changed below the hips),
+    wide feather on the floor where both images match: no patch, no double hem edge. Hands/feet stay from the first result."""
+    H, W = fin.shape[:2]
+    res = np.array(head_lock._open_small(raw, max(H, W)).convert("RGB"))
+    reg = head_lock._register(fin, res)
+    if reg is None:
+        reg = cv2.resize(res, (W, H), interpolation=cv2.INTER_LANCZOS4)
+    bl = lambda a: cv2.GaussianBlur(a, (0, 0), 1.0).astype(np.int16)  # noqa: E731
+    chg = ((np.abs(bl(fin) - bl(canvas)).mean(axis=2) > 20) | (np.abs(bl(reg) - bl(canvas)).mean(axis=2) > 20)).astype(np.uint8)
+    chg = cv2.morphologyEx(chg, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
+    kp = seated["kp"]
+    chg[:int(min(kp[11, 1], kp[12, 1]))] = 0
+    region = ((cv2.dilate(seated["force"], cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (61, 61))) > 0) | (cv2.dilate(grey, np.ones((9, 9), np.uint8)) > 0)
+              | (cv2.dilate(chg, np.ones((21, 21), np.uint8)) > 0))
+    wgt = cv2.GaussianBlur(region.astype(np.float32), (0, 0), 6.0) * (1 - cv2.GaussianBlur(protect.astype(np.float32), (0, 0), 1.0))
+    return cv2.blendLinear(reg, fin, wgt, 1 - wgt)
+
+
 def _snapshot(lock: dict) -> dict:
     return {"canvas": lock["canvas"].copy(), "mask": lock["mask"].copy(), "face": lock["face"], "hands": list(lock["hands"]), "pose": lock.get("pose", False),
-            "pads_px": lock.get("pads_px", (0, 0)), "freeze": list(lock.get("freeze", []))}
+            "pads_px": lock.get("pads_px", (0, 0)), "freeze": list(lock.get("freeze", [])), "seated": lock.get("seated")}
 
 
 def _aspect(lock: dict) -> str:
@@ -306,7 +385,9 @@ async def render(system: str, prompt: str, contents: list, lock: dict, garments_
     surgical = "SURGICAL TRY-ON" in prompt
     if surgical:
         # UNIVERSAL POSE LOCK: the original skeleton (local DWPose, free) is sent as a guide image after all the others.
-        skel = await run_in_threadpool(pose_lock.skeleton_png, base64.b64decode(person_b64))
+        # Seated cover: IMAGE 1 has grey legs, the skeleton is read on the original photo.
+        skel_src = _png(base["canvas"]) if base.get("seated") else base64.b64decode(person_b64)
+        skel = await run_in_threadpool(pose_lock.skeleton_png, skel_src)
         if skel:
             contents = [*contents, ImageContent(base64.b64encode(skel).decode())]
             prompt += ("\nPOSE SKELETON — the LAST image is the body skeleton extracted from IMAGE 1 (white bones, orange joints), same framing. "
@@ -329,6 +410,9 @@ async def render(system: str, prompt: str, contents: list, lock: dict, garments_
         # Half-body photos: legs are invented by design, only shoulders/arms are checked.
         dev = await run_in_threadpool(_pose_dev, base["canvas"], out, "HALF-BODY PHOTO" in prompt)
         logger.info(f"{tag}: pose lock deviation {dev} raw={raw_file}")
+        seated_meta = base.get("seated")
+        if seated_meta:
+            out = await _seated_legs_check(out, base["canvas"], seated_meta, contents[1:len(contents) - (1 if skel else 0)], tag, aspect)
         del raw, contents, base
         # Owner request: no automatic rejection on pose/scene checks, values are only logged.
         logger.info(f"{tag}: pose_fail={snap.get('pose_fail')} (not blocking)")

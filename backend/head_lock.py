@@ -9,6 +9,8 @@ import cv2
 import numpy as np
 from PIL import Image, ImageOps
 
+import pose_lock
+
 _FACE_MODEL = os.path.join(os.path.dirname(__file__), "models", "face_yunet.onnx")
 TOP_PAD_MIN_PX = 50
 TOP_PAD_RATIO = 0.06
@@ -131,7 +133,8 @@ def _head_zones(head: np.ndarray, zone: np.ndarray, face: tuple) -> None:
     zone[int(fy + fh * 0.95):] = 0
 
 
-def _pose_composite(canvas: np.ndarray, res: np.ndarray, face: tuple, pads: tuple = (0, 0), freeze: list = (), arms=None, force: np.ndarray = None):
+def _pose_composite(canvas: np.ndarray, res: np.ndarray, face: tuple, pads: tuple = (0, 0), freeze: list = (), arms=None, force: np.ndarray = None,
+                    seated: dict = None):
     """FACE LOCK for posed photos: original pixels everywhere, generated pixels ONLY where the clothes changed.
     Head (hair, ears, glasses, face) is never taken from the model. Returns (image, changed_fraction).
     `force` (uint8 mask, same size): pixels that are ALWAYS the generated ones, whatever the colour distance says
@@ -208,6 +211,9 @@ def _pose_composite(canvas: np.ndarray, res: np.ndarray, face: tuple, pads: tupl
         ch[hand_here | (head > 0) | (zone > 0)] = 0
     if force is not None:
         ch[(force > 0) & (head == 0) & (zone == 0)] = 255
+    if seated:
+        _seated_composite(ch, canvas, res, seated)
+        ch[(head > 0) | (zone > 0)] = 0
     # Top/bottom pad bands are not part of the photo: always the model's continuation of the scene.
     if pads[0]:
         ch[:pads[0]] = 255
@@ -215,8 +221,81 @@ def _pose_composite(canvas: np.ndarray, res: np.ndarray, face: tuple, pads: tupl
         ch[H - pads[1]:] = 255
     w = cv2.GaussianBlur(ch, (0, 0), 2.0).astype(np.float32) * (1 / 255)
     out = cv2.blendLinear(res, canvas, w, 1 - w)
+    if seated:
+        out = _seated_hands(out, canvas, res, seated)
     del w, ch, head, zone
     return out, frac
+
+
+def _seated_composite(ch: np.ndarray, canvas: np.ndarray, res: np.ndarray, seated: dict) -> None:
+    """SEATED RULES (permanent): bare legs, gaps under the hands and forearms are always the new image (fabric continuous, no holes)."""
+    # Sharp garment outline: the coarse (512px) change mask is re-decided per pixel along its border, so no smeared hem/edge ghost.
+    on = (ch > 0).astype(np.uint8)
+    band = (cv2.dilate(on, np.ones((5, 5), np.uint8)) > 0) & ~(cv2.erode(on, np.ones((31, 31), np.uint8)) > 0)
+    diff = np.abs(cv2.GaussianBlur(canvas, (0, 0), 1.0).astype(np.int16) - cv2.GaussianBlur(res, (0, 0), 1.0).astype(np.int16)).mean(axis=2)
+    sharp = cv2.dilate(cv2.morphologyEx((diff > 20).astype(np.uint8), cv2.MORPH_OPEN, np.ones((3, 3), np.uint8)), np.ones((3, 3), np.uint8))
+    ch[band] = sharp[band] * 255
+    ch[seated["force"] > 0] = 255
+    ch[cv2.dilate(seated["fore"], np.ones((9, 9), np.uint8)) > 0] = 255
+    for _, m in seated["hands"]:
+        ch[cv2.dilate(m, np.ones((9, 9), np.uint8)) > 0] = 255
+
+
+def _seated_hands(out: np.ndarray, canvas: np.ndarray, res: np.ndarray, seated: dict) -> np.ndarray:
+    """The ORIGINAL hands go back on top, moved onto the generated hands (DWPose offset, a few px): exact silhouette, only where the
+    result shows that hand too -> same light, sharp edge, no halo, no double fingertips."""
+    kr = pose_lock.keypoints(res)
+    if kr is None:
+        return out
+    ko = seated["kp"]
+    for lo, m in seated["hands"]:
+        good = (ko[lo:lo + 21, 2] > 0.3) & (kr[lo:lo + 21, 2] > 0.3)
+        if good.sum() < 6:
+            continue
+        d = np.median(kr[lo:lo + 21][good, :2] - ko[lo:lo + 21][good, :2], axis=0)
+        span = max(np.ptp(ko[lo:lo + 21][good, 0]), np.ptp(ko[lo:lo + 21][good, 1]))
+        if np.hypot(*d) > 0.25 * span:
+            logger.info("head_lock: seated hand %d redrawn by the model (offset %.0fpx), generated hand kept", lo, np.hypot(*d))
+            continue
+        M = np.float32([[1, 0, d[0]], [0, 1, d[1]]])
+        src = cv2.warpAffine(canvas, M, (canvas.shape[1], canvas.shape[0]), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE)
+        hm = cv2.warpAffine(m, M, (m.shape[1], m.shape[0]), flags=cv2.INTER_NEAREST)
+        diff = np.abs(cv2.GaussianBlur(src, (0, 0), 1.2).astype(np.int16) - cv2.GaussianBlur(res, (0, 0), 1.2).astype(np.int16)).mean(axis=2)
+        agree = ((hm > 0) & (_skin(src) > 0) & (_skin(res) > 0) & (diff < 30)).astype(np.uint8)
+        agree = cv2.erode(cv2.morphologyEx(agree, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8)), np.ones((3, 3), np.uint8))
+        agree = cv2.morphologyEx(agree, cv2.MORPH_CLOSE, np.ones((5, 5), np.uint8))
+        if agree.sum() < 0.4 * (hm > 0).sum():
+            logger.info("head_lock: seated hand %d does not match the generated one, generated hand kept", lo)
+            continue
+        wgt = cv2.GaussianBlur(agree.astype(np.float32), (0, 0), 0.9)
+        out = cv2.blendLinear(src, out, wgt, 1 - wgt)
+        logger.info("head_lock: seated hand %d original restored, shift=(%.1f, %.1f) px=%d", lo, d[0], d[1], int(agree.sum()))
+    return out
+
+
+SEATED_GREY = (128, 128, 128)
+
+
+def seated_cover(canvas: np.ndarray, send: np.ndarray, top: int) -> dict:
+    """Seated photo + long garment: grey out the bare legs in the image sent to the model (no bare leg to copy) and return the
+    composite masks. None when the person is not seated."""
+    kp = pose_lock.keypoints(canvas)
+    if kp is None or not pose_lock.is_seated(kp):
+        return None
+    hands, fore, feet = pose_lock.seated_masks(kp, canvas.shape)
+    keep = fore.copy()
+    for _, m in hands:
+        keep |= m
+    legs = pose_lock.legs_mask(kp, canvas.shape) > 0
+    legs[:top] = False
+    skin = cv2.morphologyEx(_skin(canvas), cv2.MORPH_OPEN, np.ones((3, 3), np.uint8)) > 0
+    bare = (legs & skin & (feet == 0) & (keep == 0)).astype(np.uint8)
+    bare = cv2.dilate(bare, np.ones((5, 5), np.uint8)) & (keep == 0) & (feet == 0)
+    send[bare > 0] = SEATED_GREY
+    # The whole lower body (legs hull, minus feet) is the new garment; only the agreed hand/forearm pixels go back to the original.
+    force = cv2.dilate(bare, np.ones((9, 9), np.uint8)) | ((legs & (feet == 0)).astype(np.uint8) * 255)
+    logger.info("head_lock: seated pose, bare legs covered=%.3f of the frame", float(bare.mean()))
+    return {"force": force, "hands": hands, "fore": fore, "kp": kp, "bare": bare}
 
 
 def _align_pose(canvas: np.ndarray, res: np.ndarray) -> np.ndarray:
@@ -357,7 +436,8 @@ def _paste_hand(out: np.ndarray, canvas: np.ndarray, res: np.ndarray, box: tuple
     return True
 
 
-def prepare(person_bytes: bytes, long_garment: bool, hands: list = None, paste_hands=True, pose: bool = False, freeze: list = None, extend: float = 0.0) -> tuple:
+def prepare(person_bytes: bytes, long_garment: bool, hands: list = None, paste_hands=True, pose: bool = False, freeze: list = None, extend: float = 0.0,
+            cover_legs: bool = False) -> tuple:
     """paste_hands: bool for all hands, or one bool per hand box (False = the model may redraw that hand)."""
     # Returns (canvas_png_bytes, meta) with top safe margin and optional bottom extension.
     im = np.array(_open_small(person_bytes, PERSON_OUT_SIDE).convert("RGB"))
@@ -400,7 +480,14 @@ def prepare(person_bytes: bytes, long_garment: bool, hands: list = None, paste_h
         bw, bh = x1 - x0, y1 - y0
         mask[max(y_keep, int(y0 - bh * 0.8)):int(y1 + bh * 0.15), max(0, int(x0 - bw * 0.15)):int(x1 + bw * 0.15)] = 0
     mask = cv2.GaussianBlur(mask, (0, 0), max(4, h / 160))
-    send = Image.fromarray(canvas)
+    send = canvas
+    seated = None
+    if cover_legs and pose:
+        send = canvas.copy()
+        seated = seated_cover(canvas, send, top)
+        if seated is None:
+            send = canvas
+    send = Image.fromarray(send)
     send.thumbnail((PERSON_MAX_SIDE, PERSON_MAX_SIDE), Image.LANCZOS)
     buf = io.BytesIO()
     send.save(buf, "PNG")
@@ -408,7 +495,7 @@ def prepare(person_bytes: bytes, long_garment: bool, hands: list = None, paste_h
     face_c = (face[0], face[1] + top, face[2], face[3]) if face else None
     del im
     gc.collect()
-    return buf.getvalue(), {"canvas": canvas, "mask": mask, "face": face_c, "hands": paste_c, "pose": pose, "pads_px": (top, bottom), "freeze": freeze_c}
+    return buf.getvalue(), {"canvas": canvas, "mask": mask, "face": face_c, "hands": paste_c, "pose": pose, "pads_px": (top, bottom), "freeze": freeze_c, "seated": seated}
 
 
 def _match_head_colour(canvas: np.ndarray, res: np.ndarray, mask: np.ndarray) -> np.ndarray:
@@ -479,7 +566,8 @@ def finalize(result_bytes: bytes, meta: dict) -> bytes:
     reg = _register(canvas, res) if meta.get("pose") else None
     if reg is not None:
         # Posed photo registered on the background: composite directly (face position no longer needed for alignment).
-        out, frac = _pose_composite(canvas, reg, meta.get("face"), meta.get("pads_px", (0, 0)), meta.get("freeze", ()), meta.get("arms"))
+        out, frac = _pose_composite(canvas, reg, meta.get("face"), meta.get("pads_px", (0, 0)), meta.get("freeze", ()), meta.get("arms"),
+                                     seated=meta.get("seated"))
         logger.info("head_lock: pose composite (registered) changed=%.2f", frac)
         meta.clear()
         meta["drift"] = 0.0
@@ -540,7 +628,8 @@ def finalize(result_bytes: bytes, meta: dict) -> bytes:
                 aligned = abs(cx - ox) < 0.35 * of[2] and abs(cy - oy) < 0.35 * of[3]
     if meta.get("pose"):
         # Posed photo: never keep a generated face. Misaligned or new scene -> flag so the render loop regenerates.
-        out, frac = (_pose_composite(canvas, res, head_at, meta.get("pads_px", (0, 0)), meta.get("freeze", ()), meta.get("arms")) if aligned and head_at else (res, 1.0))
+        out, frac = (_pose_composite(canvas, res, head_at, meta.get("pads_px", (0, 0)), meta.get("freeze", ()), meta.get("arms"),
+                                       seated=meta.get("seated")) if aligned and head_at else (res, 1.0))
         logger.info("head_lock: pose composite changed=%.2f aligned=%s", frac, aligned)
         del res, canvas, mask
         meta.clear()
