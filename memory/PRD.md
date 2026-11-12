@@ -573,3 +573,4 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 - 2026-11-12: BASE A + pantalone nero OPACO + zeppe: 1 generazione (raw2), busto pixel identico, nuovo outfit in cima
 - 2026-11-12: BASE A + pantalone pizzo nero trasparente (prodotto df4efd9e) + zeppe: 1 generazione (raw3), busto pixel identico a BASE A, niente body nero
 - 2026-11-12: final4 = final3 + pavimento pulito (pezzi pizzo rossi tolti) + sandali rifatti: 1 generazione (raw4) composta solo su pavimento/piedi
+- 2026-11-12: NUOVA BASE A = MA-SEDUTA-A02 (final5: zona nera centrale rifatta in pizzo trasparente, 1 generazione). A01 archiviata in pose_bases_history
