@@ -569,3 +569,4 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 - Collection `pose_bases`: MA-SEDUTA-A01 "BASE A - MAGLIA COMPLICATA" (da outfit 55ae6eda, UI telefono ritagliata) e MA-SEDUTA-B01 "BASE B - BRACCIA SCOPERTE" (da outfit 23482b0b); file anche in `files` (kind person)
 - GET /api/pose-bases; `_auto_base` in prova singola + outfit (griglia e guardaroba): se la foto scelta è una base -> capo con maniche = A, smanicato = B, dubbio = resta quella scelta
 - Frontend: components/PoseBases.jsx nel pannello "foto in posa" (Studio) con codici visibili
+- 2026-11-12: BASE A + pantalone nero trasparente + zeppe: 1 generazione, sopra i fianchi pixel identico a BASE A (script /app/memory/p8/lower.py), salvato come nuovo outfit in cima
