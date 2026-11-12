@@ -552,3 +552,9 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 ## 2026-11-12 — MODO DI VESTIRE BLOCCATO (DONE)
 - `DRESSING_RULE` (server.py) aggiunta a ogni prompt di prova: singola, outfit, passata gambe, copia look. Top aderente con orlo appoggiato sulla vita alta (né dentro né sopra), pantalone a vita alta che segue la posa, ricami intatti, proporzioni reali, giuntura pulita, posa identica
 - `_tuck_rule` UNTUCKED ora = orlo appoggiato sulla cintura (non più "fuori e lungo sui fianchi"); testo del controllo qualità allineato
+
+## 2026-11-12 — REGOLA FISSA MANI/AVAMBRACCI + MAGLIA FUORI (DONE)
+- Multipass passata gambe (server.py `_legs_attempt`): rimette SEMPRE sopra i pantaloni nuovi la maglia della passata 1 (silhouette intera, pizzo chiuso; i fori del pizzo mostrano il braccio solo sul braccio, altrove i pantaloni nuovi = niente aloni marroni), le mani esatte (palmo+dita DWPose) e gli avambracci nudi. Prima la passata gambe cancellava mani e maniche
+- `_tuck_rule`: maglia FUORI, cade sopra la cintura (sostituisce "appoggiata sulla vita"); `DRESSING_RULE` + regola fissa mani/avambracci mai spariti, zero aloni, uomo/donna/ogni outfit
+- Outfit 6223a9a6 corretto con rimontaggio gratuito (pantaloni e scarpe identici). 3 generazioni provate sulla passata gambe: non migliori (pantaloni cambiati), scartate
+- Re-run gratuito: /app/memory/p7/rerun.py (sostituisce il modello con i raw salvati)

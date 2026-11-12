@@ -1894,9 +1894,9 @@ def _tuck_rule(items: list) -> str:
     if not has_top or has_outer:
         return ""
     return ("UNTUCKED TOP — MANDATORY (My Atelier dressing style):\n"
-            "• The top is NOT tucked inside and does NOT hang loose over the hips: its hem rests exactly on the waistband of the high-waisted "
-            "trousers / skirt, with a clean, sharp join between top and bottom — no fake overlap, no fabric bunching, no gap of skin.\n"
-            "• NEGATIVE: tucked-in shirt, half tuck, French tuck, baggy hem hanging over the hips, top overlapping the trousers.\n")
+            "• The top is NEVER tucked inside: it stays OUTSIDE and falls freely OVER the waistband of the trousers / skirt, like a normal top "
+            "worn on top (ties, knots and front details stay visible). It is clearly visible where the top ends and the trousers begin: clean join.\n"
+            "• NEGATIVE: tucked-in shirt, half tuck, French tuck, top disappearing inside the trousers.\n")
 
 
 _GARMENT_CATS = ("top", "bottom", "dress", "outerwear", "shoes", "bag", "suit")
@@ -2132,13 +2132,20 @@ def _covers_legs(items: list) -> bool:
 DRESSING_RULE = (
     "MY ATELIER DRESSING STYLE — FIXED, ALWAYS:\n"
     "• Every garment DRESSES the body, it does not cover or hide it: fitted to the real body shape, following its lines.\n"
-    "• Top: close to the torso, smooth, no strange folds, never widening or bulking the body; its hem rests cleanly on the waistband.\n"
+    "• Top: close to the torso, smooth, no strange folds, never widening or bulking the body; it stays OUTSIDE, its hem falls over the "
+    "waistband (never tucked in).\n"
     "• Trousers: high-waisted, following the legs exactly in their pose (crossed, bent, seated or standing), no holes, no halos, never "
     "stretching or straightening the legs.\n"
     "• Embroidery, prints, logos and details of every garment stay intact and in place on the body (e.g. embroidered flowers on the legs).\n"
     "• REAL PROPORTIONS: never lengthen, shorten or thicken the body, the limbs or the garments.\n"
     "• Clean join between top and bottom, no fake overlaps.\n"
     "• The pose of IMAGE 1 stays IDENTICAL: same body, same legs, same hands, same face position.\n"
+    "• HANDS & FOREARMS — FIXED, ANY MODEL (man or woman), ANY OUTFIT: hands and forearms NEVER disappear — never hidden under sleeves "
+    "(even wide bell or lace sleeves end above the wrist and leave the hands free), never cut, never merged with the garment or the legs. "
+    "Both hands stay visible and complete exactly as in IMAGE 1 (e.g. joined in front, between the legs), 5 real fingers each; forearms "
+    "whole with clean continuous skin from elbow to hand. A complicated garment is adapted to the body, the body never disappears.\n"
+    "• NO HALOS, EVER: no brown stains, fake shadows, blurred or dark/light edges around hands, forearms or arms, nor where a sleeve ends; "
+    "the sleeve rests naturally on the arm.\n"
 )
 
 
@@ -3348,21 +3355,35 @@ async def _multipass_outfit(user: User, person_path: str, items: list, layer_ord
         legs_out, frac = await run_in_threadpool(head_lock._pose_composite, crop, reg, None, (0, 0), [], None, force)
         keep = None
         if am is not None:
-            # Arms/hands resting on the legs keep the pass-1 sleeves and hands (the legs pass never repaints an elbow).
-            # CLEAN HAND EDGES: keep the exact arm/hand silhouette (skin segmentation, sharp edge), never a blurred halo strip.
+            # HANDS & FOREARMS NEVER DISAPPEAR, TOP ALWAYS OUTSIDE (fixed rule): the legs pass may repaint hands/sleeves as trousers,
+            # so the pass-1 top (sleeves, hem, ties), the exact hand silhouettes and the bare forearms always go back on top.
             sk = cv2.morphologyEx(head_lock._skin(crop), cv2.MORPH_OPEN, np.ones((3, 3), np.uint8)) > 0
-            sleeve = np.abs(crop.astype(np.int16) - orig[Y0:Y1, X0:X1].astype(np.int16)).mean(axis=2) > 24
-            # Finger hull, but only where the legs pass shows the same hand (aligned): skin below the fingertips is not the hand.
-            same_hand = np.abs(cv2.GaussianBlur(crop, (0, 0), 1.2).astype(np.int16) - cv2.GaussianBlur(reg, (0, 0), 1.2).astype(np.int16)).mean(axis=2) < 40
-            keep = (am[1][Y0:Y1, X0:X1] > 0) & sk & same_hand & (not bag)
-            keep = cv2.morphologyEx(keep.astype(np.uint8), cv2.MORPH_CLOSE, np.ones((5, 5), np.uint8)) > 0
-            for _, m in am[0]:
-                core = m[Y0:Y1, X0:X1] > 0
-                if not core.any():
-                    continue
-                if sk[core].mean() <= 0.5:  # new sleeve over the legs (bare arms need no keep, the legs pass leaves them)
-                    inner = cv2.erode(core.astype(np.uint8), np.ones((9, 9), np.uint8)) > 0
-                    keep |= inner & sleeve  # new sleeve: inner part only, edges come from the legs pass
+            o_c = orig[Y0:Y1, X0:X1]
+            diff1 = np.abs(cv2.GaussianBlur(crop, (0, 0), 1.0).astype(np.int16) - cv2.GaussianBlur(o_c, (0, 0), 1.0).astype(np.int16)).mean(axis=2)
+            top_px = cv2.morphologyEx(((diff1 > 24) & ~sk).astype(np.uint8), cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
+            # Lace / openwork: the whole top silhouette (holes closed and filled); its see-through holes show the arm only on the arm,
+            # elsewhere the new trousers behind it (never the old bare-leg skin = no brown halo).
+            top_px = cv2.morphologyEx(top_px, cv2.MORPH_CLOSE, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (11, 11)))
+            cnts, _ = cv2.findContours(top_px, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            cv2.drawContours(top_px, [c for c in cnts if cv2.contourArea(c) > 150], -1, 1, -1)
+            arm_wide = np.zeros(orig.shape[:2], np.uint8)
+            for sh, el, wr in ((5, 7, 9), (6, 8, 10)):
+                if min(kp[sh, 2], kp[el, 2], kp[wr, 2]) >= pose_lock.MIN_SCORE:
+                    t = max(5, int(0.3 * float(np.hypot(*(kp[sh, :2] - kp[el, :2])))))
+                    cv2.line(arm_wide, tuple(np.int32(kp[sh, :2])), tuple(np.int32(kp[el, :2])), 255, t, cv2.LINE_AA)
+                    cv2.line(arm_wide, tuple(np.int32(kp[el, :2])), tuple(np.int32(kp[wr, :2])), 255, t, cv2.LINE_AA)
+            keep = (top_px > 0) & (~sk | (arm_wide[Y0:Y1, X0:X1] > 0))
+            if not bag:
+                hands_m, _, _ = pose_lock.seated_masks(kp, orig.shape)
+                arm_m = np.zeros(orig.shape[:2], np.uint8)
+                for _, m in hands_m:
+                    arm_m |= m
+                for sh, el, wr in ((5, 7, 9), (6, 8, 10)):
+                    if min(kp[sh, 2], kp[el, 2], kp[wr, 2]) >= pose_lock.MIN_SCORE:
+                        t = max(5, int(0.22 * float(np.hypot(*(kp[sh, :2] - kp[el, :2])))))
+                        cv2.line(arm_m, tuple(np.int32(kp[el, :2])), tuple(np.int32(kp[wr, :2])), 255, t, cv2.LINE_AA)
+                limbs = (arm_m[Y0:Y1, X0:X1] > 0) & sk
+                keep |= cv2.morphologyEx(limbs.astype(np.uint8), cv2.MORPH_CLOSE, np.ones((3, 3), np.uint8)) > 0
             kw = cv2.GaussianBlur(keep.astype(np.uint8) * 255, (0, 0), 0.8).astype(np.float32)[..., None] / 255
             legs_out = (crop * kw + legs_out * (1 - kw)).astype(np.uint8)
         cand = base.copy()
