@@ -570,3 +570,4 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 - GET /api/pose-bases; `_auto_base` in prova singola + outfit (griglia e guardaroba): se la foto scelta è una base -> capo con maniche = A, smanicato = B, dubbio = resta quella scelta
 - Frontend: components/PoseBases.jsx nel pannello "foto in posa" (Studio) con codici visibili
 - 2026-11-12: BASE A + pantalone nero trasparente + zeppe: 1 generazione, sopra i fianchi pixel identico a BASE A (script /app/memory/p8/lower.py), salvato come nuovo outfit in cima
+- 2026-11-12: BASE A + pantalone nero OPACO + zeppe: 1 generazione (raw2), busto pixel identico, nuovo outfit in cima
