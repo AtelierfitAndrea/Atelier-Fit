@@ -13,6 +13,9 @@ import SaveToGallery from "@/components/SaveToGallery";
 import ShareLook from "@/components/ShareLook";
 import { askBook, SaveBookBar } from "@/components/PoseBook";
 import { ResultNote } from "./ResultNote";
+import { TransparentToggle } from "./TransparentToggle";
+import { TransparentSwitch } from "./TransparentSwitch";
+import { useAuth } from "@/lib/auth";
 
 const SLOTS = [
   { k: "top", n: 1, l: "Maglia / Top" },
@@ -145,6 +148,7 @@ export function OutfitTotal({ used, saved, prefix = "grid", title = "Totale outf
 }
 
 export default function OutfitGrid({ personPath, preservePose = false, uploadFile, restoreItems, onItemsChange, onGenerated }) {
+  const isOwner = useAuth()?.user?.is_owner === true;
   const { status, openPaywall, refresh } = useSubscription();
   const [items, setItems] = useState({});
 
@@ -209,10 +213,12 @@ export default function OutfitGrid({ personPath, preservePose = false, uploadFil
     <section className="border hairline p-6 md:p-8 bg-white" translate="no" data-testid="outfit-grid-section">
       <h2 className="label-caps text-sm">COMPONI IL TUO OUTFIT MULTI-BRAND - FINO A 4 CAPI + BORSA</h2>
       <p className="mt-2 text-sm text-neutral-600">Carica da 1 a 4 screenshot dei capi, anche di brand diversi, e se vuoi la tua borsa da qualsiasi sito. Usiamo la tua foto base.</p>
+      {isOwner && <div className="mt-4"><TransparentSwitch /></div>}
       <div className="mt-6 grid grid-cols-2 gap-4 max-w-xl">
         {SLOTS.map((s) => (
           <div key={s.k} className={s.k === "bag" ? "col-span-2 w-1/2 justify-self-center" : ""}>
             <SlotBox slot={s} item={items[s.k]} onFile={(f) => setSlot(s.k, f)} onClear={() => clearSlot(s.k)} />
+            <TransparentToggle path={items[s.k]?.path} testid={`transparent-${s.k}`} />
           </div>
         ))}
       </div>
@@ -236,7 +242,7 @@ export default function OutfitGrid({ personPath, preservePose = false, uploadFil
         <div className="mt-10 grid grid-cols-1 lg:grid-cols-2 gap-8" data-testid="grid-result">
           <div className="space-y-4">
             <img src={fileUrl(result.result_path)} alt="Outfit" className="w-full border hairline" data-testid="grid-result-image" />
-            <ResultNote testid="grid-result-note" />
+            <ResultNote testid="grid-result-note" notice={result.notice} />
             <SaveBookBar kind="outfit" refId={result.id} />
             <SaveToGallery path={result.result_path} />
             <ShareLook path={result.result_path} />

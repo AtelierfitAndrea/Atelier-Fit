@@ -55,7 +55,7 @@ export default function TryOnDetail() {
             <ArrowsLeftRight size={14} weight="bold" /> {view === "after" ? "Prima" : "Dopo"}
           </button>
         </div>
-        <ResultNote testid="tryon-result-note" />
+        <ResultNote testid="tryon-result-note" notice={t.notice} />
         <div className="mt-2"><SaveBookBar kind="tryon" refId={t.id} /></div>
         <div className="mt-4"><HemCard url={`/tryons/${id}/hem`} /></div>
       </div>

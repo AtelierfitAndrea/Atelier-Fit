@@ -33,6 +33,7 @@ import payments_log
 import hem as hem_mod
 import size_fallback
 import tryon_quality
+import fal_tryon
 from pymongo.errors import DuplicateKeyError
 import re
 import hmac
@@ -1596,8 +1597,11 @@ async def upload(kind: str = Query(..., regex="^(person|garment)$"), file: Uploa
             data = await run_in_threadpool(head_lock.downscale, data, head_lock.PERSON_MAX_SIDE)
         except Exception:
             raise HTTPException(status_code=400, detail="Il file non è una foto valida")
+    transparent, maybe = (_transparent_auto(file.filename or "", data) if kind == "garment" else (False, False))
     result = put_object(path, data, content_type)
     await db.files.insert_one({
+        "transparent": True if transparent else None,
+        "transparent_maybe": maybe,
         "id": str(uuid.uuid4()),
         "user_id": user.user_id,
         "kind": kind,
@@ -1608,7 +1612,102 @@ async def upload(kind: str = Query(..., regex="^(person|garment)$"), file: Uploa
         "is_deleted": False,
         "created_at": datetime.now(timezone.utc).isoformat(),
     })
-    return {"path": result["path"]}
+    return {"path": result["path"], "transparent": transparent, "transparent_maybe": maybe}
+
+
+# ----- CAPI TRASPARENTI (owner rule): flag per garment + external try-on test switch (OFF by default, max 2 generations) -----
+_TRANSP_WORDS = re.compile(r"(trasparent\w*|tulle|organza|voile|sheer|see[-_ ]?through|velat\w*)", re.I)
+_TRANSP_MAYBE = re.compile(r"(pizzo|lace|mesh|rete|chiffon|georgette|velo)", re.I)
+TRANSP_EXT_MAX = 2
+
+
+def _transparent_auto(filename: str, data: bytes) -> tuple:
+    """(transparent, maybe): PNG with a real alpha channel or a sheer word in the name = TRUE; lace/mesh words = ask the user."""
+    from PIL import Image
+    import io
+    alpha = False
+    try:
+        im = Image.open(io.BytesIO(data))
+        if im.format == "PNG" and ("A" in im.getbands() or "transparency" in im.info):
+            alpha = im.convert("RGBA").getchannel("A").getextrema()[0] < 250
+    except Exception:
+        pass
+    yes = alpha or bool(_TRANSP_WORDS.search(filename))
+    return yes, (not yes) and bool(_TRANSP_MAYBE.search(filename))
+
+
+class TransparentFlag(BaseModel):
+    path: str
+    transparent: bool
+
+
+@api_router.post("/garments/transparent")
+async def set_transparent(req: TransparentFlag, user: User = Depends(get_current_user)):
+    if _path_owner(req.path) != user.user_id:
+        raise HTTPException(status_code=403, detail="Accesso negato")
+    await db.files.update_one({"storage_path": req.path}, {"$set": {"transparent": req.transparent}})
+    return {"path": req.path, "transparent": req.transparent}
+
+
+@api_router.get("/garments/transparent")
+async def get_transparent(path: str, user: User = Depends(get_current_user)):
+    if _path_owner(path) != user.user_id:
+        raise HTTPException(status_code=403, detail="Accesso negato")
+    f = await db.files.find_one({"storage_path": path}, {"_id": 0, "transparent": 1, "transparent_maybe": 1}) or {}
+    return {"transparent": f.get("transparent"), "maybe": bool(f.get("transparent_maybe")) and f.get("transparent") is None}
+
+
+async def _is_transparent(path: str) -> bool:
+    f = await db.files.find_one({"storage_path": path}, {"_id": 0, "transparent": 1})
+    return bool(f and f.get("transparent"))
+
+
+async def _ext_switch() -> dict:
+    d = await db.app_settings.find_one({"_id": "transparent_ext"}) or {}
+    return {"on": bool(d.get("on")), "used": int(d.get("used", 0)), "max": TRANSP_EXT_MAX}
+
+
+class ExtSwitch(BaseModel):
+    on: bool
+
+
+@api_router.get("/admin/transparent-ext")
+async def get_ext_switch(user: User = Depends(get_current_user)):
+    if not _is_owner_email(user.email):
+        raise HTTPException(status_code=403, detail="Solo proprietario")
+    return await _ext_switch()
+
+
+@api_router.post("/admin/transparent-ext")
+async def set_ext_switch(req: ExtSwitch, user: User = Depends(get_current_user)):
+    if not _is_owner_email(user.email):
+        raise HTTPException(status_code=403, detail="Solo proprietario")
+    # Turning ON starts a new test: 2 external generations, then it switches itself OFF.
+    await db.app_settings.update_one({"_id": "transparent_ext"}, {"$set": {"on": req.on, **({"used": 0} if req.on else {})}}, upsert=True)
+    return await _ext_switch()
+
+
+TRANSP_NOTICE = "Capo trasparente in elaborazione speciale"
+
+
+async def _ext_tryon(user_id: str, person_path: str, garment_path: str, kind: str = "tryon") -> Optional[str]:
+    """One external generation (counted); the switch turns itself OFF after TRANSP_EXT_MAX. None on failure."""
+    sw = await db.app_settings.find_one_and_update({"_id": "transparent_ext", "on": True, "used": {"$lt": TRANSP_EXT_MAX}}, {"$inc": {"used": 1}})
+    if not sw:
+        return None
+    if sw.get("used", 0) + 1 >= TRANSP_EXT_MAX:
+        await db.app_settings.update_one({"_id": "transparent_ext"}, {"$set": {"on": False}})
+    try:
+        pb = head_lock.downscale(await run_in_threadpool(head_lock.crop_screenshot, get_object(person_path)[0]), 2048)
+        gb = head_lock.downscale(get_object(garment_path)[0], 2048)
+        out = await run_in_threadpool(fal_tryon.tryon, pb, gb)
+    except Exception as e:
+        logger.warning(f"external transparent try-on failed: {e}")
+        return None
+    path = f"{APP_NAME}/{kind}/{user_id}/{uuid.uuid4().hex}.jpg"
+    put_object(path, tryon_quality.watermark(out, "free"), "image/jpeg")
+    logger.info(f"external transparent try-on ok -> {path}")
+    return path
 
 
 class TestPoseImport(BaseModel):
@@ -2316,7 +2415,12 @@ async def _tryon_generate(req: TryOnRequest, user: User):
     m_doc = await _get_measurements(user.user_id)
     req.garment_category = await _classify_garment(req.garment_path, req.garment_category)
     req.person_path = await _auto_base(user, req.person_path, [req.garment_path])
-    result_path = await _render_single(user.user_id, req.person_path, req.garment_path, req.garment_category, req.garment_name, m_doc, _owner_extra(user, req.preserve_pose))
+    notice, result_path = None, None
+    if await _is_transparent(req.garment_path) and (await _ext_switch())["on"]:
+        result_path = await _ext_tryon(user.user_id, req.person_path, req.garment_path)
+        notice = None if result_path else TRANSP_NOTICE
+    if not result_path:
+        result_path = await _render_single(user.user_id, req.person_path, req.garment_path, req.garment_category, req.garment_name, m_doc, _owner_extra(user, req.preserve_pose))
 
     rec_size = recommend_size(m_doc, "top" if req.garment_category == "suit" else req.garment_category)
     tryon_id = str(uuid.uuid4())
@@ -2337,6 +2441,7 @@ async def _tryon_generate(req: TryOnRequest, user: User):
         "fitting_accuracy_at_time": accuracy_snapshot["accuracy"],
         "is_reliable_at_time": accuracy_snapshot["reliable"],
         "created_at": created_at,
+        "notice": notice,
     }
     await db.tryons.insert_one(doc)
     # Legal evidence log — the proof that our size suggestion was reliable at the moment of purchase
@@ -3725,13 +3830,27 @@ async def _outfit_generate_from_uploads(req: GridOutfitRequest, user: User):
     items = [{
         "slot": k, "image_path": slots[k], "category": _GRID_SLOTS[k][0], "name": descs[k] or _GRID_SLOTS[k][1], "brand": None,
     } for k in _GRID_ORDER if k in slots]
-    person_path, result_path = await _compose_outfit(user, req.person_path, items, _GRID_LAYER_TEXT, _owner_extra(user, req.preserve_pose))
+    notice, result_path, person_path = None, None, req.person_path
+    sheer = [g for g in items if await _is_transparent(g["image_path"])]
+    if sheer and req.person_path and (await _ext_switch())["on"]:
+        # Covered garments: normal flow (unchanged); then each transparent garment from the external try-on, on that result.
+        rest = [g for g in items if g not in sheer]
+        cur = (await _compose_outfit(user, req.person_path, rest, _GRID_LAYER_TEXT, _owner_extra(user, req.preserve_pose)))[1] if rest else req.person_path
+        for g in sheer:
+            cur = await _ext_tryon(user.user_id, cur, g["image_path"], "outfit")
+            if not cur:
+                break
+        result_path = cur
+        notice = None if cur else TRANSP_NOTICE
+    if not result_path:
+        person_path, result_path = await _compose_outfit(user, req.person_path, items, _GRID_LAYER_TEXT, _owner_extra(user, req.preserve_pose))
     doc = {
         "id": str(uuid.uuid4()),
         "user_id": user.user_id,
         "person_path": person_path,
         "preserve_pose": req.preserve_pose,
         "result_path": result_path,
+        "notice": notice,
         "items": [{
             "garment_id": None, "slot": g["slot"], "image_path": g["image_path"], "name": g["name"], "brand": None,
             "price": None, "currency": "EUR", "category": g["category"], "source_url": None,

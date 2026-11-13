@@ -20,6 +20,7 @@ import { notifyTabReady } from "@/lib/tabNotify";
 import PendingOutfitModal from "@/components/PendingOutfitModal";
 import { usePendingDraft } from "@/lib/pendingOutfit";
 import { postRender } from "@/lib/renderJob";
+import { TransparentToggle } from "@/components/TransparentToggle";
 
 export default function Studio() {
   const { status: subStatus, openPaywall, refresh: refreshSub } = useSubscription();
@@ -142,6 +143,7 @@ export default function Studio() {
           className="lg:col-span-6"
         />
         <AvatarPanel path={personPath} posed={posed} />
+        <div className="lg:col-span-12 -mt-4"><TransparentToggle path={garmentPath} testid="transparent-single" /></div>
       </div>
 
       <section className="border hairline p-6 md:p-8 bg-white" data-testid="tryon-action">

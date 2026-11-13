@@ -579,3 +579,10 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 - `tryon_quality.REGOLA_FISSA_MY_ATELIER` (testo del proprietario, verbatim) anteposta al system prompt di OGNI chiamata al modello immagini (`_image_call`)
 - `old_clothes_qc` (modello testo economico): vestito vecchio visibile? capi fuori dagli slot? doppio strato? (cintura/pannelli dei pantaloni ammessi non contano)
 - `_old_clothes_loop` (server.py) su prova singola (`_render_single` -> `_render_single_once`) e outfit (`_compose_outfit` -> `_compose_outfit_once`, anche multipass): se fallisce rigenera max 2 volte (OLD_CLOTHES_MAX_REGEN) col difetto nominato; consegna SEMPRE la migliore, mai blocco
+
+## 2026-11-12 — CAPI TRASPARENTI + SERVER ESTERNO (DONE)
+- Upload capo: trasparente=TRUE automatico se PNG con alpha reale o nome con trasparente/tulle/organza/voile/sheer/see-through/velato; nome con pizzo/lace/mesh/rete/chiffon/velo -> chiede "Sembra trasparente, confermi?" (files.transparent / transparent_maybe)
+- Checkbox "Questo capo è trasparente / velato / pizzo / tulle": components/TransparentToggle.jsx (Studio capo singolo + ogni slot griglia outfit); GET/POST /api/garments/transparent
+- Interruttore USA_SERVER_ESTERNO_TRASPARENZE: db.app_settings {_id: transparent_ext, on, used}, OFF di default; GET/POST /api/admin/transparent-ext (solo proprietario); components/TransparentSwitch.jsx nella griglia outfit. ON = max 2 generazioni esterne, poi OFF da solo
+- Esterno: fal.ai fal-ai/image-apps-v2/virtual-try-on via Universal Key (backend/fal_tryon.py). Prova singola: capo trasparente + ON -> esterno. Outfit griglia: capi coperti col flusso normale, poi ogni capo trasparente con l'esterno sul risultato. Se l'esterno fallisce -> foto del flusso normale + avviso "Capo trasparente in elaborazione speciale" (campo notice, mostrato da ResultNote)
+- Flusso capi coperti invariato
