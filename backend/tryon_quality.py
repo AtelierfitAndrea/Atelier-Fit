@@ -168,8 +168,71 @@ def _aspect(lock: dict) -> str:
     return min(_RATIOS, key=lambda k: abs(_RATIOS[k] - w / h))
 
 
+# REGOLA ASSOLUTA MY ATELIER (owner, non modificabile): fixed system prompt of EVERY image-model call.
+REGOLA_FISSA_MY_ATELIER = """
+1. PRENDI la foto base caricata dall'utente.
+2. RIMUOVI COMPLETAMENTE i vestiti della foto base.
+   - Elimina al 100% il costume, body, reggiseno, mutande, o qualsiasi capo presente nella foto base.
+   - Non deve rimanere NESSUNA traccia del vestito originale.
+   - Non deve essere visibile NESSUN vestito sotto il nuovo vestito.
+3. METTI SOLO i vestiti caricati dall'utente negli slot.
+   - SLOT 1 = capo superiore
+   - SLOT 2 = capo inferiore
+   - SLOT 3 = scarpe
+   - SLOT 4 = giacca / accessorio
+   - SLOT 5 = borsa
+   - Usa SOLO questi. Non inventare altri capi. Non aggiungere strati.
+4. VIETATO LAYERING:
+   - Vietato mostrare il vestito base sotto il vestito nuovo.
+   - Vietato mostrare tessuto nero sotto tessuto rosso.
+   - Vietato mostrare body sotto pantaloni.
+   - Il nuovo vestito deve stare DIRETTAMENTE sul corpo.
+5. MANTIENI invariati: stessa donna, stessa faccia, stessa posa, stesso corpo, stesso sfondo, stessa luce.
+   Cambia SOLO i vestiti.
+6. Se il vestito originale è ancora visibile, il risultato è SBAGLIATO e deve essere rigenerato.
+"""
+OLD_CLOTHES_MAX_REGEN = 2
+
+
+async def old_clothes_qc(person_bytes: bytes, result: bytes, garments_txt: str) -> dict:
+    """REGOLA FISSA check (cheap text model): old clothes of the base photo still visible? garments not in the slots? double layer?"""
+    a = await run_in_threadpool(head_lock.downscale, person_bytes, head_lock.GARMENT_MAX_SIDE)
+    b = await run_in_threadpool(head_lock.downscale, result, head_lock.GARMENT_MAX_SIDE)
+    prompt = (
+        "IMAGE 1 is the base photo of a person wearing her ORIGINAL clothes. IMAGE 2 is a virtual try-on of the same person.\n"
+        f"The ONLY garments allowed in IMAGE 2: {garments_txt}.\n"
+        "Return ONLY JSON: {\"old_clothes_visible\": bool, \"extra_garments\": bool, \"double_layer\": bool, \"issues\": \"short English list\"}\n"
+        "old_clothes_visible: any piece of the ORIGINAL clothing of IMAGE 1 (bodysuit, swimsuit, bra, underwear, tank, old trousers...) is "
+        "still visible in IMAGE 2 — under, through (see-through fabric), around or instead of the new garments.\n"
+        "extra_garments: IMAGE 2 shows a garment layer that is neither in the allowed list nor original skin (invented base layer, extra top).\n"
+        "double_layer: one garment shows another fabric under it that is not in the allowed list (e.g. black fabric under a red lace top, "
+        "a body under the trousers). Sheer/lace garments that show SKIN underneath are correct.\n"
+        "Do NOT flag parts of an allowed garment: a solid waistband, lined panel or darker lace of allowed black trousers belongs to the "
+        "trousers. Flag only what clearly is ANOTHER garment, typically the original one of IMAGE 1 continuing where no allowed garment "
+        "is (e.g. black bodysuit fabric on the belly, chest or under the neckline, straps on the shoulders, swimsuit edges on the hips).\n"
+    )
+    try:
+        chat = LlmChat(api_key=os.environ["EMERGENT_LLM_KEY"], session_id=f"oldc-{uuid.uuid4().hex[:8]}",
+                       system_message="You are a strict fashion photo inspector. Reply with JSON only.")
+        chat.with_model("gemini", QC_MODEL)
+        reply = await chat.send_message(UserMessage(text=prompt, file_contents=[ImageContent(base64.b64encode(a).decode()),
+                                                                               ImageContent(base64.b64encode(b).decode())]))
+    except Exception as e:
+        logger.warning(f"old clothes qc failed, not blocking: {e}")
+        return {"ok": True, "bad": 0, "issues": ""}
+    d = _extract(reply)
+    bad = sum(d.get(k) is True for k in ("old_clothes_visible", "extra_garments", "double_layer"))
+    return {"ok": bad == 0, "bad": bad, "issues": str(d.get("issues") or "")[:400]}
+
+
+def old_clothes_note(issues: str) -> str:
+    return ("\nPREVIOUS ATTEMPT REJECTED (REGOLA FISSA): the original clothes of IMAGE 1 were still visible — " + issues +
+            ". Remove them 100%: the new garments sit DIRECTLY on the skin, nothing of the old outfit under, through or around them.\n")
+
+
 async def _image_call(system: str, prompt: str, contents: list, tag: str, aspect: str) -> bytes:
     last = None
+    system = REGOLA_FISSA_MY_ATELIER + "\n" + system
     for model in MODELS:
         chat = LlmChat(api_key=os.environ["EMERGENT_LLM_KEY"], session_id=f"{tag}-{uuid.uuid4().hex[:8]}", system_message=system)
         chat.with_model("gemini", model).with_params(modalities=["image", "text"], image_config={"image_size": "2K", "aspect_ratio": aspect})

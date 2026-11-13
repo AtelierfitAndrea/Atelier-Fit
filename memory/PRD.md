@@ -574,3 +574,8 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 - 2026-11-12: BASE A + pantalone pizzo nero trasparente (prodotto df4efd9e) + zeppe: 1 generazione (raw3), busto pixel identico a BASE A, niente body nero
 - 2026-11-12: final4 = final3 + pavimento pulito (pezzi pizzo rossi tolti) + sandali rifatti: 1 generazione (raw4) composta solo su pavimento/piedi
 - 2026-11-12: NUOVA BASE A = MA-SEDUTA-A02 (final5: zona nera centrale rifatta in pizzo trasparente, 1 generazione). A01 archiviata in pose_bases_history
+
+## 2026-11-12 — REGOLA ASSOLUTA MY ATELIER (DONE)
+- `tryon_quality.REGOLA_FISSA_MY_ATELIER` (testo del proprietario, verbatim) anteposta al system prompt di OGNI chiamata al modello immagini (`_image_call`)
+- `old_clothes_qc` (modello testo economico): vestito vecchio visibile? capi fuori dagli slot? doppio strato? (cintura/pannelli dei pantaloni ammessi non contano)
+- `_old_clothes_loop` (server.py) su prova singola (`_render_single` -> `_render_single_once`) e outfit (`_compose_outfit` -> `_compose_outfit_once`, anche multipass): se fallisce rigenera max 2 volte (OLD_CLOTHES_MAX_REGEN) col difetto nominato; consegna SEMPRE la migliore, mai blocco

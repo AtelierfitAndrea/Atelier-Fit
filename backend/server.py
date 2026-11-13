@@ -2205,7 +2205,29 @@ async def _half_body(person_bytes: bytes, cats) -> bool:
     return await run_in_threadpool(pose_lock.is_half_body, person_bytes)
 
 
+async def _old_clothes_loop(person_path: str, garments_txt: str, once) -> str:
+    """REGOLA FISSA: AI check on every delivered photo; old clothes still visible -> regenerate (max OLD_CLOTHES_MAX_REGEN) with the
+    defect named; the best attempt is ALWAYS shown, never blocked."""
+    person_bytes, _ = get_object(person_path)
+    best, note = None, ""
+    for attempt in range(tryon_quality.OLD_CLOTHES_MAX_REGEN + 1):
+        path = await once(note)
+        qc = await tryon_quality.old_clothes_qc(person_bytes, get_object(path)[0], garments_txt)
+        logger.info(f"regola fissa check attempt={attempt + 1} ok={qc['ok']} issues={qc['issues'][:160]}")
+        if best is None or qc["bad"] < best[0]:
+            best = (qc["bad"], path)
+        if qc["ok"]:
+            break
+        note = tryon_quality.old_clothes_note(qc["issues"])
+    return best[1]
+
+
 async def _render_single(user_id: str, person_path: str, garment_path: str, category_in: Optional[str], name: Optional[str], m_doc: dict, extra: str = "") -> str:
+    txt = f"{name or category_in or 'garment'} ({category_in or ''})"
+    return await _old_clothes_loop(person_path, txt, lambda note: _render_single_once(user_id, person_path, garment_path, category_in, name, m_doc, extra + note))
+
+
+async def _render_single_once(user_id: str, person_path: str, garment_path: str, category_in: Optional[str], name: Optional[str], m_doc: dict, extra: str = "") -> str:
     # Load both images
     person_bytes, person_ct = get_object(person_path)
     person_bytes = await run_in_threadpool(head_lock.crop_screenshot, person_bytes)
@@ -3499,6 +3521,28 @@ async def _multipass_outfit(user: User, person_path: str, items: list, layer_ord
 
 async def _compose_outfit(user: User, person_path: Optional[str], items: list, layer_order_text: str = _DEFAULT_LAYER_TEXT, extra: str = "", raw: bool = False,
                           extend: float = 0.0):
+    """Layer the given garment images on the user's base photo; returns (person_path, result_path). REGOLA FISSA check on delivered photos."""
+    if raw:
+        return await _compose_outfit_once(user, person_path, items, layer_order_text, extra, raw, extend)
+    resolved = {}
+
+    async def once(note):
+        pp, rp = await _compose_outfit_once(user, person_path, items, layer_order_text, extra + note, raw, extend)
+        resolved["p"] = pp
+        return rp
+    txt = "; ".join(f"{g.get('name') or g.get('category')} ({g.get('category')})" for g in items)
+    first = await once("")
+    pp = resolved["p"]
+    calls = {"n": 0}
+
+    async def again(note):
+        calls["n"] += 1
+        return first if calls["n"] == 1 else await once(note)
+    return pp, await _old_clothes_loop(pp, txt, again)
+
+
+async def _compose_outfit_once(user: User, person_path: Optional[str], items: list, layer_order_text: str = _DEFAULT_LAYER_TEXT, extra: str = "", raw: bool = False,
+                               extend: float = 0.0):
     """Layer the given garment images on the user's base photo; returns (person_path, result_path)."""
     # Resolve person photo — prefer explicit path, else latest person file for the user
     if not person_path:
