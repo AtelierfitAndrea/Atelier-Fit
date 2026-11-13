@@ -34,6 +34,7 @@ import hem as hem_mod
 import size_fallback
 import tryon_quality
 import fal_tryon
+import ext_lock
 from pymongo.errors import DuplicateKeyError
 import re
 import hmac
@@ -1700,7 +1701,9 @@ async def _ext_tryon(user_id: str, person_path: str, garment_path: str, kind: st
     try:
         pb = head_lock.downscale(await run_in_threadpool(head_lock.crop_screenshot, get_object(person_path)[0]), 2048)
         gb = head_lock.downscale(get_object(garment_path)[0], 2048)
-        out = await run_in_threadpool(fal_tryon.tryon, pb, gb)
+        out = await run_in_threadpool(fal_tryon.tryon, pb, gb, ext_lock.best_ratio(pb))
+        # VISO BLOCCATO ESTERNO: original face, hair, hands, background and light back on top; only the new garment zone stays.
+        out = await run_in_threadpool(ext_lock.lock_original, pb, out, await _classify_garment(garment_path, None))
     except Exception as e:
         logger.warning(f"external transparent try-on failed: {e}")
         return None
