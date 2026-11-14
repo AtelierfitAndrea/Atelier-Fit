@@ -225,6 +225,17 @@ async def old_clothes_qc(person_bytes: bytes, result: bytes, garments_txt: str) 
     return {"ok": bad == 0, "bad": bad, "issues": str(d.get("issues") or "")[:400]}
 
 
+async def transparent_qc(garment: bytes) -> bool:
+    """Emergent fallback for the transparency detection (cheap text model)."""
+    small = await run_in_threadpool(head_lock.downscale, garment, 768)
+    chat = LlmChat(api_key=os.environ["EMERGENT_LLM_KEY"], session_id=f"transp-{uuid.uuid4().hex[:8]}", system_message="Reply with one word.")
+    chat.with_model("gemini", QC_MODEL)
+    reply = await chat.send_message(UserMessage(text="Product photo of a garment. Is it (or a large part of it) transparent or "
+                                                     "semi-transparent: sheer, lace showing skin, tulle, organza, voile, mesh, chiffon? Reply YES or NO.",
+                                                file_contents=[ImageContent(base64.b64encode(small).decode())]))
+    return "YES" in str(reply).upper()
+
+
 def old_clothes_note(issues: str) -> str:
     return ("\nPREVIOUS ATTEMPT REJECTED (REGOLA FISSA): the original clothes of IMAGE 1 were still visible — " + issues +
             ". Remove them 100%: the new garments sit DIRECTLY on the skin, nothing of the old outfit under, through or around them.\n")

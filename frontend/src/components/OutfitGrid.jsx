@@ -13,7 +13,6 @@ import SaveToGallery from "@/components/SaveToGallery";
 import ShareLook from "@/components/ShareLook";
 import { askBook, SaveBookBar } from "@/components/PoseBook";
 import { ResultNote } from "./ResultNote";
-import { TransparentToggle } from "./TransparentToggle";
 import { TransparentSwitch } from "./TransparentSwitch";
 import { useAuth } from "@/lib/auth";
 
@@ -218,7 +217,6 @@ export default function OutfitGrid({ personPath, preservePose = false, uploadFil
         {SLOTS.map((s) => (
           <div key={s.k} className={s.k === "bag" ? "col-span-2 w-1/2 justify-self-center" : ""}>
             <SlotBox slot={s} item={items[s.k]} onFile={(f) => setSlot(s.k, f)} onClear={() => clearSlot(s.k)} />
-            <TransparentToggle path={items[s.k]?.path} testid={`transparent-${s.k}`} />
           </div>
         ))}
       </div>

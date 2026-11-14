@@ -1,4 +1,5 @@
 import asyncio
+import contextvars
 from fastapi import FastAPI, APIRouter, HTTPException, Request, Response, UploadFile, File, Depends, Header, Query, Cookie
 from fastapi.responses import JSONResponse
 from starlette.concurrency import run_in_threadpool
@@ -1598,11 +1599,8 @@ async def upload(kind: str = Query(..., regex="^(person|garment)$"), file: Uploa
             data = await run_in_threadpool(head_lock.downscale, data, head_lock.PERSON_MAX_SIDE)
         except Exception:
             raise HTTPException(status_code=400, detail="Il file non è una foto valida")
-    transparent, maybe = (_transparent_auto(file.filename or "", data) if kind == "garment" else (False, False))
     result = put_object(path, data, content_type)
     await db.files.insert_one({
-        "transparent": True if transparent else None,
-        "transparent_maybe": maybe,
         "id": str(uuid.uuid4()),
         "user_id": user.user_id,
         "kind": kind,
@@ -1613,54 +1611,39 @@ async def upload(kind: str = Query(..., regex="^(person|garment)$"), file: Uploa
         "is_deleted": False,
         "created_at": datetime.now(timezone.utc).isoformat(),
     })
-    return {"path": result["path"], "transparent": transparent, "transparent_maybe": maybe}
+    if kind == "garment":
+        t = asyncio.create_task(_detect_transparent(result["path"], data))
+        _render_tasks.add(t)
+        t.add_done_callback(_render_tasks.discard)
+    return {"path": result["path"]}
 
 
 # ----- CAPI TRASPARENTI (owner rule): flag per garment + external try-on test switch (OFF by default, max 2 generations) -----
-_TRANSP_WORDS = re.compile(r"(trasparent\w*|tulle|organza|voile|sheer|see[-_ ]?through|velat\w*)", re.I)
-_TRANSP_MAYBE = re.compile(r"(pizzo|lace|mesh|rete|chiffon|georgette|velo)", re.I)
 TRANSP_EXT_MAX = 2
 
 
-def _transparent_auto(filename: str, data: bytes) -> tuple:
-    """(transparent, maybe): PNG with a real alpha channel or a sheer word in the name = TRUE; lace/mesh words = ask the user."""
-    from PIL import Image
-    import io
-    alpha = False
+async def _detect_transparent(path: str, data: bytes) -> bool:
+    """AUTOMATIC (owner rule): the uploaded garment image is analysed by fal.ai vision with FAL_KEY; Emergent check if fal does not answer."""
+    small = await run_in_threadpool(head_lock.downscale, data, 768)
     try:
-        im = Image.open(io.BytesIO(data))
-        if im.format == "PNG" and ("A" in im.getbands() or "transparency" in im.info):
-            alpha = im.convert("RGBA").getchannel("A").getextrema()[0] < 250
-    except Exception:
-        pass
-    yes = alpha or bool(_TRANSP_WORDS.search(filename))
-    return yes, (not yes) and bool(_TRANSP_MAYBE.search(filename))
-
-
-class TransparentFlag(BaseModel):
-    path: str
-    transparent: bool
-
-
-@api_router.post("/garments/transparent")
-async def set_transparent(req: TransparentFlag, user: User = Depends(get_current_user)):
-    if _path_owner(req.path) != user.user_id:
-        raise HTTPException(status_code=403, detail="Accesso negato")
-    await db.files.update_one({"storage_path": req.path}, {"$set": {"transparent": req.transparent}})
-    return {"path": req.path, "transparent": req.transparent}
-
-
-@api_router.get("/garments/transparent")
-async def get_transparent(path: str, user: User = Depends(get_current_user)):
-    if _path_owner(path) != user.user_id:
-        raise HTTPException(status_code=403, detail="Accesso negato")
-    f = await db.files.find_one({"storage_path": path}, {"_id": 0, "transparent": 1, "transparent_maybe": 1}) or {}
-    return {"transparent": f.get("transparent"), "maybe": bool(f.get("transparent_maybe")) and f.get("transparent") is None}
+        yes, by = await run_in_threadpool(fal_tryon.is_transparent, small), "fal"
+    except Exception as e:
+        logger.warning(f"fal transparency check failed, Emergent fallback: {e}")
+        try:
+            yes, by = await tryon_quality.transparent_qc(small), "emergent"
+        except Exception as e2:
+            logger.warning(f"transparency check failed: {e2}")
+            return False
+    await db.files.update_one({"storage_path": path}, {"$set": {"transparent": yes, "transparent_by": by}})
+    logger.info(f"garment transparent={yes} by={by}")
+    return yes
 
 
 async def _is_transparent(path: str) -> bool:
     f = await db.files.find_one({"storage_path": path}, {"_id": 0, "transparent": 1})
-    return bool(f and f.get("transparent"))
+    if f and f.get("transparent") is not None:
+        return bool(f["transparent"])
+    return await _detect_transparent(path, get_object(path)[0]) if f else False
 
 
 async def _ext_switch() -> dict:
@@ -2122,6 +2105,23 @@ def _measurements_desc(m_doc: Optional[dict]) -> str:
 _render_tasks: set = set()
 
 
+_JOB_ID = contextvars.ContextVar("render_job_id", default=None)
+
+
+async def _job_preview(path: str = None, png: bytes = None, user_id: str = None) -> None:
+    """ANTEPRIMA SUBITO: the running job exposes the latest intermediate photo (the page shows it while the checks finish)."""
+    job_id = _JOB_ID.get()
+    if not job_id:
+        return
+    try:
+        if png is not None:
+            path = f"{APP_NAME}/preview/{user_id}/{uuid.uuid4().hex}.jpg"
+            put_object(path, await run_in_threadpool(head_lock.downscale, png, 1600), "image/jpeg")
+        await db.render_jobs.update_one({"id": job_id, "status": "running"}, {"$set": {"preview_path": path}})
+    except Exception as e:
+        logger.warning(f"preview not saved: {e}")
+
+
 async def _start_render_job(user: User, coro) -> dict:
     coro_close = getattr(coro, "close", None)
     if not _is_owner_email(user.email):
@@ -2140,6 +2140,7 @@ async def _start_render_job(user: User, coro) -> dict:
         raise HTTPException(status_code=409, detail="Hai già una foto in preparazione: attendi che finisca.")
 
     async def run():
+        _JOB_ID.set(job_id)
         try:
             res = await coro
             upd = {"status": "done", "result": res}
@@ -2163,7 +2164,7 @@ async def get_render_job(job_id: str, user: User = Depends(get_current_user)):
         raise HTTPException(status_code=404, detail="Generazione non trovata")
     if doc["status"] == "error":
         raise HTTPException(status_code=doc.get("code") or 500, detail=doc.get("detail"))
-    return {"status": doc["status"], "result": doc.get("result")}
+    return {"status": doc["status"], "result": doc.get("result"), "preview_path": doc.get("preview_path")}
 
 
 # ----- Try-on generation -----
@@ -2314,6 +2315,8 @@ async def _old_clothes_loop(person_path: str, garments_txt: str, once) -> str:
     best, note = None, ""
     for attempt in range(tryon_quality.OLD_CLOTHES_MAX_REGEN + 1):
         path = await once(note)
+        if best is None:
+            await _job_preview(path)
         qc = await tryon_quality.old_clothes_qc(person_bytes, get_object(path)[0], garments_txt)
         logger.info(f"regola fissa check attempt={attempt + 1} ok={qc['ok']} issues={qc['issues'][:160]}")
         if best is None or qc["bad"] < best[0]:
@@ -2419,7 +2422,7 @@ async def _tryon_generate(req: TryOnRequest, user: User):
     req.garment_category = await _classify_garment(req.garment_path, req.garment_category)
     req.person_path = await _auto_base(user, req.person_path, [req.garment_path])
     notice, result_path = None, None
-    if await _is_transparent(req.garment_path) and (await _ext_switch())["on"]:
+    if (await _ext_switch())["on"] and await _is_transparent(req.garment_path):
         result_path = await _ext_tryon(user.user_id, req.person_path, req.garment_path)
         notice = None if result_path else TRANSP_NOTICE
     if not result_path:
@@ -3383,6 +3386,7 @@ async def _multipass_outfit(user: User, person_path: str, items: list, layer_ord
         _, p1 = await _compose_outfit(user, person_path, uppers, layer_order_text, extra, raw=True, extend=ext / h)
         top = max(head_lock.TOP_PAD_MIN_PX, int(h * head_lock.TOP_PAD_RATIO))
         base = np.array(Image.open(io.BytesIO(p1)).convert("RGB"))[top:top + h + ext]
+        await _job_preview(png=tryon_quality._png(base), user_id=user.user_id)
         if base.shape[:2] != (h + ext, w):
             base = cv2.resize(base, (w, h + ext), interpolation=cv2.INTER_LANCZOS4)
         del p1
@@ -3590,9 +3594,9 @@ async def _multipass_outfit(user: User, person_path: str, items: list, layer_ord
         if not problems:
             tryon_quality.log_legs_outcome("multipass", "pass", first=d1, **mkw)
         else:
-            # Up to two correction passes before delivery; the best-scoring result across all attempts is kept.
+            # SPEED (owner, <1 min): ONE correction pass at most; the best-scoring result is kept.
             attempts_detail = [d1]
-            for attempt_n in (2, 3):
+            for attempt_n in (2,):
                 logger.warning(f"multipass legs QC failed ({'; '.join(problems)}): correction pass {attempt_n}")
                 fix = LEGS_FIX_RULE.replace("{issues}", "; ".join(problems)).replace("{tuck}", "• The shirt hem hangs OUTSIDE the trousers, never tucked in.\n" if expect_untucked else "")
                 try:
@@ -3834,8 +3838,9 @@ async def _outfit_generate_from_uploads(req: GridOutfitRequest, user: User):
         "slot": k, "image_path": slots[k], "category": _GRID_SLOTS[k][0], "name": descs[k] or _GRID_SLOTS[k][1], "brand": None,
     } for k in _GRID_ORDER if k in slots]
     notice, result_path, person_path = None, None, req.person_path
-    sheer = [g for g in items if await _is_transparent(g["image_path"])]
-    if sheer and req.person_path and (await _ext_switch())["on"]:
+    ext_on = req.person_path and (await _ext_switch())["on"]
+    sheer = [g for g in items if await _is_transparent(g["image_path"])] if ext_on else []
+    if sheer:
         # Covered garments: normal flow (unchanged); then each transparent garment from the external try-on, on that result.
         rest = [g for g in items if g not in sheer]
         cur = (await _compose_outfit(user, req.person_path, rest, _GRID_LAYER_TEXT, _owner_extra(user, req.preserve_pose)))[1] if rest else req.person_path

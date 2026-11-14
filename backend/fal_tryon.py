@@ -34,3 +34,23 @@ def tryon(person: bytes, garment: bytes, ratio: str = "9:16", timeout_s: int = 3
     img = requests.get(images[0]["url"], timeout=60)
     img.raise_for_status()
     return img.content
+
+
+VISION = "openrouter/router/vision"
+VISION_MODEL = "google/gemini-2.5-flash"
+TRANSP_PROMPT = ("Product photo of a garment. Is the garment (or a large part of it) transparent or semi-transparent: sheer, lace with skin "
+                 "showing through, tulle, organza, voile, mesh, chiffon? Reply with ONE word: YES or NO.")
+
+
+def is_transparent(garment: bytes) -> bool:
+    """Blocking: fal vision with the owner's FAL_KEY. Raises FalError when fal does not answer (caller falls back)."""
+    key = os.environ.get("FAL_KEY")
+    if not key:
+        raise FalError("FAL_KEY mancante")
+    client = fal_client.SyncClient(key=key, default_timeout=60)
+    try:
+        r = client.subscribe(VISION, arguments={"prompt": TRANSP_PROMPT, "model": VISION_MODEL, "temperature": 0, "max_tokens": 5,
+                                                "image_urls": [_data_url(garment, "image/jpeg")]}, interval=0.5)
+    except Exception as e:
+        raise FalError(str(e)[:300]) from e
+    return "YES" in str((r or {}).get("output", "")).upper()

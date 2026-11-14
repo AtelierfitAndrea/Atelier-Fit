@@ -13,6 +13,7 @@ import BookButton, { setBookEnabled } from "@/components/PoseBook";
 import { setJobResume } from "@/lib/renderJob";
 import JobWatcher from "@/components/JobWatcher";
 import { SignOut, House, User as UserIcon, TShirt, Sparkle, GearSix, MagnifyingGlass, Crown, Question } from "@phosphor-icons/react";
+import { RenderPreview } from "@/components/RenderPreview";
 
 function useSupportPending() {
   const { user } = useAuth();
@@ -101,6 +102,7 @@ export default function AppShell({ children }) {
       </header>
       <main className="max-w-[1400px] mx-auto px-6 md:px-10 py-10">{children}</main>
       {isOwner && <JobWatcher />}
+      {isOwner && <RenderPreview />}
       <TermsGate />
       <OnboardingGate />
       <ReminderPopup />

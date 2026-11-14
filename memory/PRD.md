@@ -588,3 +588,8 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 - Flusso capi coperti invariato
 - 2026-11-13: VISO BLOCCATO ESTERNO (backend/ext_lock.py): sul risultato fal rimette foto originale (viso, capelli, mani, braccia nude per capi sotto, sfondo); dall'esterno solo zona capo; vecchio capo dove l'esterno mostra pavimento -> ricostruito dal pavimento originale (inpaint); luce riallineata sul pavimento comune. Collegato in _ext_tryon. Testato gratis su /app/memory/p8/fal_test.jpg
 - 2026-11-14: server esterno trasparenze passato a FAL_KEY del proprietario (BYOK, fal-client SyncClient, backend/fal_tryon.py). Test: chiave riconosciuta ma account fal senza credito (403 Exhausted balance)
+
+## 2026-11-14 — Trasparenza automatica + velocità (DONE)
+- Tolte le caselle "trasparente" (TransparentToggle eliminato, endpoint /garments/transparent rimossi). Resta solo l'interruttore SERVER ESTERNO TRASPARENZE
+- Rilevamento automatico all'upload del capo, in background (non rallenta): fal.ai `openrouter/router/vision` (google/gemini-2.5-flash) con FAL_KEY; se fal non risponde -> riserva Emergent `tryon_quality.transparent_qc`. Salvato in files.transparent/transparent_by. Calcolato solo se l'interruttore è ON
+- Velocità: multipass gambe max 1 correzione (prima 2); ANTEPRIMA SUBITO: render_jobs.preview_path (dopo passata 1 e dopo il primo risultato prima del controllo Regola Fissa), GET /render-jobs ritorna preview_path, frontend components/RenderPreview.jsx (evento PREVIEW_EVENT da lib/renderJob.js)

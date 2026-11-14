@@ -5,6 +5,9 @@ const POLL_MS = 2500;
 const MAX_MS = 8 * 60 * 1000;
 export const JOB_KEY = "atelier_render_job";
 export const JOB_EVENT = "atelier-render-job";
+// ANTEPRIMA SUBITO: the first intermediate photo of a running job, shown while the final checks finish.
+export const PREVIEW_EVENT = "atelier-render-preview";
+const preview = (p) => window.dispatchEvent(new CustomEvent(PREVIEW_EVENT, { detail: p || null }));
 // Jobs whose page is still open and polling: the global JobWatcher leaves those alone.
 export const liveJobs = new Set();
 // Owner-only until approved: other users keep the classic in-page polling.
@@ -22,9 +25,10 @@ async function pollClassic(id) {
     await new Promise((r) => setTimeout(r, POLL_MS));
     try {
       const res = await api.get(`/render-jobs/${id}`);
-      if (res.data.status === "done") return { data: res.data.result };
+      if (res.data.status === "done") { preview(null); return { data: res.data.result }; }
+      if (res.data.preview_path) preview(res.data.preview_path);
     } catch (e) {
-      if (e?.response) throw e;
+      if (e?.response) { preview(null); throw e; }
     }
   }
   const err = new Error("timeout");
@@ -56,13 +60,15 @@ export async function postRender(url, body) {
       }
       try {
         const res = await api.get(`/render-jobs/${id}`);
-        if (res.data.status === "done") { clearJob(); return { data: res.data.result }; }
+        if (res.data.status === "done") { preview(null); clearJob(); return { data: res.data.result }; }
+        if (res.data.preview_path) preview(res.data.preview_path);
       } catch (e) {
-        if (e?.response) { clearJob(); throw e; }
+        if (e?.response) { preview(null); clearJob(); throw e; }
       }
     }
   } finally {
     liveJobs.delete(id);
+    preview(null);
   }
   clearJob();
   const err = new Error("timeout");
