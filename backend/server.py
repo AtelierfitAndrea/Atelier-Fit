@@ -2310,7 +2310,9 @@ DRESSING_RULE = (
     "continuous: no holes, cuts or missing fabric under the arms, on the hips or between garments. No loose flaps flying on their own: "
     "every sleeve, edge and strip attached to its garment and falling naturally on the body. Sheer / lace / mesh: the fabric is always "
     "there, continuous and complete, no empty zones. Junctions CLOSED: top-trousers, top-skirt, sleeve-shoulder, never a gap.\n"
-    "KNEELING POSE — EVERY KNEELING PHOTO, NO EXCEPTIONS: BOTH knees on the ground, straight and symmetric; back straight, torso facing "
+    "KNEELING POSE — EVERY KNEELING PHOTO, NO EXCEPTIONS: BOTH knees on the ground, folded under the body, feet BEHIND, never in front; "
+    "NO raised knee, NO flat foot in front with the leg bent at 90 degrees, NO squat, NO lunge, NO leg forward; legs symmetric. If a knee "
+    "comes up, redo the pose with both knees on the ground. BOTH knees on the ground, straight and symmetric; back straight, torso facing "
     "the camera, aligned with the legs, never twisted sideways; BOTH arms raised, the 2 hands holding the hair. ONLY 2 arms, 2 hands, 2 "
     "legs, 2 feet. Each leg has ONE foot attached to it: no foot / heel sticking out alone from behind. The 2 legs equal and symmetric: "
     "no raised knee, no shorter leg, no leg folded oddly underneath. Clothes follow the body: no sleeves hanging in the void, no fabric "
@@ -2327,6 +2329,27 @@ DRESSING_RULE = (
 
 
 HALF_EXTEND = 0.7
+def _thigh_drop(kp):
+    """Per thigh: vertical share of hip->knee (1 = thigh down, ~0 = horizontal, <0 = knee above the hip)."""
+    out = []
+    for h, k in ((11, 13), (12, 14)):
+        if kp is not None and kp[h, 2] > pose_lock.MIN_SCORE and kp[k, 2] > pose_lock.MIN_SCORE:
+            d = kp[k, :2] - kp[h, :2]
+            out.append(float(d[1] / max(np.hypot(*d), 1.0)))
+    return out
+
+
+def _knee_raised(kp_orig, final: np.ndarray) -> bool:
+    # Measured: kneeling originals 0.6-0.7, good results 0.67-0.76, the raised-knee answer -0.53; seated originals (~0.1) not checked.
+    o = _thigh_drop(kp_orig)
+    if not o or min(o) < 0.45:
+        return False
+    r = _thigh_drop(pose_lock.keypoints(final))
+    return bool(r) and min(r) < 0.25
+
+
+LEGS_POSE_NOTE = ("\nPREVIOUS ANSWER REJECTED: the leg pose changed. Keep EXACTLY the leg pose of IMAGE 1 / the skeleton: never raise a "
+                  "knee, never a flat foot in front with the leg at 90 degrees, never squat, lunge or a leg forward.\n")
 ONE_PERSON_NOTE = ("\nPREVIOUS ANSWER REJECTED: it was not the same crop. Return EXACTLY this crop at the same scale: ONE body, the same "
                    "legs filling the frame, never the whole person drawn small, never a second person or a miniature.\n")
 
@@ -3823,6 +3846,13 @@ async def _multipass_outfit(user: User, person_path: str, items: list, layer_ord
                 tryon_quality.log_legs_outcome("multipass", "delivered_with_warning", first=d1, attempts=attempts_detail, problems=problems, **mkw)
     dev = await run_in_threadpool(pose_lock.deviation, orig, final)
     logger.info(f"multipass legs changed={frac:.2f} pose deviation={dev}")
+    if await run_in_threadpool(_knee_raised, kp, final):
+        # POSE LOCKED (owner rule): knees down in the original (kneeling) -> a raised knee / leg forward is never delivered:
+        # the legs are redone once with the original pose, then the variant is discarded.
+        logger.warning("multipass legs: knee raised against the original pose, legs redone")
+        final, frac, keep = await _legs_attempt(LEGS_POSE_NOTE)
+        if await run_in_threadpool(_knee_raised, kp, final):
+            raise HTTPException(status_code=502, detail="Posa gambe diversa dall'originale: variante scartata.")
     logger.info(f"timing multipass total: {time.monotonic() - t_mp:.1f}s")
     out = io.BytesIO()
     Image.fromarray(final).save(out, "PNG")

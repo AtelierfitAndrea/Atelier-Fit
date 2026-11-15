@@ -662,3 +662,7 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 - sheer_low (salto correzione gambe) ora solo per capi bassi veri (bottom/dress/suit), non per scarpe in rete
 - Prompt POSE LOCKED + ONE PERSON; controllo finale: più persone / miniatura / corpo spezzato = outfit incompleto
 - Rifatta outfit 9316239f -> d362fa21 (una sola ragazza, posa base, corpo intero). Resta un lembo nero che penzola sull'orlo sinistro della maglia
+
+## 2026-11-15 (13) — Ginocchio alzato VIETATO (DONE, verificato offline)
+- Prompt KNEELING: entrambe le ginocchia a terra piegate sotto il corpo, piedi dietro; vietati ginocchio alzato, piede piatto davanti a 90°, accovacciata, affondo, gamba avanti
+- `_knee_raised` (multipass, dopo il passaggio gambe): se nell'originale le cosce vanno giù (inginocchiata, >=0.45) e nel risultato una coscia è orizzontale/su (<0.25) -> gambe rifatte 1 volta con LEGS_POSE_NOTE, poi variante scartata. Verificato: terza posa (legs_raw_6bd803 = -0.53) bloccata, foto giuste (0.67-0.71) passano; pose sedute non controllate
