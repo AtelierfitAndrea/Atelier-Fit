@@ -523,7 +523,7 @@ def _match_head_colour(canvas: np.ndarray, res: np.ndarray, mask: np.ndarray) ->
     return canvas, drift
 
 
-def _register(canvas: np.ndarray, res: np.ndarray):
+def _register(canvas: np.ndarray, res: np.ndarray, zoom=(0.4, 2.5)):
     """Map the generated image onto the original framing from background features, whatever size/aspect/zoom the model used."""
     H, W = canvas.shape[:2]
     rh, rw = res.shape[:2]
@@ -546,7 +546,7 @@ def _register(canvas: np.ndarray, res: np.ndarray):
         return None
     scale = float(np.hypot(M[0, 0], M[1, 0]))
     ref = max(W / rw, H / rh)  # the model may answer at any resolution: judge the zoom relative to a plain fit
-    if not (0.4 < scale / ref < 2.5) or abs(np.degrees(np.arctan2(M[1, 0], M[0, 0]))) > 4:
+    if not (zoom[0] < scale / ref < zoom[1]) or abs(np.degrees(np.arctan2(M[1, 0], M[0, 0]))) > 4:
         return None
     logger.info("head_lock: registered result scale=%.3f shift=(%.0f, %.0f) inliers=%d", scale, M[0, 2], M[1, 2], int(inl.sum()))
     out = cv2.warpAffine(res, M, (W, H), flags=cv2.INTER_LANCZOS4, borderMode=cv2.BORDER_REPLICATE)

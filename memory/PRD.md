@@ -655,3 +655,10 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 - Rifatta da zero la prova (stessi capi: top pizzo rosso, jeans ricamati, décolleté rosse) -> outfit 85bfa2d1. Limite: la posa resta bloccata sulla foto base 396bf1a9 (seduta sui talloni, gambe di lato, busto 3/4) -> busto non frontale, tallone rosso ancora dietro, maniche con bordi tagliati
 - Osservato: su questa foto base 2 varianti su 3 falliscono sempre con "Image generation failed: no image" (probabile rifiuto del modello) -> 1 sola variante utile
 - Nota: i job in background vanno lanciati con setsid (un timeout del tool uccide il processo)
+
+## 2026-11-15 (12) — DOPPIA RAGAZZA (miniatura) — causa trovata e corretta
+- Causa: correzione zona anti-artefatto riceveva la foto intera come IMAGE 2 e il modello la ricopiava in piccolo dentro la zona -> miniatura incollata (log: registered scale 0.126)
+- Fix: niente più foto intera alla correzione zona; risposta accettata solo se è lo stesso ritaglio (registrazione zoom 0.8-1.25) e senza volti nuovi (YuNet), altrimenti la zona resta com'era. Passaggio gambe: stessa verifica + 1 nuovo tentativo, poi variante scartata
+- sheer_low (salto correzione gambe) ora solo per capi bassi veri (bottom/dress/suit), non per scarpe in rete
+- Prompt POSE LOCKED + ONE PERSON; controllo finale: più persone / miniatura / corpo spezzato = outfit incompleto
+- Rifatta outfit 9316239f -> d362fa21 (una sola ragazza, posa base, corpo intero). Resta un lembo nero che penzola sull'orlo sinistro della maglia

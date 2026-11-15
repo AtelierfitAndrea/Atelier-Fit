@@ -2315,6 +2315,9 @@ DRESSING_RULE = (
     "legs, 2 feet. Each leg has ONE foot attached to it: no foot / heel sticking out alone from behind. The 2 legs equal and symmetric: "
     "no raised knee, no shorter leg, no leg folded oddly underneath. Clothes follow the body: no sleeves hanging in the void, no fabric "
     "pieces detached from the body.\n"
+    "POSE LOCKED — ALWAYS: never change, turn, move or invent the person's position on your own initiative: same position, same spot as "
+    "IMAGE 1. ONE person only: ONE body, ONE head, never a second person, a miniature or a pasted copy; the body is ONE piece, whole, "
+    "connected and proportioned (head, torso, legs, feet attached, no cuts, no seams, no overlaps).\n"
     "GLOBAL RULE — EVERY PHOTO, ALWAYS:\n"
     "• The garment stays ONLY on the body, never outside it. NO fabric scraps, NO pieces of clothing, NO red or lace pieces on the floor.\n"
     "• Floor always clean, empty and uniform as in IMAGE 1: no objects, no shadows of objects, no debris, no decorative fabric, no props.\n"
@@ -2324,6 +2327,9 @@ DRESSING_RULE = (
 
 
 HALF_EXTEND = 0.7
+ONE_PERSON_NOTE = ("\nPREVIOUS ANSWER REJECTED: it was not the same crop. Return EXACTLY this crop at the same scale: ONE body, the same "
+                   "legs filling the frame, never the whole person drawn small, never a second person or a miniature.\n")
+
 # INQUADRATURA 1:1 (owner rule): feet close to the bottom edge -> the frame is widened below (zoom-out), never cropped.
 FEET_EDGE = 0.9
 FEET_EXTEND = 0.1
@@ -2440,7 +2446,6 @@ async def _fix_artifacts(path: str) -> str:
         return path
     img = np.array(Image.open(io.BytesIO(img_b)).convert("RGB"))
     H, W = img.shape[:2]
-    ref = await run_in_threadpool(head_lock.downscale, img_b, 1024)  # whole photo: the correct foot / shoe is the reference
     done = False
     for y0, x0, y1, x1 in boxes:
         bx0, by0, bx1, by1 = int(x0 * W / 1000), int(y0 * H / 1000), int(x1 * W / 1000), int(y1 * H / 1000)
@@ -2451,14 +2456,19 @@ async def _fix_artifacts(path: str) -> str:
         buf = io.BytesIO()
         Image.fromarray(crop).save(buf, "PNG")
         try:
-            out = await tryon_quality.fix_zone(buf.getvalue(), "zonefix", ref)
+            out = await tryon_quality.fix_zone(buf.getvalue(), "zonefix")
         except Exception as e:
             logger.warning(f"anti-artifact zone fix failed: {e}")
             continue
-        res = np.array(Image.open(io.BytesIO(out)).convert("RGB"))
-        res = head_lock._register(crop, res)
+        # ONE PERSON ONLY: the answer must be the SAME crop at the same scale. If the model answers with the whole reference photo
+        # (a small full girl), pasting it would create a miniature second person: rejected, the zone stays as it was.
+        res = head_lock._register(crop, np.array(Image.open(io.BytesIO(out)).convert("RGB")), zoom=(0.8, 1.25))
         if res is None:
-            res = cv2.resize(np.array(Image.open(io.BytesIO(out)).convert("RGB")), (side, side), interpolation=cv2.INTER_LANCZOS4)
+            logger.warning("anti-artifact: answer is not the same crop (zoomed / whole photo), zone left untouched")
+            continue
+        if len(head_lock._faces(res)) > len(head_lock._faces(crop)):
+            logger.warning("anti-artifact: answer contains a new face (miniature person), zone left untouched")
+            continue
         m = np.zeros((side, side), np.float32)
         pad = max(6, int(0.25 * max(bx1 - bx0, by1 - by0)))
         m[max(0, by0 - sy - pad):by1 - sy + pad, max(0, bx0 - sx - pad):bx1 - sx + pad] = 1
@@ -3584,7 +3594,8 @@ async def _multipass_outfit(user: User, person_path: str, items: list, layer_ord
         logger.info(f"multipass: only {len(legs)} leg joints found, single-pass fallback")
         _, p_all = await _compose_outfit(user, person_path, items, layer_order_text, extra, raw=True)
         bottoms_fb = [g for g in lowers if (g.get("category") or "").lower() == "bottom"]
-        sheer_fb = any([lv != "none" for lv in await asyncio.gather(*[_transparency(g["image_path"]) for g in lowers])])
+        sheer_fb = any([lv != "none" for lv in await asyncio.gather(*[_transparency(g["image_path"]) for g in lowers
+                                                                        if (g.get("category") or "").lower() in ("bottom", "dress", "suit")])])
         if bottoms_fb and not _skin_allowed(lowers) and not sheer_fb:
             g_skin_fb = 0.0
             for g in bottoms_fb:
@@ -3693,17 +3704,25 @@ async def _multipass_outfit(user: User, person_path: str, items: list, layer_ord
         wgt[-f:, :] *= ramp[::-1][:, None]
 
     async def _legs_attempt(fix: str = ""):
-        try:
-            res_bytes = await tryon_quality._image_call(legs_system, prompt + fix, contents, f"legs-{user.user_id}", aspect)
-        except Exception as e:
-            logger.error(f"multipass legs pass failed: {e}")
-            raise HTTPException(status_code=502, detail="Prova non riuscita: premi Riprova. Nessuna prova scalata.")
-        with open(f"/tmp/legs_raw_{uuid.uuid4().hex[:6]}.png", "wb") as fh:  # kept for free offline re-merge checks
-            fh.write(res_bytes)
-        res = np.array(Image.open(io.BytesIO(res_bytes)).convert("RGB"))
-        reg = await run_in_threadpool(head_lock._register, crop, res)
+        reg = None
+        for attempt in range(2):
+            try:
+                res_bytes = await tryon_quality._image_call(legs_system, prompt + fix + (ONE_PERSON_NOTE if attempt else ""), contents,
+                                                            f"legs-{user.user_id}", aspect)
+            except Exception as e:
+                logger.error(f"multipass legs pass failed: {e}")
+                raise HTTPException(status_code=502, detail="Prova non riuscita: premi Riprova. Nessuna prova scalata.")
+            with open(f"/tmp/legs_raw_{uuid.uuid4().hex[:6]}.png", "wb") as fh:  # kept for free offline re-merge checks
+                fh.write(res_bytes)
+            res = np.array(Image.open(io.BytesIO(res_bytes)).convert("RGB"))
+            # ONE PERSON ONLY: the answer must be the SAME crop at the same scale. A zoomed-out answer (the whole girl drawn small
+            # inside the legs) would paste a miniature second person: rejected, never pasted, never resized.
+            reg = await run_in_threadpool(lambda: head_lock._register(crop, res, zoom=(0.8, 1.25)))
+            if reg is not None:
+                break
+            logger.warning(f"multipass legs answer not the same crop (attempt {attempt + 1}): rejected")
         if reg is None:
-            reg = cv2.resize(res, (cw_, ch_), interpolation=cv2.INTER_LANCZOS4)
+            raise HTTPException(status_code=502, detail="Gambe non allineate: variante scartata.")
         # Hands are restored afterwards from the exact finger hull: no box lock here (it pasted skin under the fingertips).
         legs_out, frac = await run_in_threadpool(head_lock._pose_composite, crop, reg, None, (0, 0), [], None, force)
         keep = None
@@ -3767,7 +3786,8 @@ async def _multipass_outfit(user: User, person_path: str, items: list, layer_ord
     t2 = time.monotonic()
     final, frac, keep = await _legs_attempt()
     logger.info(f"timing multipass pass2 (legs): {time.monotonic() - t2:.1f}s")
-    sheer_low = any([lv != "none" for lv in await asyncio.gather(*[_transparency(g["image_path"]) for g in lowers])])
+    legwear = [g for g in lowers if (g.get("category") or "").lower() in ("bottom", "dress", "suit")]
+    sheer_low = any([lv != "none" for lv in await asyncio.gather(*[_transparency(g["image_path"]) for g in legwear])])
     if bottoms:
         mkw = dict(user=user.user_id, garments=garments_txt, skin_ok=skin_ok, g_skin=round(g_skin, 3), untucked_expected=expect_untucked)
         t3 = time.monotonic()

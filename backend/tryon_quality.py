@@ -220,6 +220,7 @@ async def old_clothes_qc(person_bytes: bytes, result: bytes, garments_txt: str) 
         "coverage_wrong: through lace / sheer fabric you see bare skin instead of an opaque lining, a separate bra or detached / floating black "
         "straps are visible, or the original underwear of IMAGE 1 is visible.\n"
         "outfit_incomplete: a requested garment is not fully worn (no trousers / bare legs where trousers were requested, missing top), "
+        "MORE THAN ONE person / a miniature or pasted copy of the person / the body split in disconnected pieces, "
         "the figure is not full body head to feet, feet or shoes are cut / touch the photo edge, or the photo is zoomed, cropped or an inset "
         "(phone screen, frame, rounded card).\n"
         "local_artifacts: black or dark blurred smudges, local blur, doubled / ghost parts, EXTRA arms / hands / legs / feet (more than 2), "
@@ -331,8 +332,8 @@ ZONE_FIX_PROMPT = (
     "Rebuild ONLY the defect cleanly in HD: one natural foot / hand per side with real shape and 5 toes / fingers, shoes with a clear "
     "outline standing on the floor with a soft natural contact shadow, as sharp as the rest of the photo. Never hide anything with a dark "
     "patch or blur. SHOES: each shoe ONE piece with its heel / sole attached, heel pointing the same way as its shoe, foot whole; the "
-    "shoe matches the correct shoe of the same person in IMAGE 2 (same model, shape, heel height, mirrored direction). IMAGE 2 is only "
-    "the reference: return the crop of IMAGE 1. Change nothing else (face, hair, outfit, transparency, pose, background, light). "
+    "shoe matches the other shoe of the same person (same model, shape, heel height, mirrored direction). NEVER draw a person, a "
+    "face or a miniature inside the crop. Change nothing else (face, hair, outfit, transparency, pose, background, light). "
     "No text, no frame.")
 
 
