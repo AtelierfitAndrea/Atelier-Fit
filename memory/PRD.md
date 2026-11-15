@@ -601,3 +601,11 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 - Sistema (Gemini) costruisce SEMPRE l'outfit intero; in parallelo il server esterno (fal) per ogni capo trasparente. `ext_lock.lace_layer`: dal fal SOLO il pizzo, dentro il capo del sistema, mai su pelle (i fori mostrano la fodera), mai su vita/fianchi/spalle, mani, sfondo, firma. `lock_original` eliminato (causava aloni bianchi e maniche staccate)
 - `_old_clothes_loop`: 3 varianti in parallelo, rotte scartate, CONTROLLO FINALE (vestiti vecchi, parti solide, maniche, pantaloni completi, copertura, posa, bordi) -> migliore; se tutte falliscono 1 ricostruzione. Merge pesante in serie (`tryon_quality._HEAVY`) per la memoria
 - Nota: costo 3-4 generazioni per prova; in produzione 512Mi il multipass x3 va monitorato
+
+## 2026-11-15 (2) — REGOLA GLOBALE pavimento + foto buona ripristinata (DONE, offline, 0 generazioni)
+- Prompt: GLOBAL RULE in DRESSING_RULE (capo solo sul corpo, pavimento pulito, figura intera, niente inset/props, top+pantaloni completi)
+- Scelta varianti: prima COMPLETEZZA (outfit_incomplete/pants_incomplete/solid_parts) poi difetti; lo sporco sul pavimento non viene mai contato (si pulisce dopo)
+- `_clean_floor` (server) dopo la scelta: crop inset/screenshot (+ firma rifatta), 2 rilevamenti AI debris (`tryon_quality.debris_boxes`) + `ext_lock.clean_floor` (pavimento originale riallineato; dove l'originale aveva il corpo -> inpaint). Nessuna rigenerazione
+- `head_lock._crop_white_card`: screenshot galleria (card con angoli arrotondati tra bande bianche) -> solo la foto; cache hand_boxes/face_checks svuotate
+- Reggiseno ANNULLATO dall'utente: capi trasparenti sempre su FODERA OPACA (nude o nera), mai reggiseno, mai spalline staccate; il controllo finale lo segnala. Scelta reggiseno / 409 rimossi
+- Foto buona = outfit 6a28416d (spalle attaccate, niente reggiseno): solo pavimento pulito -> result 97bf3b72 (originale in result_before_clean). Outfit b8196593 rimesso com'era

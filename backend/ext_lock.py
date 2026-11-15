@@ -67,6 +67,76 @@ def _blur_diff(a, b):
     return np.abs(cv2.GaussianBlur(a, (0, 0), 1.5).astype(np.int16) - cv2.GaussianBlur(b, (0, 0), 1.5).astype(np.int16)).mean(axis=2)
 
 
+def _tight_body(kp: np.ndarray, shape) -> np.ndarray:
+    """Narrow pose strips (limbs, torso, head): pixels here are always body / worn garment, never debris."""
+    H, W = shape[:2]
+    up = _up_len(kp, H)
+    m = np.zeros((H, W), np.uint8)
+    pts = [kp[i, :2] for i in (5, 6, 11, 12) if _ok(kp, i)]
+    if len(pts) >= 3:
+        cv2.fillConvexPoly(m, cv2.convexHull(np.int32(pts)), 255)
+    for a, b in ((5, 7), (7, 9), (6, 8), (8, 10), (11, 13), (13, 15), (12, 14), (14, 16), (5, 6), (11, 12)):
+        if _ok(kp, a) and _ok(kp, b):
+            cv2.line(m, tuple(np.int32(kp[a, :2])), tuple(np.int32(kp[b, :2])), 255, max(6, int(0.3 * up)), cv2.LINE_AA)
+    head = [kp[i, :2] for i in range(5) if _ok(kp, i)]
+    if head:
+        cv2.circle(m, tuple(np.int32(np.mean(head, axis=0))), int(0.6 * up), 255, -1)
+    return m > 0
+
+
+def clean_floor(result: bytes, person: bytes, boxes=()):
+    """GLOBAL RULE: inset/phone frame cropped; everything changed OUTSIDE the body (scraps, lace pieces, props, their shadows) gets the
+    ORIGINAL floor back, relit to the result. Body, garment, model and pose untouched. None when nothing to clean."""
+    cropped = head_lock.crop_screenshot(result)
+    G = np.array(Image.open(io.BytesIO(cropped)).convert("RGB"))
+    H, W = G.shape[:2]
+    O = head_lock._register(G, np.array(head_lock._open_small(person, max(H, W)).convert("RGB")))
+    kp = pose_lock.keypoints(G)
+    if O is None or kp is None:
+        logger.warning("floor clean: registration/pose failed")
+        return cropped if cropped is not result else None
+    up_len = _up_len(kp, H)
+    core = _zone(kp, G.shape, "suit")
+    head = [kp[i, :2] for i in range(5) if _ok(kp, i)]
+    if head:
+        c = np.mean(head, axis=0)
+        cv2.circle(core, tuple(np.int32(c)), int(0.9 * up_len), 255, -1)
+    near = cv2.dilate(core, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (int(0.7 * up_len) | 1,) * 2)) > 0
+    ch = cv2.morphologyEx((_blur_diff(G, O) > 28).astype(np.uint8), cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
+    n, lab = cv2.connectedComponents(ch)
+    touch = np.zeros(n, bool)
+    touch[np.unique(lab[(core > 0) & (ch > 0)])] = True
+    touch[0] = False
+    debris = (ch > 0) & (~touch[lab] | ~near)
+    tight = _tight_body(kp, G.shape)
+    soft = cv2.dilate((_blur_diff(G, O) > 10).astype(np.uint8), np.ones((5, 5), np.uint8))  # AI-flagged boxes: faint outlines go too
+    for y0, x0, y1, x1 in boxes:
+        ys, xs = slice(int(y0 * H / 1000), int(y1 * H / 1000) + 1), slice(int(x0 * W / 1000), int(x1 * W / 1000) + 1)
+        debris[ys, xs] |= (soft[ys, xs] > 0) & ~tight[ys, xs]
+    debris[int(0.9 * H):, int(0.5 * W):] = False  # signature
+    debris = cv2.dilate(debris.astype(np.uint8), cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7)))
+    debris[tight] = 0
+    if debris.sum() < 0.0005 * H * W:
+        return cropped if cropped is not result else None
+    bgm = ((ch == 0) & ~near).astype(np.float32)
+    sig = max(H, W) / 12
+    den = cv2.GaussianBlur(bgm, (0, 0), sig) + 1e-3
+    gain = np.stack([(cv2.GaussianBlur(G[..., c].astype(np.float32) * bgm, (0, 0), sig) + 1) /
+                     (cv2.GaussianBlur(O[..., c].astype(np.float32) * bgm, (0, 0), sig) + 1) for c in range(3)], axis=2)
+    gain = np.clip(np.where((den > 0.02)[..., None], gain, 1.0), 0.8, 1.25)
+    O = np.clip(O.astype(np.float32) * gain, 0, 255).astype(np.uint8)
+    w = cv2.GaussianBlur(debris.astype(np.float32), (0, 0), 2.0)
+    fin = cv2.blendLinear(O, G, w, 1 - w)
+    # Where the ORIGINAL photo had the body (e.g. a bare foot moved), the original is no floor: rebuilt from the floor around it.
+    fill = ((debris > 0) & cv2.dilate((head_lock._skin(O) > 0).astype(np.uint8), np.ones((9, 9), np.uint8)).astype(bool)).astype(np.uint8)
+    if fill.any():
+        fin = cv2.inpaint(fin, cv2.dilate(fill, np.ones((5, 5), np.uint8)) * 255, 9, cv2.INPAINT_TELEA)
+    logger.info("floor clean: %.4f of the photo restored from the original floor", float(debris.mean()))
+    buf = io.BytesIO()
+    Image.fromarray(fin).save(buf, "JPEG", quality=94)
+    return buf.getvalue()
+
+
 def lace_layer(base: bytes, person: bytes, ext: bytes, category: str) -> bytes:
     """System result everywhere; external lace pixels only where BOTH photos show the new garment, colours agree, never skin
     (lace holes show the system lining), never on solid parts, hands, background or the signature."""

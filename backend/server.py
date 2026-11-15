@@ -2271,8 +2271,8 @@ DRESSING_RULE = (
     "Both hands stay visible and complete exactly as in IMAGE 1 (e.g. joined in front, between the legs), 5 real fingers each; forearms "
     "whole with clean continuous skin from elbow to hand. A complicated garment is adapted to the body, the body never disappears.\n"
     "• NO OLD CLOTHES UNDER THE NEW ONES: nothing the person wears in IMAGE 1 (e.g. a black bodysuit, tank top, bra, old trousers) may "
-    "show under, through or around the new garments. Under a V-neck only skin shows; under see-through lace only the opaque lining or the "
-    "matching bra of the COVERAGE rule; below a top only the new bottom.\n"
+    "show under, through or around the new garments. Under a V-neck only skin shows; under see-through lace only the opaque lining (never a "
+    "bra, never detached straps); below a top only the new bottom.\n"
     "• REAL FABRIC, NEVER CARTOON: every garment is real cloth with thickness, volume, natural shadows and folds (lace in relief, "
     "lace always over its opaque lining); never flat, painted-on, sticker-like or glued to the body.\n"
     "• SLEEVES END AT THE WRIST: wide / bell sleeves flare but end cleanly at the wrist — no trailing tails, no lace pieces hanging "
@@ -2288,6 +2288,11 @@ DRESSING_RULE = (
     "• NEVER a garment made of transparency only.\n"
     "• Adapt to the LIVE pose: drape, fold and stretch correctly for standing, seated or crossed legs.\n"
     "• CLEAN EDGES: no white patches, colour smudges or fabric fragments on the background or around the body.\n"
+    "GLOBAL RULE — EVERY PHOTO, ALWAYS:\n"
+    "• The garment stays ONLY on the body, never outside it. NO fabric scraps, NO pieces of clothing, NO red or lace pieces on the floor.\n"
+    "• Floor always clean, empty and uniform as in IMAGE 1: no objects, no shadows of objects, no debris, no decorative fabric, no props.\n"
+    "• FULL BODY, head to feet, no crop, no inset image (no phone screen, frame or card).\n"
+    "• Outfit COMPLETE and intact: top + trousers both fully worn.\n"
 )
 
 
@@ -2334,16 +2339,41 @@ async def _old_clothes_loop(person_path: str, garments_txt: str, once) -> str:
         raise last_err
     for i, (_, qc) in enumerate(results):
         logger.info(f"final check variant={i + 1} ok={qc['ok']} bad={qc['bad']} issues={qc['issues'][:160]}")
-    best = min(results, key=lambda r: r[1]["bad"])
+    rank = lambda r: (r[1].get("incomplete", 0), r[1]["bad"])  # noqa: E731
+    best = min(results, key=rank)
     if not best[1]["ok"]:
         try:
             again = await variant(tryon_quality.old_clothes_note(best[1]["issues"]))
             logger.info(f"final check rebuild ok={again[1]['ok']} bad={again[1]['bad']} issues={again[1]['issues'][:160]}")
-            if again[1]["bad"] < best[1]["bad"]:
+            if rank(again) < rank(best):
                 best = again
         except Exception as e:
             logger.warning(f"rebuild failed, best variant delivered: {e}")
-    return best[0]
+    return await _clean_floor(person_path, best[0])
+
+
+async def _clean_floor(person_path: str, path: str) -> str:
+    """GLOBAL RULE, after the choice of the best photo: anything outside the body (fabric scraps, lace pieces, props) is replaced by the
+    ORIGINAL floor of the user's photo. Model and pose are never regenerated."""
+    try:
+        person = head_lock.downscale(await run_in_threadpool(head_lock.crop_screenshot, get_object(person_path)[0]), 2048)
+        orig = get_object(path)[0]
+        res = await run_in_threadpool(head_lock.crop_screenshot, orig)
+        # Two independent looks (the AI may miss one smudge): their boxes are joined.
+        boxes = [b for r in await asyncio.gather(tryon_quality.debris_boxes(res), tryon_quality.debris_boxes(res)) for b in r]
+        logger.info(f"floor clean: {len(boxes)} debris boxes")
+        out = await run_in_threadpool(ext_lock.clean_floor, res, person, boxes)
+        out = out or (res if res is not orig else None)
+        if out is not None and res is not orig:  # inset cropped: the signature was outside the photo, sign again
+            out = await run_in_threadpool(tryon_quality.watermark, out, "free")
+    except Exception as e:
+        logger.warning(f"floor clean skipped: {e}")
+        return path
+    if out is None:
+        return path
+    new = path.rsplit("/", 1)[0] + f"/{uuid.uuid4().hex}.jpg"
+    put_object(new, out, "image/jpeg")
+    return new
 
 
 async def _render_single(user_id: str, person_path: str, garment_path: str, category_in: Optional[str], name: Optional[str], m_doc: dict, extra: str = "") -> str:

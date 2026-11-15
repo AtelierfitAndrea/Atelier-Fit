@@ -212,19 +212,24 @@ async def old_clothes_qc(person_bytes: bytes, result: bytes, garments_txt: str) 
         f"The ONLY garments allowed in IMAGE 2: {garments_txt}.\n"
         "Return ONLY JSON: {\"old_clothes_visible\": bool, \"extra_garments\": bool, \"double_layer\": bool, \"solid_parts_not_solid\": bool, "
         "\"sleeves_detached\": bool, \"pants_incomplete\": bool, \"coverage_wrong\": bool, \"not_fitting_pose\": bool, \"edge_artifacts\": bool, "
+        "\"outfit_incomplete\": bool, "
         "\"issues\": \"short English list\"}\n"
         "solid_parts_not_solid: waistband, hips, seams, buttons or hems are see-through or missing (a garment made only of transparency).\n"
         "sleeves_detached: a sleeve is floating, cut or not continuous with the top at the shoulder, or does not follow the arm.\n"
         "pants_incomplete: trousers without a solid opaque waist/hips, or with missing parts of the legs.\n"
-        "coverage_wrong: through lace / sheer fabric you see bare skin where a lining or bra is required, or the original underwear.\n"
+        "coverage_wrong: through lace / sheer fabric you see bare skin instead of an opaque lining, a separate bra or detached / floating black "
+        "straps are visible, or the original underwear of IMAGE 1 is visible.\n"
+        "outfit_incomplete: a requested garment is not fully worn (no trousers / bare legs where trousers were requested, missing top), "
+        "the figure is not full body head to feet, or the photo is cropped / an inset (phone screen, frame, rounded card).\n"
+        "IGNORE fabric scraps, debris or objects on the floor outside the body: they are cleaned afterwards, never flag them.\n"
         "not_fitting_pose: the garment does not drape on the real pose (seated/standing), floats or is pasted flat.\n"
-        "edge_artifacts: white patches, colour smudges, halos or fabric fragments on the background or around the body.\n"
+        "edge_artifacts: white patches, colour smudges or halos ON or right around the body (not on the floor).\n"
         "old_clothes_visible: any piece of the ORIGINAL clothing of IMAGE 1 (bodysuit, swimsuit, bra, underwear, tank, old trousers...) is "
         "still visible in IMAGE 2 — under, through (see-through fabric), around or instead of the new garments.\n"
         "extra_garments: IMAGE 2 shows a garment layer that is neither in the allowed list nor original skin (invented base layer, extra top).\n"
         "double_layer: one garment shows another fabric under it that is not in the allowed list (e.g. black fabric under a red lace top, "
-        "a body under the trousers). A nude lining, an opaque lining or a bra of the SAME colour under a lace / sheer garment belongs "
-        "to the new garment (correct, not a double layer).\n"
+        "a body under the trousers). A nude or black OPAQUE LINING under a lace / sheer garment belongs to the new garment (correct, "
+        "not a double layer); a bra or separate straps are NOT allowed.\n"
         "Do NOT flag parts of an allowed garment: a solid waistband, lined panel or darker lace of allowed black trousers belongs to the "
         "trousers. Flag only what clearly is ANOTHER garment, typically the original one of IMAGE 1 continuing where no allowed garment "
         "is (e.g. black bodysuit fabric on the belly, chest or under the neckline, straps on the shoulders, swimsuit edges on the hips).\n"
@@ -237,11 +242,13 @@ async def old_clothes_qc(person_bytes: bytes, result: bytes, garments_txt: str) 
                                                                                ImageContent(base64.b64encode(b).decode())]))
     except Exception as e:
         logger.warning(f"old clothes qc failed, not blocking: {e}")
-        return {"ok": True, "bad": 0, "issues": ""}
+        return {"ok": True, "bad": 0, "incomplete": 0, "issues": ""}
     d = _extract(reply)
     bad = sum(d.get(k) is True for k in ("old_clothes_visible", "extra_garments", "double_layer", "solid_parts_not_solid", "sleeves_detached",
-                                          "pants_incomplete", "coverage_wrong", "not_fitting_pose", "edge_artifacts"))
-    return {"ok": bad == 0, "bad": bad, "issues": str(d.get("issues") or "")[:400]}
+                                          "pants_incomplete", "coverage_wrong", "not_fitting_pose", "edge_artifacts", "outfit_incomplete"))
+    # COMPLETE outfit first (top + trousers worn, full body, no inset): an incomplete photo always ranks below a complete one.
+    inc = int(any(d.get(k) is True for k in ("outfit_incomplete", "pants_incomplete", "solid_parts_not_solid")))
+    return {"ok": bad == 0, "bad": bad, "incomplete": inc, "issues": str(d.get("issues") or "")[:400]}
 
 
 async def transparent_qc(garment: bytes) -> str:
@@ -254,7 +261,7 @@ async def transparent_qc(garment: bytes) -> str:
 
 
 def coverage_rule(level: str, category: str, name: str) -> str:
-    """COVERAGE (owner rule) for a transparent garment: light lace -> opaque nude lining; highly transparent top -> matching bra."""
+    """COVERAGE (owner rule): every transparent garment over an OPAQUE lining; never a bra added, never detached straps."""
     if level not in ("light", "high"):
         return ""
     cat = (category or "").lower()
@@ -263,18 +270,37 @@ def coverage_rule(level: str, category: str, name: str) -> str:
         return head + ("• Waistband and hips SOLID OPAQUE fabric. The lace / sheer parts lie ON TOP of an OPAQUE lining "
                        f"({'nude skin-tone' if level == 'light' else 'same colour as the garment'}) that fully covers the legs under it: "
                        "no see-through to skin, underwear or old clothes.\n")
-    if level == "light":
-        return head + ("• Add an OPAQUE NUDE skin-tone lining under the lace, fully covering the body under the garment: no see-through, "
-                       "nothing of IMAGE 1 visible through it.\n")
-    return head + ("• Add a simple, elegant BRA of the SAME COLOUR as the garment under it, fully covering the bust; nothing else of IMAGE 1 "
-                   "visible through the fabric. The bra is part of the styling (seen through the sheer fabric), never exposed alone, never the "
-                   "original underwear.\n")
+    return head + ("• Under the lace an OPAQUE LINING fully covers the body (nude skin-tone, or black where the product shows black under the "
+                   "lace): no see-through to skin, nothing of IMAGE 1 under it.\n"
+                   "• NEVER add a bra or any underwear. NO separate or detached black straps, NO floating straps: the top's own straps / "
+                   "shoulders rest ON the shoulders, attached to the top, neckline exactly as the product.\n")
+
+
+async def debris_boxes(img: bytes) -> list:
+    """GLOBAL RULE helper (cheap text model): boxes of fabric scraps / smudges / props OUTSIDE the person, normalised 0-1000."""
+    small = await run_in_threadpool(head_lock.downscale, img, 1024)
+    prompt = ("Virtual try-on photo of ONE person. Find every defect OUTSIDE the person: fabric scraps, lace or red pieces, colour smudges or "
+              "stains, white / grey patches, blurred blobs, props or objects on the floor or the wall that are NOT the person's body, hair, "
+              "hands, feet, shoes or the clothes she wears. Look ALSO right next to the body edges (shoulders, sleeves, knees, legs): darker or lighter "
+              "patches of floor / wall that do not match the surrounding floor, smears and ghost outlines. Return ONLY JSON: {\"debris\": [{\"box_2d\": [ymin, xmin, ymax, xmax]}]} "
+              "normalised 0-1000, each box tight around one defect. Empty list if the floor and background are clean.")
+    try:
+        chat = LlmChat(api_key=os.environ["EMERGENT_LLM_KEY"], session_id=f"debris-{uuid.uuid4().hex[:8]}",
+                       system_message="You are a precise photo retouch inspector. Reply with JSON only.")
+        chat.with_model("gemini", QC_MODEL)
+        reply = await chat.send_message(UserMessage(text=prompt, file_contents=[ImageContent(base64.b64encode(small).decode())]))
+    except Exception as e:
+        logger.warning(f"debris detection failed: {e}")
+        return []
+    d = _extract(reply)
+    return [b["box_2d"] for b in (d.get("debris") or [])[:12] if isinstance(b, dict) and isinstance(b.get("box_2d"), list) and len(b["box_2d"]) == 4]
 
 
 def old_clothes_note(issues: str) -> str:
     return ("\nPREVIOUS ATTEMPT REJECTED (FINAL CHECK): " + issues +
             ". Fix it: remove 100% of the original clothes, rebuild every solid part (waistband, hips, seams, buttons, hems) in opaque fabric, "
-            "sleeves attached to the top and following the arms, trousers complete, lining / matching bra under transparent parts, "
+            "sleeves and shoulder straps attached to the top, trousers complete, opaque lining under every lace part, no bra, no detached straps, "
+            "full body head to feet, nothing on the floor, "
             "garment fitted to the live pose.\n")
 
 

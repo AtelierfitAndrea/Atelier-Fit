@@ -678,6 +678,35 @@ def has_face(jpeg: bytes) -> bool:
     return _face_box(np.array(Image.open(io.BytesIO(jpeg)).convert("RGB"))) is not None
 
 
+def _crop_white_card(img: Image.Image, data: bytes) -> bytes:
+    """Gallery-viewer screenshot: photo card (rounded corners) between white UI bands with small icons -> the card only."""
+    a = np.asarray(img.convert("L"))
+    H, W = a.shape
+    ui = (a > 235).mean(axis=1) > 0.9
+    best, start = (0, 0), None
+    for i, u in enumerate([*ui, True]):
+        if not u and start is None:
+            start = i
+        elif u and start is not None:
+            best = max(best, (start, i), key=lambda r: r[1] - r[0])
+            start = None
+    t, b = best
+    if not (0.3 * H < b - t < 0.92 * H) or ui[:t].sum() + ui[b:].sum() < 0.08 * H:
+        return data
+    # A card has straight top/bottom edges across the width (a white-background photo starts with a head or feet only).
+    k = max(2, int(0.03 * (b - t)))
+    if min((a[t + k] <= 235).mean(), (a[b - 1 - k] <= 235).mean()) < 0.75:
+        return data
+    cols = (a[t:b] > 235).mean(axis=0) < 0.9
+    lft, rgt = int(np.argmax(cols)), W - int(np.argmax(cols[::-1]))
+    r = int(0.03 * min(b - t, rgt - lft))  # rounded corners
+    box = (lft + r, t + r, rgt - r, b - r)
+    logger.info("head_lock: white-card screenshot, using embedded photo %s of %sx%s", box, W, H)
+    buf = io.BytesIO()
+    img.crop(box).save(buf, "JPEG", quality=95)
+    return buf.getvalue()
+
+
 def crop_screenshot(data: bytes) -> bytes:
     """Phone screenshot of an app showing the photo (UI bars, text, buttons): keep only the embedded photo."""
     img = Image.open(io.BytesIO(data)).convert("RGB")
@@ -710,7 +739,7 @@ def crop_screenshot(data: bytes) -> bytes:
             if best is None or w * h > best[2] * best[3]:
                 best = (x, y, w, h)
     if best is None:
-        return data
+        return _crop_white_card(img, data)
     x, y, w, h = best
     # The UI around the photo must be mostly flat (white/grey bars), otherwise this is a normal photo.
     ring = np.ones((sh, sw), bool)
