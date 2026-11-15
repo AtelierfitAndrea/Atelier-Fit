@@ -632,3 +632,7 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 - Cache `_prep` in memoria (future condivise, max 48): crop_screenshot (`_person_cropped`), keypoints multipass, `_half_body(person_path)`, `_feet_extend(person_path)`, skeleton gambe (ora dal crop originale: gambe congelate nel pass 1 = stessa posa)
 - `_clean_floor`: 1 sola chiamata debris_boxes
 - Log "timing ...": prep, variante render/final-check, varianti totali, multipass pass1/pass2/QC/totale, pulizia pavimento, anti-artefatto, totale prova
+
+## 2026-11-15 (7) — X su "IL CAPO" (Studio) (DONE, testato in anteprima)
+- Studio.jsx UploadBox: X (stile multi-brand) in alto a destra quando c'è un capo -> mini pop-up ClearMenu: "Vuoi eliminare il capo? Sì" (svuota solo lo slot) / "Vuoi sostituire il capo? Sì" (apre subito il selettore file). Foto in posa/Avatar intatti, stessa pagina
+- testid: upload-garment-clear, upload-garment-clear-menu, upload-garment-delete-btn, upload-garment-replace-btn

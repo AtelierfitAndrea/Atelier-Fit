@@ -6,7 +6,7 @@ import { useAvatar } from "@/lib/avatar";
 import { Link } from "react-router-dom";
 import { useSubscription } from "@/lib/subscription";
 import TryonCounter from "@/components/TryonCounter";
-import { CloudArrowUp, ArrowRight } from "@phosphor-icons/react";
+import { CloudArrowUp, ArrowRight, X } from "@phosphor-icons/react";
 import PrivacyBox from "@/components/PrivacyBox";
 import AccountPersonalBox from "@/components/AccountPersonalBox";
 import OutfitGrid from "@/components/OutfitGrid";
@@ -138,6 +138,7 @@ export default function Studio() {
               else if (e?.message !== "blocked") toast.error("Upload failed");
             }
           }}
+          onClear={() => { setGarmentPath(null); setGarmentPreview(null); setCategory(null); setName(""); setChosenSize(""); }}
           testid="upload-garment"
           className="lg:col-span-6"
         />
@@ -197,9 +198,10 @@ function AvatarPanel({ path, posed }) {
   );
 }
 
-function UploadBox({ title, hint, preview, onFile, testid, className = "", topRight = null }) {
+function UploadBox({ title, hint, preview, onFile, onClear = null, testid, className = "", topRight = null }) {
   const ref = useRef();
   const [drag, setDrag] = useState(false);
+  const [menu, setMenu] = useState(false);
   return (
     <div
       className={`upload-zone ${drag ? "active" : ""} p-6 min-h-[380px] flex flex-col ${className}`}
@@ -214,7 +216,7 @@ function UploadBox({ title, hint, preview, onFile, testid, className = "", topRi
       data-testid={testid}
     >
       <input ref={ref} type="file" accept="image/*" className="hidden" onChange={(e) => {
-        const f = e.target.files?.[0]; if (f) onFile(f);
+        const f = e.target.files?.[0]; if (f) onFile(f); e.target.value = "";
       }} />
       <div className="flex items-center justify-between gap-3">
         <div>
@@ -224,6 +226,17 @@ function UploadBox({ title, hint, preview, onFile, testid, className = "", topRi
         <div className="flex items-center gap-2">
           {topRight}
           <CloudArrowUp size={22} weight="duotone" />
+          {preview && onClear && (
+            <div className="relative" onClick={(e) => e.stopPropagation()}>
+              <button onClick={() => setMenu((m) => !m)} className="text-neutral-500 hover:text-[#0A0A0A]"
+                data-testid={`${testid}-clear`} aria-label="Rimuovi">
+                <X size={14} />
+              </button>
+              {menu && <ClearMenu testid={testid} onClose={() => setMenu(false)}
+                onDelete={() => { setMenu(false); onClear(); }}
+                onReplace={() => { setMenu(false); ref.current?.click(); }} />}
+            </div>
+          )}
         </div>
       </div>
       <div className="flex-1 mt-6 relative overflow-hidden" style={{ aspectRatio: "4/5" }}>
@@ -236,6 +249,26 @@ function UploadBox({ title, hint, preview, onFile, testid, className = "", topRi
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+
+function ClearMenu({ testid, onClose, onDelete, onReplace }) {
+  useEffect(() => {
+    const close = () => onClose();
+    const t = setTimeout(() => document.addEventListener("click", close), 0);
+    return () => { clearTimeout(t); document.removeEventListener("click", close); };
+  }, [onClose]);
+  const row = "w-full flex items-center justify-between gap-4 px-3 py-2 text-xs hover:bg-neutral-50";
+  return (
+    <div className="absolute right-0 top-6 z-30 w-60 bg-white border hairline shadow-lg" data-testid={`${testid}-clear-menu`}>
+      <button onClick={onDelete} className={row} data-testid={`${testid}-delete-btn`}>
+        <span>Vuoi eliminare il capo?</span><span className="font-semibold">Sì</span>
+      </button>
+      <button onClick={onReplace} className={`${row} border-t hairline`} data-testid={`${testid}-replace-btn`}>
+        <span>Vuoi sostituire il capo?</span><span className="font-semibold">Sì</span>
+      </button>
     </div>
   );
 }
