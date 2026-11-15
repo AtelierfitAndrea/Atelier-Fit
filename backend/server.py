@@ -2288,6 +2288,10 @@ DRESSING_RULE = (
     "• NEVER a garment made of transparency only.\n"
     "• Adapt to the LIVE pose: drape, fold and stretch correctly for standing, seated or crossed legs.\n"
     "• CLEAN EDGES: no white patches, colour smudges or fabric fragments on the background or around the body.\n"
+    "FRAMING 1:1 — EVERY PHOTO, ALWAYS: framing IDENTICAL to IMAGE 1 — never zoom in, never crop, never cut an edge. Feet and shoes always "
+    "WHOLE and visible inside the photo with floor margin below and at the sides. If a plain band was added at the bottom, continue the "
+    "floor there; a long garment never makes the body smaller or moved: same position, same pose, same body scale. Only the clothes "
+    "change; body, face, pose, framing, background, light (and shoes not requested) stay locked. If unsure: zoom-out, never zoom-in.\n"
     "GLOBAL RULE — EVERY PHOTO, ALWAYS:\n"
     "• The garment stays ONLY on the body, never outside it. NO fabric scraps, NO pieces of clothing, NO red or lace pieces on the floor.\n"
     "• Floor always clean, empty and uniform as in IMAGE 1: no objects, no shadows of objects, no debris, no decorative fabric, no props.\n"
@@ -2297,6 +2301,16 @@ DRESSING_RULE = (
 
 
 HALF_EXTEND = 0.7
+# INQUADRATURA 1:1 (owner rule): feet close to the bottom edge -> the frame is widened below (zoom-out), never cropped.
+FEET_EDGE = 0.9
+FEET_EXTEND = 0.1
+
+
+async def _feet_extend(person_bytes: bytes) -> float:
+    img = np.array(head_lock._open_small(person_bytes, 768).convert("RGB"))
+    kp = await run_in_threadpool(pose_lock.keypoints, img)
+    feet = [kp[i, 1] for i in range(15, 23) if kp is not None and kp[i, 2] > pose_lock.MIN_SCORE]
+    return FEET_EXTEND if feet and max(feet) > FEET_EDGE * img.shape[0] else 0.0
 HALF_BODY_RULE = (
     "HALF-BODY PHOTO — EXTEND TO FULL FIGURE: IMAGE 1 shows the person only down to the waist/thighs; a plain band was added at the bottom. "
     "Fill that band by extending the SAME person's body down to the feet, as the natural continuation of the visible pose (seated -> seated legs, "
@@ -2394,7 +2408,7 @@ async def _render_single_once(user_id: str, person_path: str, garment_path: str,
     desc = (await _garment_info(garment_path)).get("desc") or ""
     cover = surgical and _covers_legs([{"category": category_in, "name": name, "desc": desc}])
     canvas_bytes, lock = await run_in_threadpool(head_lock.prepare, person_bytes, head_lock.is_long(category_in, name or ""), boxes, keep, posed, freeze,
-                                                 HALF_EXTEND if half else 0.0, cover)
+                                                 HALF_EXTEND if half else await _feet_extend(person_bytes), cover)
     if lock.get("seated"):
         extra += SEATED_RULE + SEATED_GREY_RULE
     garment_bytes = await run_in_threadpool(head_lock.downscale, garment_bytes, head_lock.GARMENT_MAX_SIDE)
@@ -3424,11 +3438,10 @@ async def _multipass_outfit(user: User, person_path: str, items: list, layer_ord
     person_bytes = await run_in_threadpool(head_lock.crop_screenshot, person_bytes)
     orig = np.array(head_lock._open_small(person_bytes, head_lock.PERSON_OUT_SIDE).convert("RGB"))
     h, w = orig.shape[:2]
-    ext_flat = False
     kp0 = await run_in_threadpool(pose_lock.keypoints, orig)
     # Feet at the bottom edge + shoes: give the photo a little floor below so heels are never cut by the frame.
     feet_y = [kp0[i, 1] for i in range(15, 23) if kp0 is not None and kp0[i, 2] > pose_lock.MIN_SCORE]
-    ext = int(0.08 * h) if uppers and feet_y and max(feet_y) > 0.92 * h and any((g.get("category") or "").lower() == "shoes" for g in lowers) else 0
+    ext = int(FEET_EXTEND * h) if uppers and feet_y and max(feet_y) > FEET_EDGE * h else 0
     bag = any((g.get("category") or "").lower() == "bag" for g in uppers)
     if bag:
         extra += "\nBAG IN HAND: the requested bag is carried naturally in one hand; that hand may change its grip to hold it.\n"
@@ -3446,7 +3459,6 @@ async def _multipass_outfit(user: User, person_path: str, items: list, layer_ord
             band = base[h - 6:]
             flat = (np.abs(band.astype(np.int16) - np.median(base[h:].reshape(-1, 3), axis=0).astype(np.int16)).max(axis=2) < 6).astype(np.uint8)
             flat[:6] = 0
-            ext_flat = flat.mean() > 0.5
             if flat.any():
                 base[h - 6:] = cv2.inpaint(np.ascontiguousarray(band), cv2.dilate(flat, np.ones((3, 3), np.uint8)), 7, cv2.INPAINT_TELEA)
             orig = cv2.copyMakeBorder(orig, 0, ext, 0, 0, cv2.BORDER_REPLICATE)
@@ -3666,11 +3678,6 @@ async def _multipass_outfit(user: User, person_path: str, items: list, layer_ord
                 # SHOW ALWAYS (owner rule): the best attempt is delivered even with bare legs; the owner judges it.
                 logger.warning(f"multipass legs delivered after {len(attempts_detail)} attempts with AI-only issues: {problems}")
                 tryon_quality.log_legs_outcome("multipass", "delivered_with_warning", first=d1, attempts=attempts_detail, problems=problems, **mkw)
-    if ext_flat:
-        # The model drew no floor below the feet: keep only a thin margin under the new shoes instead of a smeared band.
-        rows = np.where(cv2.cvtColor(np.abs(final.astype(np.int16) - base.astype(np.int16)).astype(np.uint8), cv2.COLOR_RGB2GRAY)[Y0:Y1].max(axis=1) > 40)[0]
-        cut = min(h, Y0 + int(rows.max()) + int(0.006 * h)) if len(rows) else h - ext
-        final, orig = final[:cut], orig[:cut]
     dev = await run_in_threadpool(pose_lock.deviation, orig, final)
     logger.info(f"multipass legs changed={frac:.2f} pose deviation={dev}")
     out = io.BytesIO()
@@ -3733,7 +3740,7 @@ async def _compose_outfit_once(user: User, person_path: Optional[str], items: li
                                                        [g.get("category") for g in items], surgical)
     extra += phone_txt + (HALF_BODY_RULE if half else "")
     canvas_bytes, lock = await run_in_threadpool(head_lock.prepare, person_bytes, any(head_lock.is_long(g.get("category"), g.get("name") or "") for g in items), boxes, keep, posed, freeze,
-                                                 HALF_EXTEND if half else extend, surgical and _covers_legs(items))
+                                                 HALF_EXTEND if half else max(extend, await _feet_extend(person_bytes)), surgical and _covers_legs(items))
     if lock.get("seated"):
         extra += SEATED_RULE + SEATED_GREY_RULE
     file_contents = [ImageContent(base64.b64encode(canvas_bytes).decode("utf-8"))]

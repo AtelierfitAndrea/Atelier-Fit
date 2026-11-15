@@ -609,3 +609,10 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 - `head_lock._crop_white_card`: screenshot galleria (card con angoli arrotondati tra bande bianche) -> solo la foto; cache hand_boxes/face_checks svuotate
 - Reggiseno ANNULLATO dall'utente: capi trasparenti sempre su FODERA OPACA (nude o nera), mai reggiseno, mai spalline staccate; il controllo finale lo segnala. Scelta reggiseno / 409 rimossi
 - Foto buona = outfit 6a28416d (spalle attaccate, niente reggiseno): solo pavimento pulito -> result 97bf3b72 (originale in result_before_clean). Outfit b8196593 rimesso com'era
+
+## 2026-11-15 (3) — INQUADRATURA 1:1 (regola fissa, tutte le prove) (DONE, offline)
+- FRAMING 1:1 nel DRESSING_RULE: mai zoom/crop, piedi e scarpe interi con margine, vestito lungo = frame allargato in basso, corpo/posa/scala/sfondo/luce bloccati, nel dubbio zoom-out
+- `_feet_extend`: piedi oltre il 90% dell'altezza -> +10% di tela in basso (singola + outfit; multipass FEET_EDGE/FEET_EXTEND senza vincolo scarpe). head_lock.prepare: bottom = max(extend, pad capo lungo)
+- Tolti i tagli: multipass "taglio sotto le scarpe" eliminato; `_trim_pad_bands` non taglia più la banda in basso (diventa pavimento specchiato); `_crop_white_card` non rade più i bordi, gli angoli bianchi vengono ricostruiti (inpaint solo bianco che tocca il bordo)
+- Controllo finale: scarpe tagliate / foto zoomata = outfit_incomplete
+- Foto buona 6a28416d rifatta senza tagli: scarpe intere -> result 3f40b138

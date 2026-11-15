@@ -443,7 +443,7 @@ def prepare(person_bytes: bytes, long_garment: bool, hands: list = None, paste_h
     im = np.array(_open_small(person_bytes, PERSON_OUT_SIDE).convert("RGB"))
     h, w = im.shape[:2]
     top = max(TOP_PAD_MIN_PX, int(h * TOP_PAD_RATIO))
-    bottom = int(h * extend) if extend else (int(h * BOTTOM_PAD_RATIO) if long_garment else 0)
+    bottom = max(int(h * extend), int(h * BOTTOM_PAD_RATIO) if long_garment else 0)
     # Bands are filled with the plain background colour (never the person: head/feet touching the edge must not smear).
     canvas = cv2.copyMakeBorder(im, top, bottom, 0, 0, cv2.BORDER_CONSTANT, value=_bg_color(im[:3]))
     if bottom:
@@ -699,11 +699,24 @@ def _crop_white_card(img: Image.Image, data: bytes) -> bytes:
         return data
     cols = (a[t:b] > 235).mean(axis=0) < 0.9
     lft, rgt = int(np.argmax(cols)), W - int(np.argmax(cols[::-1]))
-    r = int(0.03 * min(b - t, rgt - lft))  # rounded corners
-    box = (lft + r, t + r, rgt - r, b - r)
+    box = (lft, t, rgt, b)
     logger.info("head_lock: white-card screenshot, using embedded photo %s of %sx%s", box, W, H)
+    # FRAMING 1:1: never shave the edges (feet stay whole); the white rounded corners are rebuilt from the photo around them.
+    c = np.ascontiguousarray(np.array(img.crop(box)))
+    ch, cw = c.shape[:2]
+    ry, rx = max(4, int(0.12 * ch)), max(4, int(0.12 * cw))
+    white = np.zeros((ch, cw), np.uint8)
+    for ys in (slice(0, ry), slice(ch - ry, ch)):
+        for xs in (slice(0, rx), slice(cw - rx, cw)):
+            white[ys, xs] = (c[ys, xs].min(axis=2) > 215).astype(np.uint8)
+    # Only white touching the photo edge (UI around the rounded card), never a white wall inside the photo.
+    n, lab = cv2.connectedComponents(white)
+    edge = np.unique(np.concatenate([lab[0], lab[-1], lab[:, 0], lab[:, -1]]))
+    m = (np.isin(lab, edge[edge > 0]) & (white > 0)).astype(np.uint8) * 255
+    if m.any():
+        c = cv2.inpaint(c, cv2.dilate(m, np.ones((3, 3), np.uint8)), 5, cv2.INPAINT_TELEA)
     buf = io.BytesIO()
-    img.crop(box).save(buf, "JPEG", quality=95)
+    Image.fromarray(c).save(buf, "JPEG", quality=95)
     return buf.getvalue()
 
 

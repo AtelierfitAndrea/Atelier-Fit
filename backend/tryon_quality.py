@@ -220,7 +220,8 @@ async def old_clothes_qc(person_bytes: bytes, result: bytes, garments_txt: str) 
         "coverage_wrong: through lace / sheer fabric you see bare skin instead of an opaque lining, a separate bra or detached / floating black "
         "straps are visible, or the original underwear of IMAGE 1 is visible.\n"
         "outfit_incomplete: a requested garment is not fully worn (no trousers / bare legs where trousers were requested, missing top), "
-        "the figure is not full body head to feet, or the photo is cropped / an inset (phone screen, frame, rounded card).\n"
+        "the figure is not full body head to feet, feet or shoes are cut / touch the photo edge, or the photo is zoomed, cropped or an inset "
+        "(phone screen, frame, rounded card).\n"
         "IGNORE fabric scraps, debris or objects on the floor outside the body: they are cleaned afterwards, never flag them.\n"
         "not_fitting_pose: the garment does not drape on the real pose (seated/standing), floats or is pasted flat.\n"
         "edge_artifacts: white patches, colour smudges or halos ON or right around the body (not on the floor).\n"
@@ -467,7 +468,16 @@ def _trim_pad_bands(im: Image.Image, pads=None) -> Image.Image:
     if top < 3 and bot < 3:
         return im
     k = H / sh
-    return im.crop((0, int(top * k) if top >= 3 else 0, W, H - int(bot * k) if bot >= 3 else H))
+    im = im.crop((0, int(top * k) if top >= 3 else 0, W, H))
+    if bot < 3:
+        return im
+    # FRAMING 1:1: the bottom pad is never cut (feet keep their margin): it becomes floor, mirrored from the rows above it.
+    a = np.array(im)
+    n = int(bot * k)
+    src = a[-2 * n:-n] if a.shape[0] > 2 * n else a[:-n]
+    fill = cv2.GaussianBlur(cv2.resize(src[::-1], (a.shape[1], n)), (0, 0), 3)
+    a[-n:] = fill
+    return Image.fromarray(a)
 
 
 def watermark(img_bytes: bytes, mark: str = "free", pads=None) -> bytes:
