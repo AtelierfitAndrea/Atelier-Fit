@@ -1619,8 +1619,7 @@ async def upload(kind: str = Query(..., regex="^(person|garment)$"), file: Uploa
     return {"path": result["path"]}
 
 
-# ----- CAPI TRASPARENTI (owner rule): flag per garment + external try-on test switch (OFF by default, max 2 generations) -----
-TRANSP_EXT_MAX = 2
+# ----- CAPI TRASPARENTI (owner rule): flag per garment + external try-on switch (ON until the owner turns it OFF; billed on fal) -----
 
 
 async def _detect_transparent(path: str, data: bytes) -> str:
@@ -1656,7 +1655,7 @@ async def _coverage(items: list) -> tuple:
 
 async def _ext_switch() -> dict:
     d = await db.app_settings.find_one({"_id": "transparent_ext"}) or {}
-    return {"on": bool(d.get("on")), "used": int(d.get("used", 0)), "max": TRANSP_EXT_MAX}
+    return {"on": bool(d.get("on"))}
 
 
 class ExtSwitch(BaseModel):
@@ -1674,18 +1673,14 @@ async def get_ext_switch(user: User = Depends(get_current_user)):
 async def set_ext_switch(req: ExtSwitch, user: User = Depends(get_current_user)):
     if not _is_owner_email(user.email):
         raise HTTPException(status_code=403, detail="Solo proprietario")
-    # Turning ON starts a new test: 2 external generations, then it switches itself OFF.
-    await db.app_settings.update_one({"_id": "transparent_ext"}, {"$set": {"on": req.on, **({"used": 0} if req.on else {})}}, upsert=True)
+    await db.app_settings.update_one({"_id": "transparent_ext"}, {"$set": {"on": req.on}}, upsert=True)
     return await _ext_switch()
 
 
 async def _ext_raw(person_path: str, garment_path: str) -> Optional[bytes]:
-    """External server: one generation (counted, switch OFF after TRANSP_EXT_MAX) used ONLY for its lace. None on failure."""
-    sw = await db.app_settings.find_one_and_update({"_id": "transparent_ext", "on": True, "used": {"$lt": TRANSP_EXT_MAX}}, {"$inc": {"used": 1}})
-    if not sw:
+    """External server (no fixed limit, as long as the fal account has credit): used ONLY for its lace. None on failure."""
+    if not (await _ext_switch())["on"]:
         return None
-    if sw.get("used", 0) + 1 >= TRANSP_EXT_MAX:
-        await db.app_settings.update_one({"_id": "transparent_ext"}, {"$set": {"on": False}})
     try:
         pb = head_lock.downscale(await _person_cropped(person_path), 2048)
         gb = head_lock.downscale(get_object(garment_path)[0], 2048)
@@ -1693,6 +1688,15 @@ async def _ext_raw(person_path: str, garment_path: str) -> Optional[bytes]:
     except Exception as e:
         logger.warning(f"external lace try-on failed: {e}")
         return None
+
+
+async def _ext_credit_guard(paths: list) -> None:
+    """Switch ON + a transparent garment: fal without credit -> 'Credito esaurito' and the generation does not start."""
+    if not (await _ext_switch())["on"]:
+        return
+    levels = await asyncio.gather(*[_transparency(p) for p in paths if p])
+    if any(lv != "none" for lv in levels) and not await run_in_threadpool(fal_tryon.credit_ok):
+        raise HTTPException(status_code=409, detail="Credito esaurito")
 
 
 async def _system_with_lace(user_id: str, person_path: str, sheer: list, kind: str, system_coro) -> tuple:
@@ -2301,6 +2305,10 @@ DRESSING_RULE = (
     "Every foot whole and visible, never erased, faded or half gone. The two shoes are coherent: same shoe, same shape, same heel height, "
     "consistent direction (mirror of the correct one). The heel always points the same way as its own shoe. FORBIDDEN: detached heel, "
     "random heel on the floor, fake heel, double heel, erased foot.\n"
+    "CONTINUITY — EVERY GARMENT, ALWAYS: never empty spaces, holes or openings that the product does not have. Every garment "
+    "continuous: no holes, cuts or missing fabric under the arms, on the hips or between garments. No loose flaps flying on their own: "
+    "every sleeve, edge and strip attached to its garment and falling naturally on the body. Sheer / lace / mesh: the fabric is always "
+    "there, continuous and complete, no empty zones. Junctions CLOSED: top-trousers, top-skirt, sleeve-shoulder, never a gap.\n"
     "GLOBAL RULE — EVERY PHOTO, ALWAYS:\n"
     "• The garment stays ONLY on the body, never outside it. NO fabric scraps, NO pieces of clothing, NO red or lace pieces on the floor.\n"
     "• Floor always clean, empty and uniform as in IMAGE 1: no objects, no shadows of objects, no debris, no decorative fabric, no props.\n"
@@ -2566,6 +2574,8 @@ async def _render_single_once(user_id: str, person_path: str, garment_path: str,
 
 @api_router.post("/tryon/generate")
 async def tryon_generate(req: TryOnRequest, user: User = Depends(get_current_user)):
+    await _require_account_paths(user, req.garment_path)
+    await _ext_credit_guard([req.garment_path])
     return await _start_render_job(user, _tryon_generate(req, user))
 
 
@@ -3907,6 +3917,8 @@ async def _compose_outfit_once(user: User, person_path: Optional[str], items: li
 
 @api_router.post("/outfit/generate")
 async def outfit_generate(req: OutfitGenerateRequest, user: User = Depends(get_current_user)):
+    gs = await db.garments.find({"id": {"$in": req.garment_ids}, "user_id": user.user_id}, {"_id": 0, "image_path": 1}).to_list(10)
+    await _ext_credit_guard([g.get("image_path") for g in gs])
     return await _start_render_job(user, _outfit_generate(req, user))
 
 
@@ -3982,6 +3994,9 @@ class GridOutfitRequest(BaseModel):
 
 @api_router.post("/outfit/generate-from-uploads")
 async def outfit_generate_from_uploads(req: GridOutfitRequest, user: User = Depends(get_current_user)):
+    if any(_path_owner(i.image_path) != user.user_id for i in req.items):
+        raise HTTPException(status_code=403, detail="Accesso negato")
+    await _ext_credit_guard([i.image_path for i in req.items])
     return await _start_render_job(user, _outfit_generate_from_uploads(req, user))
 
 

@@ -12,6 +12,22 @@ class FalError(Exception):
     pass
 
 
+CREDIT_WORDS = ("balance", "exhausted", "locked", "insufficient", "credit", "403")
+
+
+def credit_ok() -> bool:
+    """Blocking: tiny fal call (1 token). False ONLY when fal answers that the account has no credit; other errors do not block."""
+    key = os.environ.get("FAL_KEY")
+    if not key:
+        return False
+    try:
+        fal_client.SyncClient(key=key, default_timeout=20).subscribe(
+            "fal-ai/any-llm", arguments={"prompt": "ok", "model": VISION_MODEL, "max_tokens": 1}, interval=0.5)
+    except Exception as e:
+        return not any(w in str(e).lower() for w in CREDIT_WORDS)
+    return True
+
+
 def _data_url(data: bytes, ct: str) -> str:
     return f"data:{ct};base64,{base64.b64encode(data).decode()}"
 

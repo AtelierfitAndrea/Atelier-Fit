@@ -21,7 +21,6 @@ export const TransparentSwitch = ({ testid = "transparent-ext" }) => {
         className={`px-3 py-1 border transition-colors ${s.on ? "bg-[#0A0A0A] text-white border-[#0A0A0A]" : "hairline"}`}>
         {s.on ? "ON" : "OFF"}
       </button>
-      {s.on && <span className="text-neutral-500" data-testid={`${testid}-left`}>{s.max - s.used} prove rimaste</span>}
     </div>
   );
 };

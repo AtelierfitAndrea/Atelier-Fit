@@ -212,7 +212,7 @@ async def old_clothes_qc(person_bytes: bytes, result: bytes, garments_txt: str) 
         f"The ONLY garments allowed in IMAGE 2: {garments_txt}.\n"
         "Return ONLY JSON: {\"old_clothes_visible\": bool, \"extra_garments\": bool, \"double_layer\": bool, \"solid_parts_not_solid\": bool, "
         "\"sleeves_detached\": bool, \"pants_incomplete\": bool, \"coverage_wrong\": bool, \"not_fitting_pose\": bool, \"edge_artifacts\": bool, "
-        "\"outfit_incomplete\": bool, \"local_artifacts\": bool, \"shoes_wrong\": bool, "
+        "\"outfit_incomplete\": bool, \"local_artifacts\": bool, \"shoes_wrong\": bool, \"holes_or_gaps\": bool, "
         "\"issues\": \"short English list\"}\n"
         "solid_parts_not_solid: waistband, hips, seams, buttons or hems are see-through or missing (a garment made only of transparency).\n"
         "sleeves_detached: a sleeve is floating, cut or not continuous with the top at the shoulder, or does not follow the arm.\n"
@@ -226,6 +226,8 @@ async def old_clothes_qc(person_bytes: bytes, result: bytes, garments_txt: str) 
         "shoes / sandals fused with the floor — check feet, hands, shoes and the floor right around them.\n"
         "shoes_wrong: a shoe and its heel / sole are not ONE attached piece (detached, double, fake or random heel on the floor), a foot is "
         "erased / faded / half gone, the two shoes differ (shape, heel height) or a heel points against its own shoe.\n"
+        "holes_or_gaps: holes, cuts, missing fabric or empty zones the product does not have (under the arms, on the hips, inside lace), "
+        "open junctions between garments or sleeve-shoulder, loose flaps flying on their own.\n"
         "IGNORE fabric scraps, debris or objects on the floor outside the body: they are cleaned afterwards, never flag them.\n"
         "not_fitting_pose: the garment does not drape on the real pose (seated/standing), floats or is pasted flat.\n"
         "edge_artifacts: white patches, colour smudges or halos ON or right around the body (not on the floor).\n"
@@ -250,7 +252,7 @@ async def old_clothes_qc(person_bytes: bytes, result: bytes, garments_txt: str) 
         return {"ok": True, "bad": 0, "incomplete": 0, "issues": ""}
     d = _extract(reply)
     bad = sum(d.get(k) is True for k in ("old_clothes_visible", "extra_garments", "double_layer", "solid_parts_not_solid", "sleeves_detached",
-                                          "pants_incomplete", "coverage_wrong", "not_fitting_pose", "edge_artifacts", "outfit_incomplete", "local_artifacts", "shoes_wrong"))
+                                          "pants_incomplete", "coverage_wrong", "not_fitting_pose", "edge_artifacts", "outfit_incomplete", "local_artifacts", "shoes_wrong", "holes_or_gaps"))
     # COMPLETE outfit first (top + trousers worn, full body, no inset): an incomplete photo always ranks below a complete one.
     inc = int(any(d.get(k) is True for k in ("outfit_incomplete", "pants_incomplete", "solid_parts_not_solid")))
     return {"ok": bad == 0, "bad": bad, "incomplete": inc, "artifacts": d.get("local_artifacts") is True, "shoes_wrong": d.get("shoes_wrong") is True, "issues": str(d.get("issues") or "")[:400]}

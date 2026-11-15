@@ -640,3 +640,8 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 ## 2026-11-15 (8) — Interruttore "SERVER ESTERNO TRASPARENZE" anche sul capo unico (DONE, testato in anteprima)
 - Studio.jsx: TransparentSwitch (owner) sopra IL CAPO, testid single-transparent-ext-*; stesso interruttore globale del multi-brand, le due copie restano sincronizzate (evento transparent-ext-changed)
 - Backend già pronto: /tryon/generate usa `_system_with_lace` come il multi-brand (capo trasparente rilevato + interruttore ON -> server esterno solo per il pizzo)
+
+## 2026-11-15 (9) — Server trasparenze senza limite + regola CONTINUITÀ (DONE)
+- Tolti TRANSP_EXT_MAX, contatore used/max e la scritta "prove rimaste": l'interruttore resta ON finché lo spegne l'owner (credito fal.ai del suo account)
+- `_ext_credit_guard` sugli endpoint tryon/outfit/grid: interruttore ON + capo trasparente -> `fal_tryon.credit_ok` (chiamata minima 1 token); senza credito -> 409 "Credito esaurito", la generazione non parte
+- Prompt CONTINUITY (niente buchi/tagli/lembi volanti, giunzioni chiuse, tessuto trasparente sempre presente) + flag QC holes_or_gaps
