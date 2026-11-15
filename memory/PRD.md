@@ -645,3 +645,7 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 - Tolti TRANSP_EXT_MAX, contatore used/max e la scritta "prove rimaste": l'interruttore resta ON finché lo spegne l'owner (credito fal.ai del suo account)
 - `_ext_credit_guard` sugli endpoint tryon/outfit/grid: interruttore ON + capo trasparente -> `fal_tryon.credit_ok` (chiamata minima 1 token); senza credito -> 409 "Credito esaurito", la generazione non parte
 - Prompt CONTINUITY (niente buchi/tagli/lembi volanti, giunzioni chiuse, tessuto trasparente sempre presente) + flag QC holes_or_gaps
+
+## 2026-11-15 (10) — Posa 7 spiaggia: tolte le 2 braccia in più (DONE, 1 generazione di zona)
+- Outfit 38b3cc55 (vestito pizzo nero): zona busto/ginocchia rifatta (script /app/memory/p9/arms_fix.py) -> solo le 2 braccia alzate, vestito continuo, ginocchia vuote. Originale in result_before_arms_fix
+- Prompt ANTI-ARTIFACT: esattamente 2 braccia/mani/gambe/piedi, mai arti inventati; QC local_artifacts + artifact_boxes segnalano arti in più

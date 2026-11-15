@@ -222,7 +222,8 @@ async def old_clothes_qc(person_bytes: bytes, result: bytes, garments_txt: str) 
         "outfit_incomplete: a requested garment is not fully worn (no trousers / bare legs where trousers were requested, missing top), "
         "the figure is not full body head to feet, feet or shoes are cut / touch the photo edge, or the photo is zoomed, cropped or an inset "
         "(phone screen, frame, rounded card).\n"
-        "local_artifacts: black or dark blurred smudges, local blur, doubled / ghost parts, double fingers or toes, deformed feet or hands, "
+        "local_artifacts: black or dark blurred smudges, local blur, doubled / ghost parts, EXTRA arms / hands / legs / feet (more than 2), "
+        "double fingers or toes, deformed feet or hands, "
         "shoes / sandals fused with the floor — check feet, hands, shoes and the floor right around them.\n"
         "shoes_wrong: a shoe and its heel / sole are not ONE attached piece (detached, double, fake or random heel on the floor), a foot is "
         "erased / faded / half gone, the two shoes differ (shape, heel height) or a heel points against its own shoe.\n"
@@ -307,7 +308,8 @@ async def artifact_boxes(img: bytes) -> list:
     """ANTI-ARTEFATTO: boxes (0-1000) of local defects on feet, hands, shoes and the floor around them."""
     small = await run_in_threadpool(head_lock.downscale, img, 1024)
     prompt = ("Virtual try-on photo of ONE person. Find every LOCAL DEFECT: black or dark blurred smudges, locally blurred areas, doubled or "
-              "ghost parts, double fingers or toes, deformed feet or hands, shoes / sandals fused with the floor, a heel detached from its shoe, a "
+              "ghost parts, EXTRA arms / hands / legs / feet (more than 2), double fingers or toes, deformed feet or hands, shoes / sandals fused "
+              "with the floor, a heel detached from its shoe, a "
               "double / fake / random heel, an erased or half-gone foot, two shoes that differ or a heel pointing against its shoe. Check feet, hands, shoes "
               "and the floor right around them first. Return ONLY JSON: {\"defects\": [{\"box_2d\": [ymin, xmin, ymax, xmax]}]} "
               "normalised 0-1000, each box tight around one defect. Empty list if the photo is clean.")
