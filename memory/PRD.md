@@ -636,3 +636,7 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 ## 2026-11-15 (7) — X su "IL CAPO" (Studio) (DONE, testato in anteprima)
 - Studio.jsx UploadBox: X (stile multi-brand) in alto a destra quando c'è un capo -> mini pop-up ClearMenu: "Vuoi eliminare il capo? Sì" (svuota solo lo slot) / "Vuoi sostituire il capo? Sì" (apre subito il selettore file). Foto in posa/Avatar intatti, stessa pagina
 - testid: upload-garment-clear, upload-garment-clear-menu, upload-garment-delete-btn, upload-garment-replace-btn
+
+## 2026-11-15 (8) — Interruttore "SERVER ESTERNO TRASPARENZE" anche sul capo unico (DONE, testato in anteprima)
+- Studio.jsx: TransparentSwitch (owner) sopra IL CAPO, testid single-transparent-ext-*; stesso interruttore globale del multi-brand, le due copie restano sincronizzate (evento transparent-ext-changed)
+- Backend già pronto: /tryon/generate usa `_system_with_lace` come il multi-brand (capo trasparente rilevato + interruttore ON -> server esterno solo per il pizzo)

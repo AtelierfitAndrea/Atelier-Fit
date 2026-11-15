@@ -20,6 +20,7 @@ import { notifyTabReady } from "@/lib/tabNotify";
 import PendingOutfitModal from "@/components/PendingOutfitModal";
 import { usePendingDraft } from "@/lib/pendingOutfit";
 import { postRender } from "@/lib/renderJob";
+import { TransparentSwitch } from "@/components/TransparentSwitch";
 
 export default function Studio() {
   const { status: subStatus, openPaywall, refresh: refreshSub } = useSubscription();
@@ -120,6 +121,8 @@ export default function Studio() {
       </header>
 
       {poseAllowed && <PersonSource mode={personMode} setMode={setPersonMode} posePath={posePath} setPosePath={setPosePath} uploadFile={uploadFile} />}
+
+      {user?.is_owner === true && <div className="mt-4"><TransparentSwitch testid="single-transparent-ext" /></div>}
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         <UploadBox
