@@ -1,4 +1,5 @@
 import asyncio
+import time
 import contextvars
 from fastapi import FastAPI, APIRouter, HTTPException, Request, Response, UploadFile, File, Depends, Header, Query, Cookie
 from fastapi.responses import JSONResponse
@@ -1686,7 +1687,7 @@ async def _ext_raw(person_path: str, garment_path: str) -> Optional[bytes]:
     if sw.get("used", 0) + 1 >= TRANSP_EXT_MAX:
         await db.app_settings.update_one({"_id": "transparent_ext"}, {"$set": {"on": False}})
     try:
-        pb = head_lock.downscale(await run_in_threadpool(head_lock.crop_screenshot, get_object(person_path)[0]), 2048)
+        pb = head_lock.downscale(await _person_cropped(person_path), 2048)
         gb = head_lock.downscale(get_object(garment_path)[0], 2048)
         return await run_in_threadpool(fal_tryon.tryon, pb, gb, ext_lock.best_ratio(pb))
     except Exception as e:
@@ -1702,7 +1703,7 @@ async def _system_with_lace(user_id: str, person_path: str, sheer: list, kind: s
     pp, rp = res
     if not any(exts):
         return pp, rp
-    person = head_lock.downscale(await run_in_threadpool(head_lock.crop_screenshot, get_object(pp)[0]), 2048)
+    person = head_lock.downscale(await _person_cropped(pp), 2048)
     out = get_object(rp)[0]
     for g, ext in zip(sheer, exts):
         if ext:
@@ -2314,11 +2315,37 @@ FEET_EDGE = 0.9
 FEET_EXTEND = 0.1
 
 
-async def _feet_extend(person_bytes: bytes) -> float:
-    img = np.array(head_lock._open_small(person_bytes, 768).convert("RGB"))
-    kp = await run_in_threadpool(pose_lock.keypoints, img)
-    feet = [kp[i, 1] for i in range(15, 23) if kp is not None and kp[i, 2] > pose_lock.MIN_SCORE]
-    return FEET_EXTEND if feet and max(feet) > FEET_EDGE * img.shape[0] else 0.0
+# SPEED: base-photo preparation computed ONCE per person photo and shared by every variant / rebuild (same results, no recompute).
+_PREP: dict = {}
+_PREP_MAX = 48
+
+
+async def _prep(key: tuple, fn, *args):
+    fut = _PREP.get(key)
+    if fut is None:
+        t0 = time.monotonic()
+        fut = _PREP[key] = asyncio.ensure_future(run_in_threadpool(fn, *args))
+        fut.add_done_callback(lambda f, k=key, t=t0: logger.info(f"timing prep {k[0]}: {time.monotonic() - t:.1f}s"))
+        while len(_PREP) > _PREP_MAX:
+            _PREP.pop(next(iter(_PREP)))
+    try:
+        return await asyncio.shield(fut)
+    except Exception:
+        _PREP.pop(key, None)
+        raise
+
+
+async def _person_cropped(person_path: str) -> bytes:
+    return await _prep(("crop", person_path), lambda: head_lock.crop_screenshot(get_object(person_path)[0]))
+
+
+async def _feet_extend(person_path: str) -> float:
+    def calc(cropped):
+        img = np.array(head_lock._open_small(cropped, 768).convert("RGB"))
+        kp = pose_lock.keypoints(img)
+        feet = [kp[i, 1] for i in range(15, 23) if kp is not None and kp[i, 2] > pose_lock.MIN_SCORE]
+        return FEET_EXTEND if feet and max(feet) > FEET_EDGE * img.shape[0] else 0.0
+    return await _prep(("feet", person_path), calc, await _person_cropped(person_path))
 HALF_BODY_RULE = (
     "HALF-BODY PHOTO — EXTEND TO FULL FIGURE: IMAGE 1 shows the person only down to the waist/thighs; a plain band was added at the bottom. "
     "Fill that band by extending the SAME person's body down to the feet, as the natural continuation of the visible pose (seated -> seated legs, "
@@ -2327,11 +2354,11 @@ HALF_BODY_RULE = (
 )
 
 
-async def _half_body(person_bytes: bytes, cats) -> bool:
+async def _half_body(person_path: str, cats) -> bool:
     # Only matters when legs/feet garments are requested on a photo that shows no knees/ankles.
     if not {(c or "").lower() for c in cats} & {"bottom", "shoes", "dress", "suit"}:
         return False
-    return await run_in_threadpool(pose_lock.is_half_body, person_bytes)
+    return await _prep(("half", person_path), pose_lock.is_half_body, await _person_cropped(person_path))
 
 
 TRYON_VARIANTS = 3
@@ -2344,12 +2371,17 @@ async def _old_clothes_loop(person_path: str, garments_txt: str, once) -> str:
     shown = {"p": False}
 
     async def variant(note):
+        t0 = time.monotonic()
         path = await once(note)
+        t1 = time.monotonic()
         if not shown["p"]:
             shown["p"] = True
             await _job_preview(path)
-        return path, await tryon_quality.old_clothes_qc(person_bytes, get_object(path)[0], garments_txt)
+        qc = await tryon_quality.old_clothes_qc(person_bytes, get_object(path)[0], garments_txt)
+        logger.info(f"timing variant render={t1 - t0:.1f}s final-check={time.monotonic() - t1:.1f}s")
+        return path, qc
 
+    t_loop = time.monotonic()
     results, last_err = [], None
     for fut in asyncio.as_completed([variant("") for _ in range(TRYON_VARIANTS)]):
         try:
@@ -2363,7 +2395,9 @@ async def _old_clothes_loop(person_path: str, garments_txt: str, once) -> str:
         logger.info(f"final check variant={i + 1} ok={qc['ok']} bad={qc['bad']} issues={qc['issues'][:160]}")
     rank = lambda r: (r[1].get("incomplete", 0), r[1]["bad"])  # noqa: E731
     best = min(results, key=rank)
-    if not best[1]["ok"]:
+    logger.info(f"timing {len(results)} variants + final check: {time.monotonic() - t_loop:.1f}s")
+    # SPEED (owner): rebuild ONLY when no variant is usable (incomplete outfit). Transparency / body under lace never triggers it.
+    if best[1].get("incomplete"):
         try:
             again = await variant(tryon_quality.old_clothes_note(best[1]["issues"]))
             logger.info(f"final check rebuild ok={again[1]['ok']} bad={again[1]['bad']} issues={again[1]['issues'][:160]}")
@@ -2371,8 +2405,15 @@ async def _old_clothes_loop(person_path: str, garments_txt: str, once) -> str:
                 best = again
         except Exception as e:
             logger.warning(f"rebuild failed, best variant delivered: {e}")
+    elif not best[1]["ok"]:
+        logger.info(f"rebuild skipped: best variant usable (issues: {best[1]['issues'][:120]})")
     path = await _clean_floor(person_path, best[0])
-    return await _fix_artifacts(path) if best[1].get("artifacts") or best[1].get("shoes_wrong") else path
+    if best[1].get("artifacts") or best[1].get("shoes_wrong"):
+        t0 = time.monotonic()
+        path = await _fix_artifacts(path)
+        logger.info(f"timing anti-artifact zone fix: {time.monotonic() - t0:.1f}s")
+    logger.info(f"timing try-on total: {time.monotonic() - t_loop:.1f}s")
+    return path
 
 
 async def _fix_artifacts(path: str) -> str:
@@ -2424,12 +2465,12 @@ async def _clean_floor(person_path: str, path: str) -> str:
     """GLOBAL RULE, after the choice of the best photo: anything outside the body (fabric scraps, lace pieces, props) is replaced by the
     ORIGINAL floor of the user's photo. Model and pose are never regenerated."""
     try:
-        person = head_lock.downscale(await run_in_threadpool(head_lock.crop_screenshot, get_object(person_path)[0]), 2048)
+        t0 = time.monotonic()
+        person = head_lock.downscale(await _person_cropped(person_path), 2048)
         orig = get_object(path)[0]
         res = await run_in_threadpool(head_lock.crop_screenshot, orig)
-        # Two independent looks (the AI may miss one smudge): their boxes are joined.
-        boxes = [b for r in await asyncio.gather(tryon_quality.debris_boxes(res), tryon_quality.debris_boxes(res)) for b in r]
-        logger.info(f"floor clean: {len(boxes)} debris boxes")
+        boxes = await tryon_quality.debris_boxes(res)
+        logger.info(f"floor clean: {len(boxes)} debris boxes ({time.monotonic() - t0:.1f}s)")
         out = await run_in_threadpool(ext_lock.clean_floor, res, person, boxes)
         out = out or (res if res is not orig else None)
         if out is not None and res is not orig:  # inset cropped: the signature was outside the photo, sign again
@@ -2451,18 +2492,17 @@ async def _render_single(user_id: str, person_path: str, garment_path: str, cate
 
 async def _render_single_once(user_id: str, person_path: str, garment_path: str, category_in: Optional[str], name: Optional[str], m_doc: dict, extra: str = "") -> str:
     # Load both images
-    person_bytes, person_ct = get_object(person_path)
-    person_bytes = await run_in_threadpool(head_lock.crop_screenshot, person_bytes)
+    person_bytes = await _person_cropped(person_path)
     garment_bytes, garment_ct = get_object(garment_path)
     surgical = SURGICAL_RULE in extra
-    half = surgical and await _half_body(person_bytes, [category_in])
+    half = surgical and await _half_body(person_path, [category_in])
     posed = (POSE_RULE in extra or surgical) and not half
     boxes, keep, phone_txt, freeze = await _lock_hands(person_path, person_bytes, (category_in or "").lower() == "bag", posed, [category_in], surgical)
     extra += phone_txt + (HALF_BODY_RULE if half else "")
     desc = (await _garment_info(garment_path)).get("desc") or ""
     cover = surgical and _covers_legs([{"category": category_in, "name": name, "desc": desc}])
     canvas_bytes, lock = await run_in_threadpool(head_lock.prepare, person_bytes, head_lock.is_long(category_in, name or ""), boxes, keep, posed, freeze,
-                                                 HALF_EXTEND if half else await _feet_extend(person_bytes), cover)
+                                                 HALF_EXTEND if half else await _feet_extend(person_path), cover)
     if lock.get("seated"):
         extra += SEATED_RULE + SEATED_GREY_RULE
     garment_bytes = await run_in_threadpool(head_lock.downscale, garment_bytes, head_lock.GARMENT_MAX_SIDE)
@@ -3488,11 +3528,11 @@ def _bare_legs_by_design(lowers: list) -> bool:
 async def _multipass_outfit(user: User, person_path: str, items: list, layer_order_text: str, extra: str) -> str:
     lowers = [g for g in items if (g.get("category") or "").lower() in _LEG_CATS]
     uppers = [g for g in items if g not in lowers]
-    person_bytes, _ = get_object(person_path)
-    person_bytes = await run_in_threadpool(head_lock.crop_screenshot, person_bytes)
+    t_mp = time.monotonic()
+    person_bytes = await _person_cropped(person_path)
     orig = np.array(head_lock._open_small(person_bytes, head_lock.PERSON_OUT_SIDE).convert("RGB"))
     h, w = orig.shape[:2]
-    kp0 = await run_in_threadpool(pose_lock.keypoints, orig)
+    kp0 = await _prep(("kp_out", person_path), pose_lock.keypoints, orig)
     # Feet at the bottom edge + shoes: give the photo a little floor below so heels are never cut by the frame.
     feet_y = [kp0[i, 1] for i in range(15, 23) if kp0 is not None and kp0[i, 2] > pose_lock.MIN_SCORE]
     ext = int(FEET_EXTEND * h) if uppers and feet_y and max(feet_y) > FEET_EDGE * h else 0
@@ -3500,7 +3540,9 @@ async def _multipass_outfit(user: User, person_path: str, items: list, layer_ord
     if bag:
         extra += "\nBAG IN HAND: the requested bag is carried naturally in one hand; that hand may change its grip to hold it.\n"
     if uppers:
+        t1 = time.monotonic()
         _, p1 = await _compose_outfit(user, person_path, uppers, layer_order_text, extra, raw=True, extend=ext / h)
+        logger.info(f"timing multipass pass1 (upper body): {time.monotonic() - t1:.1f}s")
         top = max(head_lock.TOP_PAD_MIN_PX, int(h * head_lock.TOP_PAD_RATIO))
         base = np.array(Image.open(io.BytesIO(p1)).convert("RGB"))[top:top + h + ext]
         await _job_preview(png=tryon_quality._png(base), user_id=user.user_id)
@@ -3519,14 +3561,15 @@ async def _multipass_outfit(user: User, person_path: str, items: list, layer_ord
             h += ext
     else:
         base = orig.copy()
-    kp = await run_in_threadpool(pose_lock.keypoints, orig)
+    kp = await _prep(("kp_out", person_path, ext), pose_lock.keypoints, orig) if ext else kp0
     legs = [i for i in (11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22) if kp is not None and kp[i, 2] > pose_lock.MIN_SCORE]
     if len(legs) < 4:
         # Legs not readable: dress the whole outfit in one pass instead of blocking.
         logger.info(f"multipass: only {len(legs)} leg joints found, single-pass fallback")
         _, p_all = await _compose_outfit(user, person_path, items, layer_order_text, extra, raw=True)
         bottoms_fb = [g for g in lowers if (g.get("category") or "").lower() == "bottom"]
-        if bottoms_fb and not _skin_allowed(lowers):
+        sheer_fb = any([lv != "none" for lv in await asyncio.gather(*[_transparency(g["image_path"]) for g in lowers])])
+        if bottoms_fb and not _skin_allowed(lowers) and not sheer_fb:
             g_skin_fb = 0.0
             for g in bottoms_fb:
                 gb, _ = get_object(g["image_path"])
@@ -3583,7 +3626,10 @@ async def _multipass_outfit(user: User, person_path: str, items: list, layer_ord
             g_skin = max(g_skin, float((head_lock._skin(g_rgb) > 0).mean()))
         contents.append(ImageContent(base64.b64encode(g_bytes).decode()))
         lines.append(f"IMAGE {idx} — {g.get('category')} — {g.get('name') or ''}")
-    skel = await run_in_threadpool(pose_lock.skeleton_png, buf.getvalue())
+    # Legs are frozen in pass 1 = same pose as the original: the leg skeleton is read once from the original crop and reused.
+    ob = io.BytesIO()
+    Image.fromarray(np.ascontiguousarray(orig[Y0:Y1, X0:X1])).save(ob, "PNG")
+    skel = await _prep(("skel", person_path, ext, X0, Y0, X1, Y1), pose_lock.skeleton_png, ob.getvalue())
     prompt = LEGS_PASS_RULE + "\n".join(lines) + "\n" + DRESSING_RULE
     if pose_lock.is_seated(kp):
         prompt += SEATED_RULE
@@ -3702,12 +3748,20 @@ async def _multipass_outfit(user: User, person_path: str, items: list, layer_ord
         hard = left > LEGS_SKIN_MAX  # the free pixel check failed (the AI check alone never blocks)
         return problems, (hard, max(left, 0.0) + q["bare_legs"] + q["shirt_tucked"]), {"skin_left": round(left, 3), "ai_bare": q["bare_legs"], "ai_tucked": q["shirt_tucked"]}
 
+    t2 = time.monotonic()
     final, frac, keep = await _legs_attempt()
+    logger.info(f"timing multipass pass2 (legs): {time.monotonic() - t2:.1f}s")
+    sheer_low = any([lv != "none" for lv in await asyncio.gather(*[_transparency(g["image_path"]) for g in lowers])])
     if bottoms:
         mkw = dict(user=user.user_id, garments=garments_txt, skin_ok=skin_ok, g_skin=round(g_skin, 3), untucked_expected=expect_untucked)
+        t3 = time.monotonic()
         problems, rank, d1 = await _legs_judge(final, keep)
-        best_detail = d1
-        if not problems:
+        logger.info(f"timing multipass legs QC: {time.monotonic() - t3:.1f}s")
+        if problems and (sheer_low or not rank[0]):
+            # SPEED (owner): no legs correction pass for lace / transparent garments or when only the AI check failed.
+            logger.info(f"multipass legs correction skipped ({'transparent garment' if sheer_low else 'AI-only issue'}): {problems}")
+            tryon_quality.log_legs_outcome("multipass", "delivered_with_warning", first=d1, problems=problems, skipped=True, **mkw)
+        elif not problems:
             tryon_quality.log_legs_outcome("multipass", "pass", first=d1, **mkw)
         else:
             # SPEED (owner, <1 min): ONE correction pass at most; the best-scoring result is kept.
@@ -3721,7 +3775,6 @@ async def _multipass_outfit(user: User, person_path: str, items: list, layer_ord
                     attempts_detail.append(d_n)
                     if rank_n <= rank:
                         final, frac, problems, rank = final_n, frac_n, problems_n, rank_n
-                        best_detail = d_n
                 except HTTPException as e:
                     logger.warning(f"multipass legs correction pass {attempt_n} failed, keeping the best result so far: {e.detail}")
                 if not problems:
@@ -3734,6 +3787,7 @@ async def _multipass_outfit(user: User, person_path: str, items: list, layer_ord
                 tryon_quality.log_legs_outcome("multipass", "delivered_with_warning", first=d1, attempts=attempts_detail, problems=problems, **mkw)
     dev = await run_in_threadpool(pose_lock.deviation, orig, final)
     logger.info(f"multipass legs changed={frac:.2f} pose deviation={dev}")
+    logger.info(f"timing multipass total: {time.monotonic() - t_mp:.1f}s")
     out = io.BytesIO()
     Image.fromarray(final).save(out, "PNG")
     signed = await run_in_threadpool(tryon_quality.watermark, out.getvalue(), await _mark_for(user.user_id))
@@ -3781,10 +3835,9 @@ async def _compose_outfit_once(user: User, person_path: Optional[str], items: li
     """Layer the given garment images on the user's base photo; returns (person_path, result_path)."""
     person_path = await _resolve_person(user, person_path)
     # Build the multi-image prompt
-    person_bytes, _ = get_object(person_path)
-    person_bytes = await run_in_threadpool(head_lock.crop_screenshot, person_bytes)
+    person_bytes = await _person_cropped(person_path)
     surgical = bool(extra) and SURGICAL_RULE in extra
-    half = surgical and await _half_body(person_bytes, [g.get("category") for g in items])
+    half = surgical and await _half_body(person_path, [g.get("category") for g in items])
     if surgical and not half and not raw and any((g.get("category") or "").lower() in _LEG_CATS for g in items):
         # MULTI-PASS (full figure): pass 1 dresses the upper body with legs frozen, pass 2 dresses only the legs/feet crop.
         del person_bytes
@@ -3794,7 +3847,7 @@ async def _compose_outfit_once(user: User, person_path: Optional[str], items: li
                                                        [g.get("category") for g in items], surgical)
     extra += phone_txt + (HALF_BODY_RULE if half else "")
     canvas_bytes, lock = await run_in_threadpool(head_lock.prepare, person_bytes, any(head_lock.is_long(g.get("category"), g.get("name") or "") for g in items), boxes, keep, posed, freeze,
-                                                 HALF_EXTEND if half else max(extend, await _feet_extend(person_bytes)), surgical and _covers_legs(items))
+                                                 HALF_EXTEND if half else max(extend, await _feet_extend(person_path)), surgical and _covers_legs(items))
     if lock.get("seated"):
         extra += SEATED_RULE + SEATED_GREY_RULE
     file_contents = [ImageContent(base64.b64encode(canvas_bytes).decode("utf-8"))]

@@ -625,3 +625,10 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 ## 2026-11-15 (5) — REGOLA UNIVERSALE TACCHI (DONE, controllo gratuito verificato)
 - DRESSING_RULE + HEELS/SHOES: scarpa+tacco pezzo unico, piedi interi, due scarpe coerenti/speculari, tacco nella direzione della scarpa; vietati tacco staccato/doppio/finto/a terra, piede cancellato
 - Controllo finale: flag shoes_wrong (difetto). artifact_boxes cerca anche i difetti di tacchi/scarpe. shoes_wrong o local_artifacts -> `_fix_artifacts` (solo zona piede, 1 generazione HD) con la foto intera come IMAGE 2 di riferimento per il piede giusto
+
+## 2026-11-15 (6) — VELOCITÀ (DONE solo anteprima, nessun render di prova)
+- `_old_clothes_loop`: ricostruzione SOLO se nessuna variante è utilizzabile (incomplete); trasparenza/body sotto pizzo non la attiva più
+- `_multipass_outfit`: niente correzione gambe (pass 2) se il capo basso è trasparente/pizzo o se fallisce solo il controllo AI; stesso salto nel fallback single-pass per capi trasparenti
+- Cache `_prep` in memoria (future condivise, max 48): crop_screenshot (`_person_cropped`), keypoints multipass, `_half_body(person_path)`, `_feet_extend(person_path)`, skeleton gambe (ora dal crop originale: gambe congelate nel pass 1 = stessa posa)
+- `_clean_floor`: 1 sola chiamata debris_boxes
+- Log "timing ...": prep, variante render/final-check, varianti totali, multipass pass1/pass2/QC/totale, pulizia pavimento, anti-artefatto, totale prova
