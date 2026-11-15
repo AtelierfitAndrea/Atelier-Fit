@@ -649,3 +649,9 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 ## 2026-11-15 (10) — Posa 7 spiaggia: tolte le 2 braccia in più (DONE, 1 generazione di zona)
 - Outfit 38b3cc55 (vestito pizzo nero): zona busto/ginocchia rifatta (script /app/memory/p9/arms_fix.py) -> solo le 2 braccia alzate, vestito continuo, ginocchia vuote. Originale in result_before_arms_fix
 - Prompt ANTI-ARTIFACT: esattamente 2 braccia/mani/gambe/piedi, mai arti inventati; QC local_artifacts + artifact_boxes segnalano arti in più
+
+## 2026-11-15 (11) — REGOLA FISSA IN GINOCCHIO salvata + rifatta foto 2590c974 (PARZIALE)
+- Prompt KNEELING POSE in DRESSING_RULE (ginocchia a terra simmetriche, busto frontale, 2 braccia alzate, 1 piede per gamba, niente piedi soli, abiti che seguono il corpo)
+- Rifatta da zero la prova (stessi capi: top pizzo rosso, jeans ricamati, décolleté rosse) -> outfit 85bfa2d1. Limite: la posa resta bloccata sulla foto base 396bf1a9 (seduta sui talloni, gambe di lato, busto 3/4) -> busto non frontale, tallone rosso ancora dietro, maniche con bordi tagliati
+- Osservato: su questa foto base 2 varianti su 3 falliscono sempre con "Image generation failed: no image" (probabile rifiuto del modello) -> 1 sola variante utile
+- Nota: i job in background vanno lanciati con setsid (un timeout del tool uccide il processo)
