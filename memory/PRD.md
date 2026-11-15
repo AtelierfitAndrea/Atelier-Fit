@@ -666,3 +666,9 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 ## 2026-11-15 (13) — Ginocchio alzato VIETATO (DONE, verificato offline)
 - Prompt KNEELING: entrambe le ginocchia a terra piegate sotto il corpo, piedi dietro; vietati ginocchio alzato, piede piatto davanti a 90°, accovacciata, affondo, gamba avanti
 - `_knee_raised` (multipass, dopo il passaggio gambe): se nell'originale le cosce vanno giù (inginocchiata, >=0.45) e nel risultato una coscia è orizzontale/su (<0.25) -> gambe rifatte 1 volta con LEGS_POSE_NOTE, poi variante scartata. Verificato: terza posa (legs_raw_6bd803 = -0.53) bloccata, foto giuste (0.67-0.71) passano; pose sedute non controllate
+
+## 2026-11-15 (14) — Posa in ginocchio di RIFERIMENTO salvata + maglia ricucita (DONE, 2 generazioni di zona)
+- Outfit b9426b0d (maglia nera LIU JO, jeans ricamati, piedi nudi, foto base d7170eb9): maglia completata sul fianco destro e orlo davanti chiuso (script p9/shirt_fix*.py, solo zone) -> nuovo result; originale in result_before_shirt_fix
+- db.pose_references {_id:'kneeling'}: foto/regola di riferimento della posa in ginocchio
+- Prompt KNEELING: mani/braccia come in IMAGE 1 (alzate o abbassate come richiesto), non più fisse in alto
+- Lezione: anche negli script manuali MAI passare la foto intera come IMAGE 2 alle correzioni di zona (crea la miniatura)
