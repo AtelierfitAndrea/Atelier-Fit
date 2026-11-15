@@ -2296,6 +2296,10 @@ DRESSING_RULE = (
     "the floor. Feet and hands: ONE per side, natural shape, 5 fingers / toes, as sharp as the rest of the photo, same light and "
     "definition. A foot in shadow or crossed is rebuilt CLEAN, never hidden by a blurred dark patch. No blurred zones to cover errors: "
     "rebuild the zone in HD. Perfect at 200% zoom.\n"
+    "HEELS / SHOES — ALWAYS: every shoe is ONE piece, shoe + heel / sole always attached, never detached, never lying on the floor. "
+    "Every foot whole and visible, never erased, faded or half gone. The two shoes are coherent: same shoe, same shape, same heel height, "
+    "consistent direction (mirror of the correct one). The heel always points the same way as its own shoe. FORBIDDEN: detached heel, "
+    "random heel on the floor, fake heel, double heel, erased foot.\n"
     "GLOBAL RULE — EVERY PHOTO, ALWAYS:\n"
     "• The garment stays ONLY on the body, never outside it. NO fabric scraps, NO pieces of clothing, NO red or lace pieces on the floor.\n"
     "• Floor always clean, empty and uniform as in IMAGE 1: no objects, no shadows of objects, no debris, no decorative fabric, no props.\n"
@@ -2368,7 +2372,7 @@ async def _old_clothes_loop(person_path: str, garments_txt: str, once) -> str:
         except Exception as e:
             logger.warning(f"rebuild failed, best variant delivered: {e}")
     path = await _clean_floor(person_path, best[0])
-    return await _fix_artifacts(path) if best[1].get("artifacts") else path
+    return await _fix_artifacts(path) if best[1].get("artifacts") or best[1].get("shoes_wrong") else path
 
 
 async def _fix_artifacts(path: str) -> str:
@@ -2381,6 +2385,7 @@ async def _fix_artifacts(path: str) -> str:
         return path
     img = np.array(Image.open(io.BytesIO(img_b)).convert("RGB"))
     H, W = img.shape[:2]
+    ref = await run_in_threadpool(head_lock.downscale, img_b, 1024)  # whole photo: the correct foot / shoe is the reference
     done = False
     for y0, x0, y1, x1 in boxes:
         bx0, by0, bx1, by1 = int(x0 * W / 1000), int(y0 * H / 1000), int(x1 * W / 1000), int(y1 * H / 1000)
@@ -2391,7 +2396,7 @@ async def _fix_artifacts(path: str) -> str:
         buf = io.BytesIO()
         Image.fromarray(crop).save(buf, "PNG")
         try:
-            out = await tryon_quality.fix_zone(buf.getvalue(), "zonefix")
+            out = await tryon_quality.fix_zone(buf.getvalue(), "zonefix", ref)
         except Exception as e:
             logger.warning(f"anti-artifact zone fix failed: {e}")
             continue

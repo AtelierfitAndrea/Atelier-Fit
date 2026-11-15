@@ -621,3 +621,7 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 - DRESSING_RULE + ANTI-ARTIFACT (mai macchie nere/sfocature/doppioni/dita doppie/piedi deformi/scarpe fuse; piedi e mani nitidi, 1 per lato, 5 dita; zona rifatta in HD, perfetta al 200%)
 - Controllo finale: flag local_artifacts (conta come difetto). Se la migliore lo ha: `_fix_artifacts` -> `tryon_quality.artifact_boxes` (AI, max 2 zone) -> `fix_zone` (1 generazione HD su crop quadrato) -> registrato e incollato SOLO sul difetto sfumato. Il look non si rigenera
 - Outfit 33ad72ac (sandali neri, foto di riferimento): macchia nera sotto il piede sinistro rifatta (1 generazione) + puntino rosa tolto -> result 2ed1cd5f (originale in result_before_fix)
+
+## 2026-11-15 (5) — REGOLA UNIVERSALE TACCHI (DONE, controllo gratuito verificato)
+- DRESSING_RULE + HEELS/SHOES: scarpa+tacco pezzo unico, piedi interi, due scarpe coerenti/speculari, tacco nella direzione della scarpa; vietati tacco staccato/doppio/finto/a terra, piede cancellato
+- Controllo finale: flag shoes_wrong (difetto). artifact_boxes cerca anche i difetti di tacchi/scarpe. shoes_wrong o local_artifacts -> `_fix_artifacts` (solo zona piede, 1 generazione HD) con la foto intera come IMAGE 2 di riferimento per il piede giusto
