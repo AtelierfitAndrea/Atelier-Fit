@@ -1622,28 +1622,35 @@ async def upload(kind: str = Query(..., regex="^(person|garment)$"), file: Uploa
 TRANSP_EXT_MAX = 2
 
 
-async def _detect_transparent(path: str, data: bytes) -> bool:
-    """AUTOMATIC (owner rule): the uploaded garment image is analysed by fal.ai vision with FAL_KEY; Emergent check if fal does not answer."""
+async def _detect_transparent(path: str, data: bytes) -> str:
+    """AUTOMATIC (owner rule): none|light|high from fal.ai vision with FAL_KEY; Emergent check if fal does not answer."""
     small = await run_in_threadpool(head_lock.downscale, data, 768)
     try:
-        yes, by = await run_in_threadpool(fal_tryon.is_transparent, small), "fal"
+        lvl, by = await run_in_threadpool(fal_tryon.transparency, small), "fal"
     except Exception as e:
         logger.warning(f"fal transparency check failed, Emergent fallback: {e}")
         try:
-            yes, by = await tryon_quality.transparent_qc(small), "emergent"
+            lvl, by = await tryon_quality.transparent_qc(small), "emergent"
         except Exception as e2:
             logger.warning(f"transparency check failed: {e2}")
-            return False
-    await db.files.update_one({"storage_path": path}, {"$set": {"transparent": yes, "transparent_by": by}})
-    logger.info(f"garment transparent={yes} by={by}")
-    return yes
+            return "none"
+    await db.files.update_one({"storage_path": path}, {"$set": {"transparent": lvl != "none", "transparency": lvl, "transparent_by": by}})
+    logger.info(f"garment transparency={lvl} by={by}")
+    return lvl
 
 
-async def _is_transparent(path: str) -> bool:
-    f = await db.files.find_one({"storage_path": path}, {"_id": 0, "transparent": 1})
-    if f and f.get("transparent") is not None:
-        return bool(f["transparent"])
-    return await _detect_transparent(path, get_object(path)[0]) if f else False
+async def _transparency(path: str) -> str:
+    f = await db.files.find_one({"storage_path": path}, {"_id": 0, "transparency": 1})
+    if f and f.get("transparency"):
+        return f["transparency"]
+    return await _detect_transparent(path, get_object(path)[0]) if f else "none"
+
+
+async def _coverage(items: list) -> tuple:
+    """(COVERAGE rule text for the system prompt, transparent items for the external lace layer)."""
+    levels = await asyncio.gather(*[_transparency(g["image_path"]) for g in items])
+    txt = "".join(tryon_quality.coverage_rule(lv, g.get("category"), g.get("name")) for g, lv in zip(items, levels))
+    return txt, [g for g, lv in zip(items, levels) if lv != "none"]
 
 
 async def _ext_switch() -> dict:
@@ -1671,11 +1678,8 @@ async def set_ext_switch(req: ExtSwitch, user: User = Depends(get_current_user))
     return await _ext_switch()
 
 
-TRANSP_NOTICE = "Capo trasparente in elaborazione speciale"
-
-
-async def _ext_tryon(user_id: str, person_path: str, garment_path: str, kind: str = "tryon") -> Optional[str]:
-    """One external generation (counted); the switch turns itself OFF after TRANSP_EXT_MAX. None on failure."""
+async def _ext_raw(person_path: str, garment_path: str) -> Optional[bytes]:
+    """External server: one generation (counted, switch OFF after TRANSP_EXT_MAX) used ONLY for its lace. None on failure."""
     sw = await db.app_settings.find_one_and_update({"_id": "transparent_ext", "on": True, "used": {"$lt": TRANSP_EXT_MAX}}, {"$inc": {"used": 1}})
     if not sw:
         return None
@@ -1684,16 +1688,29 @@ async def _ext_tryon(user_id: str, person_path: str, garment_path: str, kind: st
     try:
         pb = head_lock.downscale(await run_in_threadpool(head_lock.crop_screenshot, get_object(person_path)[0]), 2048)
         gb = head_lock.downscale(get_object(garment_path)[0], 2048)
-        out = await run_in_threadpool(fal_tryon.tryon, pb, gb, ext_lock.best_ratio(pb))
-        # VISO BLOCCATO ESTERNO: original face, hair, hands, background and light back on top; only the new garment zone stays.
-        out = await run_in_threadpool(ext_lock.lock_original, pb, out, await _classify_garment(garment_path, None))
+        return await run_in_threadpool(fal_tryon.tryon, pb, gb, ext_lock.best_ratio(pb))
     except Exception as e:
-        logger.warning(f"external transparent try-on failed: {e}")
+        logger.warning(f"external lace try-on failed: {e}")
         return None
+
+
+async def _system_with_lace(user_id: str, person_path: str, sheer: list, kind: str, system_coro) -> tuple:
+    """System builds the WHOLE outfit (solid parts, sleeves, lining); in parallel the external server renders each transparent garment,
+    whose lace is then laid only inside the system garment. Returns (person_path, result_path)."""
+    ext_on = bool(sheer) and (await _ext_switch())["on"]
+    res, *exts = await asyncio.gather(system_coro, *[_ext_raw(person_path, g["image_path"]) for g in (sheer if ext_on else [])])
+    pp, rp = res
+    if not any(exts):
+        return pp, rp
+    person = head_lock.downscale(await run_in_threadpool(head_lock.crop_screenshot, get_object(pp)[0]), 2048)
+    out = get_object(rp)[0]
+    for g, ext in zip(sheer, exts):
+        if ext:
+            out = await run_in_threadpool(ext_lock.lace_layer, out, person, ext, (g.get("category") or "top").lower())
     path = f"{APP_NAME}/{kind}/{user_id}/{uuid.uuid4().hex}.jpg"
-    put_object(path, tryon_quality.watermark(out, "free"), "image/jpeg")
-    logger.info(f"external transparent try-on ok -> {path}")
-    return path
+    put_object(path, out, "image/jpeg")
+    logger.info(f"system + external lace -> {path}")
+    return pp, path
 
 
 class TestPoseImport(BaseModel):
@@ -1987,35 +2004,6 @@ def _tuck_rule(items: list) -> str:
 _GARMENT_CATS = ("top", "bottom", "dress", "outerwear", "shoes", "bag", "suit")
 
 
-# BASI DEFINITIVE (owner, posa seduta a gambe incrociate): A = capi con maniche, B = braccia scoperte. Collection pose_bases.
-_SLEEVED = re.compile(r"\b(sleeves?|sleeved|long[- ]sleeve\w*|short[- ]sleeve\w*|bell[- ]sleeve\w*|manica|maniche|cardigan|shirt|camicia|"
-                      r"blouse|blusa|jacket|giacca|blazer|coat|cappotto|sweater|maglione|hoodie|felpa|pullover|lace top)\b", re.I)
-_SLEEVELESS = re.compile(r"\b(sleeveless|tank|canotta|canottiera|smanicat\w*|senza maniche|camisole|cami|halter|strapless|spaghetti|"
-                         r"bustier|corset|tube top|crop tank)\b", re.I)
-
-
-def _sleeve_kind(text: str):
-    """'B' sleeveless, 'A' sleeved, None unsure."""
-    if _SLEEVELESS.search(text or ""):
-        return "B"
-    if _SLEEVED.search(text or ""):
-        return "A"
-    return None
-
-
-async def _auto_base(user: User, person_path: str, garment_paths: list) -> str:
-    """If the chosen photo is one of the two definitive bases, swap to the right one: sleeves -> A, bare arms -> B, unsure -> keep."""
-    bases = {b["kind"]: b["path"] async for b in db.pose_bases.find({"user_id": user.user_id}, {"_id": 0, "kind": 1, "path": 1})}
-    if not person_path or person_path not in bases.values():
-        return person_path
-    kinds = [_sleeve_kind(f"{(await _garment_info(g)).get('desc') or ''}") for g in garment_paths]
-    want = "A" if "A" in kinds else ("B" if "B" in kinds else None)
-    if want and bases.get(want) and bases[want] != person_path:
-        logger.info(f"pose base auto-switch -> {want}")
-        return bases[want]
-    return person_path
-
-
 @api_router.get("/pose-bases")
 async def pose_bases(user: User = Depends(get_current_user)):
     return [b async for b in db.pose_bases.find({"user_id": user.user_id}, {"_id": 0, "code": 1, "kind": 1, "label": 1, "path": 1}).sort("code", 1)]
@@ -2203,7 +2191,8 @@ SURGICAL_RULE = (
     "• Replace ONLY the clothing with the requested garments. The new garments are SOLID, OPAQUE fabric that FULLY covers the body area they cover, "
     "even where IMAGE 1 shows bare skin (e.g. the person wears only underwear): trousers cover hips, thighs and legs completely down to the shoes, "
     "a top covers chest, belly and its full sleeves, and its hem overlaps the trousers waistband. NEVER leave holes, rips, cut-outs, gaps or patches of "
-    "bare skin or underwear inside or between the new garments. No transparent clothes.\n"
+    "bare skin or underwear inside or between the new garments. Transparent ONLY where the product screenshot is lace / sheer, always over an "
+    "opaque lining (COVERAGE rule).\n"
     "• PANTS LOCK: trousers follow the EXACT leg length, thigh/knee/ankle positions and bend of IMAGE 1 (seated legs stay seated, same knee height); "
     "realistic size and fit for this body (not skin-tight, not oversized), hem reaching the shoe: never cut short above a boot, the hem rests on or "
     "tucks naturally over the boot shaft.\n"
@@ -2214,7 +2203,7 @@ SURGICAL_RULE = (
     "an arm resting on a knee stays there). NO pose correction, NO straightening, NO re-sitting, NO symmetric pose.\n"
     "• NO ADDED OBJECTS: add nothing that is not in IMAGE 1 or in the requested garments (no bag unless a bag image is given, no props, no furniture changes).\n"
     "• Output: one photorealistic image, 4K detail, no deformation.\n"
-    "• NEGATIVE: tattoo, deformed face, deformed hands, extra fingers, extra limbs, nude skin under clothes, transparent clothes, blurry face, changed identity.\n"
+    "• NEGATIVE: tattoo, deformed face, deformed hands, extra fingers, extra limbs, nude skin under clothes, see-through to skin or old clothes, blurry face, changed identity.\n"
 )
 
 GARMENT_KEEP_RULE = (
@@ -2282,13 +2271,23 @@ DRESSING_RULE = (
     "Both hands stay visible and complete exactly as in IMAGE 1 (e.g. joined in front, between the legs), 5 real fingers each; forearms "
     "whole with clean continuous skin from elbow to hand. A complicated garment is adapted to the body, the body never disappears.\n"
     "• NO OLD CLOTHES UNDER THE NEW ONES: nothing the person wears in IMAGE 1 (e.g. a black bodysuit, tank top, bra, old trousers) may "
-    "show under, through or around the new garments. Under a V-neck or see-through lace only skin shows; below a top only the new bottom.\n"
+    "show under, through or around the new garments. Under a V-neck only skin shows; under see-through lace only the opaque lining or the "
+    "matching bra of the COVERAGE rule; below a top only the new bottom.\n"
     "• REAL FABRIC, NEVER CARTOON: every garment is real cloth with thickness, volume, natural shadows and folds (lace in relief, "
-    "see-through where the product is see-through); never flat, painted-on, sticker-like or glued to the body.\n"
+    "lace always over its opaque lining); never flat, painted-on, sticker-like or glued to the body.\n"
     "• SLEEVES END AT THE WRIST: wide / bell sleeves flare but end cleanly at the wrist — no trailing tails, no lace pieces hanging "
     "down to the floor, no train.\n"
     "• NO HALOS, EVER: no brown stains, fake shadows, blurred or dark/light edges around hands, forearms or arms, nor where a sleeve ends; "
     "the sleeve rests naturally on the arm.\n"
+    "LIVE TRY-ON ENGINE — GARMENT BUILD, ANY SCREENSHOT, ANY POSE:\n"
+    "• Rebuild each garment from ITS product screenshot onto the LIVE body of IMAGE 1: same design, colour and pattern. Never a fixed "
+    "pose, never a stock / hero garment.\n"
+    "• ALL SOLID PARTS IN OPAQUE FABRIC: waistband, hips, seams, buttons, hems, cuffs, lining.\n"
+    "• SLEEVES ATTACHED to the top at the shoulder seam, continuous, following the arms — never detached, floating or missing.\n"
+    "• TROUSERS COMPLETE: solid opaque waist and hips; lace / transparent ONLY where the screenshot shows it, always over an opaque lining.\n"
+    "• NEVER a garment made of transparency only.\n"
+    "• Adapt to the LIVE pose: drape, fold and stretch correctly for standing, seated or crossed legs.\n"
+    "• CLEAN EDGES: no white patches, colour smudges or fabric fragments on the background or around the body.\n"
 )
 
 
@@ -2308,23 +2307,43 @@ async def _half_body(person_bytes: bytes, cats) -> bool:
     return await run_in_threadpool(pose_lock.is_half_body, person_bytes)
 
 
+TRYON_VARIANTS = 3
+
+
 async def _old_clothes_loop(person_path: str, garments_txt: str, once) -> str:
-    """REGOLA FISSA: AI check on every delivered photo; old clothes still visible -> regenerate (max OLD_CLOTHES_MAX_REGEN) with the
-    defect named; the best attempt is ALWAYS shown, never blocked."""
+    """LIVE TRY-ON ENGINE: 3 variants in parallel, broken ones discarded, FINAL CHECK on each (old clothes, solid parts, sleeves, trousers,
+    coverage, live pose, clean edges); the best is delivered. All fail the check -> one rebuild with the defects named. Never blocked."""
     person_bytes, _ = get_object(person_path)
-    best, note = None, ""
-    for attempt in range(tryon_quality.OLD_CLOTHES_MAX_REGEN + 1):
+    shown = {"p": False}
+
+    async def variant(note):
         path = await once(note)
-        if best is None:
+        if not shown["p"]:
+            shown["p"] = True
             await _job_preview(path)
-        qc = await tryon_quality.old_clothes_qc(person_bytes, get_object(path)[0], garments_txt)
-        logger.info(f"regola fissa check attempt={attempt + 1} ok={qc['ok']} issues={qc['issues'][:160]}")
-        if best is None or qc["bad"] < best[0]:
-            best = (qc["bad"], path)
-        if qc["ok"]:
-            break
-        note = tryon_quality.old_clothes_note(qc["issues"])
-    return best[1]
+        return path, await tryon_quality.old_clothes_qc(person_bytes, get_object(path)[0], garments_txt)
+
+    results, last_err = [], None
+    for fut in asyncio.as_completed([variant("") for _ in range(TRYON_VARIANTS)]):
+        try:
+            results.append(await fut)
+        except Exception as e:
+            last_err = e
+            logger.warning(f"try-on variant discarded (broken): {e}")
+    if not results:
+        raise last_err
+    for i, (_, qc) in enumerate(results):
+        logger.info(f"final check variant={i + 1} ok={qc['ok']} bad={qc['bad']} issues={qc['issues'][:160]}")
+    best = min(results, key=lambda r: r[1]["bad"])
+    if not best[1]["ok"]:
+        try:
+            again = await variant(tryon_quality.old_clothes_note(best[1]["issues"]))
+            logger.info(f"final check rebuild ok={again[1]['ok']} bad={again[1]['bad']} issues={again[1]['issues'][:160]}")
+            if again[1]["bad"] < best[1]["bad"]:
+                best = again
+        except Exception as e:
+            logger.warning(f"rebuild failed, best variant delivered: {e}")
+    return best[0]
 
 
 async def _render_single(user_id: str, person_path: str, garment_path: str, category_in: Optional[str], name: Optional[str], m_doc: dict, extra: str = "") -> str:
@@ -2420,13 +2439,14 @@ async def _tryon_generate(req: TryOnRequest, user: User):
         raise HTTPException(status_code=402, detail="Quota exhausted — subscribe or buy an extra try-on.")
     m_doc = await _get_measurements(user.user_id)
     req.garment_category = await _classify_garment(req.garment_path, req.garment_category)
-    req.person_path = await _auto_base(user, req.person_path, [req.garment_path])
-    notice, result_path = None, None
-    if (await _ext_switch())["on"] and await _is_transparent(req.garment_path):
-        result_path = await _ext_tryon(user.user_id, req.person_path, req.garment_path)
-        notice = None if result_path else TRANSP_NOTICE
-    if not result_path:
-        result_path = await _render_single(user.user_id, req.person_path, req.garment_path, req.garment_category, req.garment_name, m_doc, _owner_extra(user, req.preserve_pose))
+    notice = None
+    g = {"image_path": req.garment_path, "category": req.garment_category, "name": req.garment_name or (await _garment_info(req.garment_path)).get("desc")}
+    cov, sheer = await _coverage([g])
+
+    async def system():
+        return req.person_path, await _render_single(user.user_id, req.person_path, req.garment_path, req.garment_category, req.garment_name, m_doc,
+                                                     _owner_extra(user, req.preserve_pose) + cov)
+    _, result_path = await _system_with_lace(user.user_id, req.person_path, sheer, "tryon", system())
 
     rec_size = recommend_size(m_doc, "top" if req.garment_category == "suit" else req.garment_category)
     tryon_id = str(uuid.uuid4())
@@ -3631,31 +3651,7 @@ async def _multipass_outfit(user: User, person_path: str, items: list, layer_ord
     return result_path
 
 
-async def _compose_outfit(user: User, person_path: Optional[str], items: list, layer_order_text: str = _DEFAULT_LAYER_TEXT, extra: str = "", raw: bool = False,
-                          extend: float = 0.0):
-    """Layer the given garment images on the user's base photo; returns (person_path, result_path). REGOLA FISSA check on delivered photos."""
-    if raw:
-        return await _compose_outfit_once(user, person_path, items, layer_order_text, extra, raw, extend)
-    resolved = {}
-
-    async def once(note):
-        pp, rp = await _compose_outfit_once(user, person_path, items, layer_order_text, extra + note, raw, extend)
-        resolved["p"] = pp
-        return rp
-    txt = "; ".join(f"{g.get('name') or g.get('category')} ({g.get('category')})" for g in items)
-    first = await once("")
-    pp = resolved["p"]
-    calls = {"n": 0}
-
-    async def again(note):
-        calls["n"] += 1
-        return first if calls["n"] == 1 else await once(note)
-    return pp, await _old_clothes_loop(pp, txt, again)
-
-
-async def _compose_outfit_once(user: User, person_path: Optional[str], items: list, layer_order_text: str = _DEFAULT_LAYER_TEXT, extra: str = "", raw: bool = False,
-                               extend: float = 0.0):
-    """Layer the given garment images on the user's base photo; returns (person_path, result_path)."""
+async def _resolve_person(user: User, person_path: Optional[str]) -> str:
     # Resolve person photo — prefer explicit path, else latest person file for the user
     if not person_path:
         person_path = (await db.users.find_one({"user_id": user.user_id}, {"_id": 0, "avatar_path": 1}) or {}).get("avatar_path")
@@ -3669,6 +3665,30 @@ async def _compose_outfit_once(user: User, person_path: Optional[str], items: li
             person_path = last_file["storage_path"]
     if not person_path:
         raise HTTPException(status_code=400, detail="Crea prima il tuo Avatar nella Home")
+    return person_path
+
+
+async def _compose_outfit(user: User, person_path: Optional[str], items: list, layer_order_text: str = _DEFAULT_LAYER_TEXT, extra: str = "", raw: bool = False,
+                          extend: float = 0.0):
+    """Layer the given garment images on the user's base photo; returns (person_path, result_path). REGOLA FISSA check on delivered photos."""
+    if raw:
+        return await _compose_outfit_once(user, person_path, items, layer_order_text, extra, raw, extend)
+    resolved = {}
+
+    async def once(note):
+        pp, rp = await _compose_outfit_once(user, person_path, items, layer_order_text, extra + note, raw, extend)
+        resolved["p"] = pp
+        return rp
+    txt = "; ".join(f"{g.get('name') or g.get('category')} ({g.get('category')})" for g in items)
+    person_path = await _resolve_person(user, person_path)
+    rp = await _old_clothes_loop(person_path, txt, once)
+    return resolved.get("p", person_path), rp
+
+
+async def _compose_outfit_once(user: User, person_path: Optional[str], items: list, layer_order_text: str = _DEFAULT_LAYER_TEXT, extra: str = "", raw: bool = False,
+                               extend: float = 0.0):
+    """Layer the given garment images on the user's base photo; returns (person_path, result_path)."""
+    person_path = await _resolve_person(user, person_path)
     # Build the multi-image prompt
     person_bytes, _ = get_object(person_path)
     person_bytes = await run_in_threadpool(head_lock.crop_screenshot, person_bytes)
@@ -3765,8 +3785,10 @@ async def _outfit_generate(req: OutfitGenerateRequest, user: User):
         items.append(g)
     # Order items for layering (bottoms first, outerwear last)
     items.sort(key=lambda g: _LAYER_ORDER.get((g.get("category") or "top").lower(), 2))
-    req.person_path = await _auto_base(user, req.person_path, [i["image_path"] for i in items if i.get("category") in ("top", "outerwear", "dress", "suit") and i.get("image_path")])
-    person_path, result_path = await _compose_outfit(user, req.person_path, items, _DEFAULT_LAYER_TEXT, _owner_extra(user, False))
+    req.person_path = await _resolve_person(user, req.person_path)
+    cov, sheer = await _coverage(items)
+    person_path, result_path = await _system_with_lace(user.user_id, req.person_path, sheer, "outfit",
+                                                       _compose_outfit(user, req.person_path, items, _DEFAULT_LAYER_TEXT, _owner_extra(user, False) + cov))
 
     total_price = sum((g.get("price") or 0) for g in items)
     outfit_id = str(uuid.uuid4())
@@ -3833,25 +3855,14 @@ async def _outfit_generate_from_uploads(req: GridOutfitRequest, user: User):
         if not req.person_path:
             raise HTTPException(status_code=400, detail="Scatta o carica prima la tua foto in posa")
     descs = {k: (await _garment_info(slots[k])).get("desc") for k in slots}
-    req.person_path = await _auto_base(user, req.person_path, [slots[k] for k in slots if _GRID_SLOTS[k][0] in ("top", "outerwear", "dress", "suit")])
     items = [{
         "slot": k, "image_path": slots[k], "category": _GRID_SLOTS[k][0], "name": descs[k] or _GRID_SLOTS[k][1], "brand": None,
     } for k in _GRID_ORDER if k in slots]
-    notice, result_path, person_path = None, None, req.person_path
-    ext_on = req.person_path and (await _ext_switch())["on"]
-    sheer = [g for g in items if await _is_transparent(g["image_path"])] if ext_on else []
-    if sheer:
-        # Covered garments: normal flow (unchanged); then each transparent garment from the external try-on, on that result.
-        rest = [g for g in items if g not in sheer]
-        cur = (await _compose_outfit(user, req.person_path, rest, _GRID_LAYER_TEXT, _owner_extra(user, req.preserve_pose)))[1] if rest else req.person_path
-        for g in sheer:
-            cur = await _ext_tryon(user.user_id, cur, g["image_path"], "outfit")
-            if not cur:
-                break
-        result_path = cur
-        notice = None if cur else TRANSP_NOTICE
-    if not result_path:
-        person_path, result_path = await _compose_outfit(user, req.person_path, items, _GRID_LAYER_TEXT, _owner_extra(user, req.preserve_pose))
+    notice = None
+    req.person_path = await _resolve_person(user, req.person_path)
+    cov, sheer = await _coverage(items)
+    person_path, result_path = await _system_with_lace(user.user_id, req.person_path, sheer, "outfit",
+                                                       _compose_outfit(user, req.person_path, items, _GRID_LAYER_TEXT, _owner_extra(user, req.preserve_pose) + cov))
     doc = {
         "id": str(uuid.uuid4()),
         "user_id": user.user_id,

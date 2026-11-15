@@ -593,3 +593,11 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 - Tolte le caselle "trasparente" (TransparentToggle eliminato, endpoint /garments/transparent rimossi). Resta solo l'interruttore SERVER ESTERNO TRASPARENZE
 - Rilevamento automatico all'upload del capo, in background (non rallenta): fal.ai `openrouter/router/vision` (google/gemini-2.5-flash) con FAL_KEY; se fal non risponde -> riserva Emergent `tryon_quality.transparent_qc`. Salvato in files.transparent/transparent_by. Calcolato solo se l'interruttore è ON
 - Velocità: multipass gambe max 1 correzione (prima 2); ANTEPRIMA SUBITO: render_jobs.preview_path (dopo passata 1 e dopo il primo risultato prima del controllo Regola Fissa), GET /render-jobs ritorna preview_path, frontend components/RenderPreview.jsx (evento PREVIEW_EVENT da lib/renderJob.js)
+
+## 2026-11-15 — LIVE TRY-ON ENGINE (DONE, test offline senza generazioni)
+- Niente più basi fisse: `_auto_base` eliminato (si usa sempre la foto LIVE scelta). Endpoint /pose-bases resta solo per scelta manuale
+- Trasparenza automatica a 3 livelli (fal vision, riserva Emergent): files.transparency none|light|high. `tryon_quality.coverage_rule`: LIGHT -> fodera nude opaca; HIGH top -> reggiseno stesso colore del capo; pantaloni -> vita/fianchi solidi + fodera opaca sotto il pizzo
+- DRESSING_RULE + "LIVE TRY-ON ENGINE — GARMENT BUILD" (parti solide opache, maniche attaccate, pantaloni completi, mai solo trasparenza, posa live, bordi puliti). SURGICAL_RULE: trasparenza solo dove lo screenshot la mostra, sopra fodera
+- Sistema (Gemini) costruisce SEMPRE l'outfit intero; in parallelo il server esterno (fal) per ogni capo trasparente. `ext_lock.lace_layer`: dal fal SOLO il pizzo, dentro il capo del sistema, mai su pelle (i fori mostrano la fodera), mai su vita/fianchi/spalle, mani, sfondo, firma. `lock_original` eliminato (causava aloni bianchi e maniche staccate)
+- `_old_clothes_loop`: 3 varianti in parallelo, rotte scartate, CONTROLLO FINALE (vestiti vecchi, parti solide, maniche, pantaloni completi, copertura, posa, bordi) -> migliore; se tutte falliscono 1 ricostruzione. Merge pesante in serie (`tryon_quality._HEAVY`) per la memoria
+- Nota: costo 3-4 generazioni per prova; in produzione 512Mi il multipass x3 va monitorato

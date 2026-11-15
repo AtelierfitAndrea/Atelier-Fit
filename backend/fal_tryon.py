@@ -38,12 +38,18 @@ def tryon(person: bytes, garment: bytes, ratio: str = "9:16", timeout_s: int = 3
 
 VISION = "openrouter/router/vision"
 VISION_MODEL = "google/gemini-2.5-flash"
-TRANSP_PROMPT = ("Product photo of a garment. Is the garment (or a large part of it) transparent or semi-transparent: sheer, lace with skin "
-                 "showing through, tulle, organza, voile, mesh, chiffon? Reply with ONE word: YES or NO.")
+TRANSP_PROMPT = ("Product photo of a garment. How transparent is it (or a large part of it)? Reply with ONE word: "
+                 "NONE (opaque), LIGHT (light / semi-transparent lace, skin only slightly visible), "
+                 "HIGH (highly transparent: sheer tulle, mesh, organza, voile, open lace, body clearly visible).")
 
 
-def is_transparent(garment: bytes) -> bool:
-    """Blocking: fal vision with the owner's FAL_KEY. Raises FalError when fal does not answer (caller falls back)."""
+def level(reply: str) -> str:
+    r = str(reply).upper()
+    return "high" if "HIGH" in r else ("light" if "LIGHT" in r else "none")
+
+
+def transparency(garment: bytes) -> str:
+    """Blocking: fal vision with the owner's FAL_KEY -> none|light|high. Raises FalError when fal does not answer (caller falls back)."""
     key = os.environ.get("FAL_KEY")
     if not key:
         raise FalError("FAL_KEY mancante")
@@ -53,4 +59,4 @@ def is_transparent(garment: bytes) -> bool:
                                                 "image_urls": [_data_url(garment, "image/jpeg")]}, interval=0.5)
     except Exception as e:
         raise FalError(str(e)[:300]) from e
-    return "YES" in str((r or {}).get("output", "")).upper()
+    return level((r or {}).get("output", ""))
