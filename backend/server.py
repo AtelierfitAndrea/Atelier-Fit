@@ -2292,6 +2292,10 @@ DRESSING_RULE = (
     "WHOLE and visible inside the photo with floor margin below and at the sides. If a plain band was added at the bottom, continue the "
     "floor there; a long garment never makes the body smaller or moved: same position, same pose, same body scale. Only the clothes "
     "change; body, face, pose, framing, background, light (and shoes not requested) stay locked. If unsure: zoom-out, never zoom-in.\n"
+    "ANTI-ARTIFACT — ALWAYS: NEVER black smudges, local blur, doubled parts, double fingers, deformed feet, sandals / shoes fused with "
+    "the floor. Feet and hands: ONE per side, natural shape, 5 fingers / toes, as sharp as the rest of the photo, same light and "
+    "definition. A foot in shadow or crossed is rebuilt CLEAN, never hidden by a blurred dark patch. No blurred zones to cover errors: "
+    "rebuild the zone in HD. Perfect at 200% zoom.\n"
     "GLOBAL RULE — EVERY PHOTO, ALWAYS:\n"
     "• The garment stays ONLY on the body, never outside it. NO fabric scraps, NO pieces of clothing, NO red or lace pieces on the floor.\n"
     "• Floor always clean, empty and uniform as in IMAGE 1: no objects, no shadows of objects, no debris, no decorative fabric, no props.\n"
@@ -2363,7 +2367,52 @@ async def _old_clothes_loop(person_path: str, garments_txt: str, once) -> str:
                 best = again
         except Exception as e:
             logger.warning(f"rebuild failed, best variant delivered: {e}")
-    return await _clean_floor(person_path, best[0])
+    path = await _clean_floor(person_path, best[0])
+    return await _fix_artifacts(path) if best[1].get("artifacts") else path
+
+
+async def _fix_artifacts(path: str) -> str:
+    """ANTI-ARTEFATTO: local defects (feet, hands, shoes) rebuilt in HD, ONE generation per zone (max 2), pasted only on the defect.
+    The look is never regenerated."""
+    img_b = get_object(path)[0]
+    boxes = (await tryon_quality.artifact_boxes(img_b))[:2]
+    logger.info(f"anti-artifact: {len(boxes)} zones")
+    if not boxes:
+        return path
+    img = np.array(Image.open(io.BytesIO(img_b)).convert("RGB"))
+    H, W = img.shape[:2]
+    done = False
+    for y0, x0, y1, x1 in boxes:
+        bx0, by0, bx1, by1 = int(x0 * W / 1000), int(y0 * H / 1000), int(x1 * W / 1000), int(y1 * H / 1000)
+        side = min(min(H, W), max(int(2.2 * max(bx1 - bx0, by1 - by0)), int(0.22 * min(H, W))))
+        cx, cy = (bx0 + bx1) // 2, (by0 + by1) // 2
+        sx, sy = min(max(0, cx - side // 2), W - side), min(max(0, cy - side // 2), H - side)
+        crop = np.ascontiguousarray(img[sy:sy + side, sx:sx + side])
+        buf = io.BytesIO()
+        Image.fromarray(crop).save(buf, "PNG")
+        try:
+            out = await tryon_quality.fix_zone(buf.getvalue(), "zonefix")
+        except Exception as e:
+            logger.warning(f"anti-artifact zone fix failed: {e}")
+            continue
+        res = np.array(Image.open(io.BytesIO(out)).convert("RGB"))
+        res = head_lock._register(crop, res)
+        if res is None:
+            res = cv2.resize(np.array(Image.open(io.BytesIO(out)).convert("RGB")), (side, side), interpolation=cv2.INTER_LANCZOS4)
+        m = np.zeros((side, side), np.float32)
+        pad = max(6, int(0.25 * max(bx1 - bx0, by1 - by0)))
+        m[max(0, by0 - sy - pad):by1 - sy + pad, max(0, bx0 - sx - pad):bx1 - sx + pad] = 1
+        m = cv2.GaussianBlur(m, (0, 0), max(2, pad / 3))
+        img[sy:sy + side, sx:sx + side] = cv2.blendLinear(res, crop, m, 1 - m)
+        done = True
+    if not done:
+        return path
+    new = path.rsplit("/", 1)[0] + f"/{uuid.uuid4().hex}.jpg"
+    buf = io.BytesIO()
+    Image.fromarray(img).save(buf, "JPEG", quality=94)
+    put_object(new, buf.getvalue(), "image/jpeg")
+    logger.info(f"anti-artifact: zones rebuilt -> {new}")
+    return new
 
 
 async def _clean_floor(person_path: str, path: str) -> str:

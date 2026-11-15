@@ -616,3 +616,8 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 - Tolti i tagli: multipass "taglio sotto le scarpe" eliminato; `_trim_pad_bands` non taglia più la banda in basso (diventa pavimento specchiato); `_crop_white_card` non rade più i bordi, gli angoli bianchi vengono ricostruiti (inpaint solo bianco che tocca il bordo)
 - Controllo finale: scarpe tagliate / foto zoomata = outfit_incomplete
 - Foto buona 6a28416d rifatta senza tagli: scarpe intere -> result 3f40b138
+
+## 2026-11-15 (4) — REGOLA ANTI-ARTEFATTO (DONE, 1 generazione di zona)
+- DRESSING_RULE + ANTI-ARTIFACT (mai macchie nere/sfocature/doppioni/dita doppie/piedi deformi/scarpe fuse; piedi e mani nitidi, 1 per lato, 5 dita; zona rifatta in HD, perfetta al 200%)
+- Controllo finale: flag local_artifacts (conta come difetto). Se la migliore lo ha: `_fix_artifacts` -> `tryon_quality.artifact_boxes` (AI, max 2 zone) -> `fix_zone` (1 generazione HD su crop quadrato) -> registrato e incollato SOLO sul difetto sfumato. Il look non si rigenera
+- Outfit 33ad72ac (sandali neri, foto di riferimento): macchia nera sotto il piede sinistro rifatta (1 generazione) + puntino rosa tolto -> result 2ed1cd5f (originale in result_before_fix)

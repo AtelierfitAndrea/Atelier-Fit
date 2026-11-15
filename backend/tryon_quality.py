@@ -212,7 +212,7 @@ async def old_clothes_qc(person_bytes: bytes, result: bytes, garments_txt: str) 
         f"The ONLY garments allowed in IMAGE 2: {garments_txt}.\n"
         "Return ONLY JSON: {\"old_clothes_visible\": bool, \"extra_garments\": bool, \"double_layer\": bool, \"solid_parts_not_solid\": bool, "
         "\"sleeves_detached\": bool, \"pants_incomplete\": bool, \"coverage_wrong\": bool, \"not_fitting_pose\": bool, \"edge_artifacts\": bool, "
-        "\"outfit_incomplete\": bool, "
+        "\"outfit_incomplete\": bool, \"local_artifacts\": bool, "
         "\"issues\": \"short English list\"}\n"
         "solid_parts_not_solid: waistband, hips, seams, buttons or hems are see-through or missing (a garment made only of transparency).\n"
         "sleeves_detached: a sleeve is floating, cut or not continuous with the top at the shoulder, or does not follow the arm.\n"
@@ -222,6 +222,8 @@ async def old_clothes_qc(person_bytes: bytes, result: bytes, garments_txt: str) 
         "outfit_incomplete: a requested garment is not fully worn (no trousers / bare legs where trousers were requested, missing top), "
         "the figure is not full body head to feet, feet or shoes are cut / touch the photo edge, or the photo is zoomed, cropped or an inset "
         "(phone screen, frame, rounded card).\n"
+        "local_artifacts: black or dark blurred smudges, local blur, doubled / ghost parts, double fingers or toes, deformed feet or hands, "
+        "shoes / sandals fused with the floor — check feet, hands, shoes and the floor right around them.\n"
         "IGNORE fabric scraps, debris or objects on the floor outside the body: they are cleaned afterwards, never flag them.\n"
         "not_fitting_pose: the garment does not drape on the real pose (seated/standing), floats or is pasted flat.\n"
         "edge_artifacts: white patches, colour smudges or halos ON or right around the body (not on the floor).\n"
@@ -246,10 +248,10 @@ async def old_clothes_qc(person_bytes: bytes, result: bytes, garments_txt: str) 
         return {"ok": True, "bad": 0, "incomplete": 0, "issues": ""}
     d = _extract(reply)
     bad = sum(d.get(k) is True for k in ("old_clothes_visible", "extra_garments", "double_layer", "solid_parts_not_solid", "sleeves_detached",
-                                          "pants_incomplete", "coverage_wrong", "not_fitting_pose", "edge_artifacts", "outfit_incomplete"))
+                                          "pants_incomplete", "coverage_wrong", "not_fitting_pose", "edge_artifacts", "outfit_incomplete", "local_artifacts"))
     # COMPLETE outfit first (top + trousers worn, full body, no inset): an incomplete photo always ranks below a complete one.
     inc = int(any(d.get(k) is True for k in ("outfit_incomplete", "pants_incomplete", "solid_parts_not_solid")))
-    return {"ok": bad == 0, "bad": bad, "incomplete": inc, "issues": str(d.get("issues") or "")[:400]}
+    return {"ok": bad == 0, "bad": bad, "incomplete": inc, "artifacts": d.get("local_artifacts") is True, "issues": str(d.get("issues") or "")[:400]}
 
 
 async def transparent_qc(garment: bytes) -> str:
@@ -295,6 +297,38 @@ async def debris_boxes(img: bytes) -> list:
         return []
     d = _extract(reply)
     return [b["box_2d"] for b in (d.get("debris") or [])[:12] if isinstance(b, dict) and isinstance(b.get("box_2d"), list) and len(b["box_2d"]) == 4]
+
+
+async def artifact_boxes(img: bytes) -> list:
+    """ANTI-ARTEFATTO: boxes (0-1000) of local defects on feet, hands, shoes and the floor around them."""
+    small = await run_in_threadpool(head_lock.downscale, img, 1024)
+    prompt = ("Virtual try-on photo of ONE person. Find every LOCAL DEFECT: black or dark blurred smudges, locally blurred areas, doubled or "
+              "ghost parts, double fingers or toes, deformed feet or hands, shoes / sandals fused with the floor. Check feet, hands, shoes "
+              "and the floor right around them first. Return ONLY JSON: {\"defects\": [{\"box_2d\": [ymin, xmin, ymax, xmax]}]} "
+              "normalised 0-1000, each box tight around one defect. Empty list if the photo is clean.")
+    try:
+        chat = LlmChat(api_key=os.environ["EMERGENT_LLM_KEY"], session_id=f"artef-{uuid.uuid4().hex[:8]}",
+                       system_message="You are a precise photo retouch inspector. Reply with JSON only.")
+        chat.with_model("gemini", QC_MODEL)
+        reply = await chat.send_message(UserMessage(text=prompt, file_contents=[ImageContent(base64.b64encode(small).decode())]))
+    except Exception as e:
+        logger.warning(f"artifact detection failed: {e}")
+        return []
+    d = _extract(reply)
+    return [b["box_2d"] for b in (d.get("defects") or [])[:4] if isinstance(b, dict) and isinstance(b.get("box_2d"), list) and len(b["box_2d"]) == 4]
+
+
+ZONE_FIX_PROMPT = (
+    "IMAGE 1 is a square crop of a fashion photo. Inside it there is a LOCAL DEFECT (black blurred smudge, local blur, doubled or deformed "
+    "foot / hand / shoe, shoe fused with the floor). Return the SAME crop: identical framing, scale, pose, garments, colours and light. "
+    "Rebuild ONLY the defect cleanly in HD: one natural foot / hand per side with real shape and 5 toes / fingers, shoes with a clear "
+    "outline standing on the floor with a soft natural contact shadow, as sharp as the rest of the photo. Never hide anything with a dark "
+    "patch or blur. Change nothing else. No text, no frame.")
+
+
+async def fix_zone(crop: bytes, tag: str) -> bytes:
+    return await _image_call("You are a high-end photo retoucher: minimal local HD repairs only.", ZONE_FIX_PROMPT,
+                             [ImageContent(base64.b64encode(crop).decode())], tag, "1:1")
 
 
 def old_clothes_note(issues: str) -> str:
