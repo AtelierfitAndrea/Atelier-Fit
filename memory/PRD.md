@@ -672,3 +672,8 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 - db.pose_references {_id:'kneeling'}: foto/regola di riferimento della posa in ginocchio
 - Prompt KNEELING: mani/braccia come in IMAGE 1 (alzate o abbassate come richiesto), non più fisse in alto
 - Lezione: anche negli script manuali MAI passare la foto intera come IMAGE 2 alle correzioni di zona (crea la miniatura)
+
+## 2026-11-15 (15) — Buchi chiusi in locale + ginocchio al mare a piedi nudi (DONE, verificato senza generare)
+- Controllo finale: holes_or_gaps ora fa partire la correzione LOCALE (stesso tessuto/colore), mai rigenerazione intera; artifact_boxes cerca anche buchi (manica-spalla, maglia-pantaloni, gomito, gomito interno-fianco)
+- `_is_kneeling` (cache): coscia giù + caviglia all'altezza del ginocchio. `_pose_rules`: in ginocchio senza scarpe richieste -> PIEDI NUDI nella sabbia di default; con scarpe -> 2 passi (prima piedi sotto le ginocchia, poi scarpe sopra), mai scarpe sui jeans
+- In ginocchio + scarpe sbagliate (shoes_wrong) -> zona piedi rifatta a piedi nudi (BAREFOOT_PROMPT, `_feet_boxes`) + avviso "Posa in ginocchio con scarpe: può avere piccoli difetti, la versione consigliata è senza scarpe" (notice via _NOTES)

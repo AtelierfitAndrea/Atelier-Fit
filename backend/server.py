@@ -2099,6 +2099,8 @@ _render_tasks: set = set()
 
 
 _JOB_ID = contextvars.ContextVar("render_job_id", default=None)
+_NOTES = contextvars.ContextVar("render_notes", default=None)  # dict shared with the render tasks -> notice for the user
+KNEEL_SHOES_NOTICE = "Posa in ginocchio con scarpe: può avere piccoli difetti, la versione consigliata è senza scarpe"
 
 
 async def _job_preview(path: str = None, png: bytes = None, user_id: str = None) -> None:
@@ -2398,6 +2400,33 @@ HALF_BODY_RULE = (
 )
 
 
+def _kneeling_kp(cropped: bytes) -> bool:
+    # Kneeling: thigh going down (>=0.45) and ankle at knee height (< 0.45 thigh); measured kneeling 0.14-0.20, standing 0.99.
+    kp = pose_lock.keypoints(np.array(head_lock._open_small(cropped, 768).convert("RGB")))
+    for h, k, a in ((11, 13, 15), (12, 14, 16)):
+        if kp is not None and all(kp[i, 2] > pose_lock.MIN_SCORE for i in (h, k, a)):
+            th = max(float(np.hypot(*(kp[k, :2] - kp[h, :2]))), 1.0)
+            if (kp[k, 1] - kp[h, 1]) / th >= 0.45 and abs(kp[a, 1] - kp[k, 1]) / th < 0.45:
+                return True
+    return False
+
+
+async def _is_kneeling(person_path: str) -> bool:
+    return bool(person_path) and await _prep(("kneel", person_path), _kneeling_kp, await _person_cropped(person_path))
+
+
+async def _pose_rules(person_path: str, items: list) -> str:
+    """POSA IN GINOCCHIO (owner rule): barefoot in the sand by default; with shoes -> feet first, then the shoes on them."""
+    if not await _is_kneeling(person_path):
+        return ""
+    if any((g.get("category") or "").lower() == "shoes" for g in items):
+        return ("\nKNEELING WITH SHOES — 2 MANDATORY STEPS: FIRST place the whole feet under the knees, resting on the ground; THEN draw "
+                "the shoes ON the feet, whole, sole visible. NEVER shoes on top of the jeans, never mid-leg, never cutting or covering the "
+                "jeans. T-shirt / jeans border sharp and continuous, jeans clean, nothing added on them.\n")
+    return ("\nKNEELING ON THE SAND — DEFAULT BAREFOOT: bare feet in the sand, NO shoes (none requested). T-shirt / jeans border sharp "
+            "and continuous, jeans clean, nothing added on the jeans.\n")
+
+
 async def _half_body(person_path: str, cats) -> bool:
     # Only matters when legs/feet garments are requested on a photo that shows no knees/ankles.
     if not {(c or "").lower() for c in cats} & {"bottom", "shoes", "dress", "suit"}:
@@ -2452,7 +2481,19 @@ async def _old_clothes_loop(person_path: str, garments_txt: str, once) -> str:
     elif not best[1]["ok"]:
         logger.info(f"rebuild skipped: best variant usable (issues: {best[1]['issues'][:120]})")
     path = await _clean_floor(person_path, best[0])
-    if best[1].get("artifacts") or best[1].get("shoes_wrong"):
+    kneel_shoes = "(shoes)" in garments_txt and await _is_kneeling(person_path)
+    if kneel_shoes and best[1].get("shoes_wrong"):
+        # Kneeling + shoes that do not sit on the feet: bare feet kept (local zone only) and the user is told.
+        t0 = time.monotonic()
+        new = await _fix_artifacts(path, await _feet_boxes(path), tryon_quality.BAREFOOT_PROMPT)
+        if new != path:
+            path = new
+            notes = _NOTES.get()
+            if notes is not None:
+                notes["notice"] = KNEEL_SHOES_NOTICE
+        logger.info(f"timing kneeling barefoot zone fix: {time.monotonic() - t0:.1f}s")
+    if best[1].get("artifacts") or best[1].get("shoes_wrong") or best[1].get("holes"):
+        # Holes / artifacts: closed locally (same fabric), never a full regeneration.
         t0 = time.monotonic()
         path = await _fix_artifacts(path)
         logger.info(f"timing anti-artifact zone fix: {time.monotonic() - t0:.1f}s")
@@ -2460,11 +2501,25 @@ async def _old_clothes_loop(person_path: str, garments_txt: str, once) -> str:
     return path
 
 
-async def _fix_artifacts(path: str) -> str:
-    """ANTI-ARTEFATTO: local defects (feet, hands, shoes) rebuilt in HD, ONE generation per zone (max 2), pasted only on the defect.
-    The look is never regenerated."""
+async def _feet_boxes(path: str) -> list:
+    """Box (0-1000) around both feet / ankles of the result, for the kneeling barefoot fix."""
+    img = np.array(head_lock._open_small(get_object(path)[0], 1024).convert("RGB"))
+    kp = await run_in_threadpool(pose_lock.keypoints, img)
+    pts = [kp[i, :2] for i in range(15, 23) if kp is not None and kp[i, 2] > pose_lock.MIN_SCORE]
+    if not pts:
+        return []
+    H, W = img.shape[:2]
+    p = np.array(pts)
+    m = 0.06 * max(H, W)
+    return [[float(max(0, (p[:, 1].min() - m) / H * 1000)), float(max(0, (p[:, 0].min() - m) / W * 1000)),
+             float(min(1000, (p[:, 1].max() + m) / H * 1000)), float(min(1000, (p[:, 0].max() + m) / W * 1000))]]
+
+
+async def _fix_artifacts(path: str, boxes: list = None, prompt: str = None) -> str:
+    """ANTI-ARTEFATTO: local defects (feet, hands, shoes, holes) rebuilt in HD, ONE generation per zone (max 2), pasted only on the
+    defect. The look is never regenerated."""
     img_b = get_object(path)[0]
-    boxes = (await tryon_quality.artifact_boxes(img_b))[:2]
+    boxes = (boxes if boxes is not None else await tryon_quality.artifact_boxes(img_b))[:2]
     logger.info(f"anti-artifact: {len(boxes)} zones")
     if not boxes:
         return path
@@ -2480,7 +2535,7 @@ async def _fix_artifacts(path: str) -> str:
         buf = io.BytesIO()
         Image.fromarray(crop).save(buf, "PNG")
         try:
-            out = await tryon_quality.fix_zone(buf.getvalue(), "zonefix")
+            out = await tryon_quality.fix_zone(buf.getvalue(), "zonefix", prompt)
         except Exception as e:
             logger.warning(f"anti-artifact zone fix failed: {e}")
             continue
@@ -2633,8 +2688,11 @@ async def _tryon_generate(req: TryOnRequest, user: User):
 
     async def system():
         return req.person_path, await _render_single(user.user_id, req.person_path, req.garment_path, req.garment_category, req.garment_name, m_doc,
-                                                     _owner_extra(user, req.preserve_pose) + cov)
+                                                     _owner_extra(user, req.preserve_pose) + cov + await _pose_rules(req.person_path, [g]))
+    notes = {}
+    _NOTES.set(notes)
     _, result_path = await _system_with_lace(user.user_id, req.person_path, sheer, "tryon", system())
+    notice = notes.get("notice")
 
     rec_size = recommend_size(m_doc, "top" if req.garment_category == "suit" else req.garment_category)
     tryon_id = str(uuid.uuid4())
@@ -4001,7 +4059,8 @@ async def _outfit_generate(req: OutfitGenerateRequest, user: User):
     req.person_path = await _resolve_person(user, req.person_path)
     cov, sheer = await _coverage(items)
     person_path, result_path = await _system_with_lace(user.user_id, req.person_path, sheer, "outfit",
-                                                       _compose_outfit(user, req.person_path, items, _DEFAULT_LAYER_TEXT, _owner_extra(user, False) + cov))
+                                                       _compose_outfit(user, req.person_path, items, _DEFAULT_LAYER_TEXT, _owner_extra(user, False) + cov
+                                                                       + await _pose_rules(req.person_path, items)))
 
     total_price = sum((g.get("price") or 0) for g in items)
     outfit_id = str(uuid.uuid4())
@@ -4077,8 +4136,12 @@ async def _outfit_generate_from_uploads(req: GridOutfitRequest, user: User):
     notice = None
     req.person_path = await _resolve_person(user, req.person_path)
     cov, sheer = await _coverage(items)
+    notes = {}
+    _NOTES.set(notes)
     person_path, result_path = await _system_with_lace(user.user_id, req.person_path, sheer, "outfit",
-                                                       _compose_outfit(user, req.person_path, items, _GRID_LAYER_TEXT, _owner_extra(user, req.preserve_pose) + cov))
+                                                       _compose_outfit(user, req.person_path, items, _GRID_LAYER_TEXT, _owner_extra(user, req.preserve_pose) + cov
+                                                                       + await _pose_rules(req.person_path, items)))
+    notice = notes.get("notice")
     doc = {
         "id": str(uuid.uuid4()),
         "user_id": user.user_id,
