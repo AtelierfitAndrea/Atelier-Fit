@@ -217,8 +217,8 @@ async def old_clothes_qc(person_bytes: bytes, result: bytes, garments_txt: str) 
         "solid_parts_not_solid: waistband, hips, seams, buttons or hems are see-through or missing (a garment made only of transparency).\n"
         "sleeves_detached: a sleeve is floating, cut or not continuous with the top at the shoulder, or does not follow the arm.\n"
         "pants_incomplete: trousers without a solid opaque waist/hips, or with missing parts of the legs.\n"
-        "coverage_wrong: through lace / sheer fabric you see bare skin instead of an opaque lining, a separate bra or detached / floating black "
-        "straps are visible, or the original underwear of IMAGE 1 is visible.\n"
+        "coverage_wrong: under a lace / sheer TOP there is an opaque or black lining / fabric (black under red), a separate bra or detached / "
+        "floating black straps are visible, or the original underwear of IMAGE 1 is visible. Skin under a lace top is CORRECT.\n"
         "outfit_incomplete: a requested garment is not fully worn (no trousers / bare legs where trousers were requested, missing top), "
         "MORE THAN ONE person / a miniature or pasted copy of the person / the body split in disconnected pieces, "
         "the figure is not full body head to feet, feet or shoes are cut / touch the photo edge, or the photo is zoomed, cropped or an inset "
@@ -242,8 +242,8 @@ async def old_clothes_qc(person_bytes: bytes, result: bytes, garments_txt: str) 
         "still visible in IMAGE 2 — under, through (see-through fabric), around or instead of the new garments.\n"
         "extra_garments: IMAGE 2 shows a garment layer that is neither in the allowed list nor original skin (invented base layer, extra top).\n"
         "double_layer: one garment shows another fabric under it that is not in the allowed list (e.g. black fabric under a red lace top, "
-        "a body under the trousers). A nude or black OPAQUE LINING under a lace / sheer garment belongs to the new garment (correct, "
-        "not a double layer); a bra or separate straps are NOT allowed.\n"
+        "a body under the trousers). Skin under a lace / sheer top is correct; an opaque or black lining under a lace top, a bra or "
+        "separate straps are NOT allowed.\n"
         "Do NOT flag parts of an allowed garment: a solid waistband, lined panel or darker lace of allowed black trousers belongs to the "
         "trousers. Flag only what clearly is ANOTHER garment, typically the original one of IMAGE 1 continuing where no allowed garment "
         "is (e.g. black bodysuit fabric on the belly, chest or under the neckline, straps on the shoulders, swimsuit edges on the hips).\n"
@@ -284,8 +284,8 @@ def coverage_rule(level: str, category: str, name: str) -> str:
         return head + ("• Waistband and hips SOLID OPAQUE fabric. The lace / sheer parts lie ON TOP of an OPAQUE lining "
                        f"({'nude skin-tone' if level == 'light' else 'same colour as the garment'}) that fully covers the legs under it: "
                        "no see-through to skin, underwear or old clothes.\n")
-    return head + ("• Under the lace an OPAQUE LINING fully covers the body (nude skin-tone, or black where the product shows black under the "
-                   "lace): no see-through to skin, nothing of IMAGE 1 under it.\n"
+    return head + ("• The lace sits DIRECTLY on the skin (REGOLA 13/11): NO opaque lining, NEVER black fabric under red lace, nothing of "
+                   "IMAGE 1 under it. If a lining is needed, only a sheer skin-tone one, never opaque, never black.\n"
                    "• NEVER add a bra or any underwear. NO separate or detached black straps, NO floating straps: the top's own straps / "
                    "shoulders rest ON the shoulders, attached to the top, neckline exactly as the product.\n")
 
@@ -394,7 +394,7 @@ async def fix_zone(crop: bytes, tag: str, prompt: str = None, ref: bytes = None)
 def old_clothes_note(issues: str) -> str:
     return ("\nPREVIOUS ATTEMPT REJECTED (FINAL CHECK): " + issues +
             ". Fix it: remove 100% of the original clothes, rebuild every solid part (waistband, hips, seams, buttons, hems) in opaque fabric, "
-            "sleeves and shoulder straps attached to the top, trousers complete, opaque lining under every lace part, no bra, no detached straps, "
+            "sleeves and shoulder straps attached to the top, trousers complete, lace tops directly on the skin (no opaque / black lining), no bra, no detached straps, "
             "full body head to feet, nothing on the floor, "
             "garment fitted to the live pose.\n")
 

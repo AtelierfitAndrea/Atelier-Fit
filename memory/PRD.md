@@ -698,3 +698,9 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 - `_old_clothes_loop`: ricostruzione se outfit incompleto OPPURE old_clothes_visible (REGOLA FISSA 13/11)
 - `_system_with_lace`: dopo lo strato di pizzo controllo finale; se il costume/body originale è visibile -> `old_clothes_boxes` (AI, fallback busto da keypoints) + zona rifatta con OLD_ZONE_PROMPT (pizzo direttamente sul corpo, vietato nero sotto rosso). Altrimenti pizzo intatto
 - Produzione resta alla versione del 15/11 (non ripubblicare senza OK)
+
+## 2026-11-20 — Fodera opaca TOLTA sotto i top in pizzo + test (NON RIUSCITO)
+- coverage_rule top: pizzo direttamente sulla pelle (regola 13/11), mai fodera opaca/nera, al massimo velo color pelle; QC coverage_wrong aggiornato (pelle sotto top in pizzo = corretto)
+- SURGICAL_RULE: tolto "il top copre la pancia e sormonta la cintura" (allungava i crop top): lunghezza esatta del prodotto, pancia scoperta del crop top corretta
+- BUG mio (risolto): il passaggio gambe rifiutava le risposte non registrabili (zoom 0.8-1.25) -> ripristinato il ridimensionamento come prima (il blocco miniatura resta solo sulle correzioni di zona)
+- Test 1 foto (TRYON_VARIANTS=1, outfit 177fd61d: top pizzo rosso b01e214c, jeans 5dc7e1bf, décolleté e914b016, foto 95779ec5): tentativo 1 fallito per il bug, tentativo 2 il generatore ha risposto "no image" al pass 1. Nessuna foto prodotta. In attesa OK per riprovare

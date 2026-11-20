@@ -2208,9 +2208,10 @@ SURGICAL_RULE = (
     "• Do NOT touch face, hair, skin, identity, hands or arms: they stay pixel-identical to IMAGE 1 (face lock 100%). Keep the pose exactly as IMAGE 1.\n"
     "• Replace ONLY the clothing with the requested garments. The new garments are SOLID, OPAQUE fabric that FULLY covers the body area they cover, "
     "even where IMAGE 1 shows bare skin (e.g. the person wears only underwear): trousers cover hips, thighs and legs completely down to the shoes, "
-    "a top covers chest, belly and its full sleeves, and its hem overlaps the trousers waistband. NEVER leave holes, rips, cut-outs, gaps or patches of "
-    "bare skin or underwear inside or between the new garments. Transparent ONLY where the product screenshot is lace / sheer, always over an "
-    "opaque lining (COVERAGE rule).\n"
+    "a top covers chest and its full sleeves down to ITS OWN hem (EXACT product length: a crop top leaves the belly bare; the hem overlaps the "
+    "trousers waistband only if the product is that long). NEVER leave holes, rips, cut-outs, gaps or patches of underwear inside the new "
+    "garments (the bare belly under a crop top is correct). Transparent ONLY where the product screenshot is lace / sheer: lace tops "
+    "directly on the skin, lace trousers over their lining (COVERAGE rule).\n"
     "• PANTS LOCK: trousers follow the EXACT leg length, thigh/knee/ankle positions and bend of IMAGE 1 (seated legs stay seated, same knee height); "
     "realistic size and fit for this body (not skin-tight, not oversized), hem reaching the shoe: never cut short above a boot, the hem rests on or "
     "tucks naturally over the boot shaft.\n"
@@ -2289,10 +2290,10 @@ DRESSING_RULE = (
     "Both hands stay visible and complete exactly as in IMAGE 1 (e.g. joined in front, between the legs), 5 real fingers each; forearms "
     "whole with clean continuous skin from elbow to hand. A complicated garment is adapted to the body, the body never disappears.\n"
     "• NO OLD CLOTHES UNDER THE NEW ONES: nothing the person wears in IMAGE 1 (e.g. a black bodysuit, tank top, bra, old trousers) may "
-    "show under, through or around the new garments. Under a V-neck only skin shows; under see-through lace only the opaque lining (never a "
-    "bra, never detached straps); below a top only the new bottom.\n"
+    "show under, through or around the new garments. Under a V-neck only skin shows; under see-through lace only skin — the lace directly on the "
+    "body, never an opaque or black lining, never a bra, never detached straps; below a top only the new bottom.\n"
     "• REAL FABRIC, NEVER CARTOON: every garment is real cloth with thickness, volume, natural shadows and folds (lace in relief, "
-    "lace always over its opaque lining); never flat, painted-on, sticker-like or glued to the body.\n"
+    "lace in relief directly on the skin); never flat, painted-on, sticker-like or glued to the body.\n"
     "• SLEEVES END AT THE WRIST: wide / bell sleeves flare but end cleanly at the wrist — no trailing tails, no lace pieces hanging "
     "down to the floor, no train.\n"
     "• NO HALOS, EVER: no brown stains, fake shadows, blurred or dark/light edges around hands, forearms or arms, nor where a sleeve ends; "
@@ -3837,25 +3838,18 @@ async def _multipass_outfit(user: User, person_path: str, items: list, layer_ord
         wgt[-f:, :] *= ramp[::-1][:, None]
 
     async def _legs_attempt(fix: str = ""):
-        reg = None
-        for attempt in range(2):
-            try:
-                res_bytes = await tryon_quality._image_call(legs_system, prompt + fix + (ONE_PERSON_NOTE if attempt else ""), contents,
-                                                            f"legs-{user.user_id}", aspect)
-            except Exception as e:
-                logger.error(f"multipass legs pass failed: {e}")
-                raise HTTPException(status_code=502, detail="Prova non riuscita: premi Riprova. Nessuna prova scalata.")
-            with open(f"/tmp/legs_raw_{uuid.uuid4().hex[:6]}.png", "wb") as fh:  # kept for free offline re-merge checks
-                fh.write(res_bytes)
-            res = np.array(Image.open(io.BytesIO(res_bytes)).convert("RGB"))
-            # ONE PERSON ONLY: the answer must be the SAME crop at the same scale. A zoomed-out answer (the whole girl drawn small
-            # inside the legs) would paste a miniature second person: rejected, never pasted, never resized.
-            reg = await run_in_threadpool(lambda: head_lock._register(crop, res, zoom=(0.8, 1.25)))
-            if reg is not None:
-                break
-            logger.warning(f"multipass legs answer not the same crop (attempt {attempt + 1}): rejected")
+        try:
+            res_bytes = await tryon_quality._image_call(legs_system, prompt + fix, contents, f"legs-{user.user_id}", aspect)
+        except Exception as e:
+            logger.error(f"multipass legs pass failed: {e}")
+            raise HTTPException(status_code=502, detail="Prova non riuscita: premi Riprova. Nessuna prova scalata.")
+        with open(f"/tmp/legs_raw_{uuid.uuid4().hex[:6]}.png", "wb") as fh:  # kept for free offline re-merge checks
+            fh.write(res_bytes)
+        res = np.array(Image.open(io.BytesIO(res_bytes)).convert("RGB"))
+        # The legs answer changes the content (new trousers): few matches is normal -> plain resize, as before.
+        reg = await run_in_threadpool(head_lock._register, crop, res)
         if reg is None:
-            raise HTTPException(status_code=502, detail="Gambe non allineate: variante scartata.")
+            reg = cv2.resize(res, (cw_, ch_), interpolation=cv2.INTER_LANCZOS4)
         # Hands are restored afterwards from the exact finger hull: no box lock here (it pasted skin under the fingertips).
         legs_out, frac = await run_in_threadpool(head_lock._pose_composite, crop, reg, None, (0, 0), [], None, force)
         keep = None
