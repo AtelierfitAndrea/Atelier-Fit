@@ -677,3 +677,9 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 - Controllo finale: holes_or_gaps ora fa partire la correzione LOCALE (stesso tessuto/colore), mai rigenerazione intera; artifact_boxes cerca anche buchi (manica-spalla, maglia-pantaloni, gomito, gomito interno-fianco)
 - `_is_kneeling` (cache): coscia giù + caviglia all'altezza del ginocchio. `_pose_rules`: in ginocchio senza scarpe richieste -> PIEDI NUDI nella sabbia di default; con scarpe -> 2 passi (prima piedi sotto le ginocchia, poi scarpe sopra), mai scarpe sui jeans
 - In ginocchio + scarpe sbagliate (shoes_wrong) -> zona piedi rifatta a piedi nudi (BAREFOOT_PROMPT, `_feet_boxes`) + avviso "Posa in ginocchio con scarpe: può avere piccoli difetti, la versione consigliata è senza scarpe" (notice via _NOTES)
+
+## 2026-11-15 (16) — Correzioni di zona scarpe/maniche, controllo dopo pizzo, MODALITÀ EDIT (DONE, verificato senza generare)
+- `_old_clothes_loop`: shoes_wrong / sleeves_detached / holes / artifacts -> correzione di ZONA anche se l'outfit è completo. Zone AI (artifact_boxes, ora anche tacco mancante, scarpa distorta, manica con pezzo mancante); se 0 zone -> `_feet_boxes` + `_arm_boxes` (keypoints). Zona piedi guidata dalla foto prodotto della scarpa scelta ORA (REF_NOTE: stesso modello, mai un altro)
+- `_system_with_lace`: se lace_layer non applica (registration/pose failed) -> risultato del sistema; altrimenti controllo finale su entrambe e pizzo tenuto solo se non peggiora
+- MODALITÀ EDIT (owner): POST /tryons|/outfits/{id}/retry {mode:"edit", zones:[viso,scarpe,maniche,busto,gambe]} -> parte dal result_path, rifà solo le zone (ref: viso originale / foto prodotto), resto copiato pixel per pixel; non consuma la riprova gratuita. UI: pannello "Modalità edit" in FreeRetry (testid edit-zones-panel, edit-zone-*, edit-zones-confirm)
+- Punto 4 (avviso capi diversi dalla prova di riferimento): IN ATTESA di chiarimento

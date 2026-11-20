@@ -1699,7 +1699,7 @@ async def _ext_credit_guard(paths: list) -> None:
         raise HTTPException(status_code=409, detail="Credito esaurito")
 
 
-async def _system_with_lace(user_id: str, person_path: str, sheer: list, kind: str, system_coro) -> tuple:
+async def _system_with_lace(user_id: str, person_path: str, sheer: list, kind: str, system_coro, items: list = ()) -> tuple:
     """System builds the WHOLE outfit (solid parts, sleeves, lining); in parallel the external server renders each transparent garment,
     whose lace is then laid only inside the system garment. Returns (person_path, result_path)."""
     ext_on = bool(sheer) and (await _ext_switch())["on"]
@@ -1708,10 +1708,21 @@ async def _system_with_lace(user_id: str, person_path: str, sheer: list, kind: s
     if not any(exts):
         return pp, rp
     person = head_lock.downscale(await _person_cropped(pp), 2048)
-    out = get_object(rp)[0]
+    base = out = get_object(rp)[0]
     for g, ext in zip(sheer, exts):
         if ext:
+            # lace_layer returns the input unchanged when registration / pose fail: no layer applied then.
             out = await run_in_threadpool(ext_lock.lace_layer, out, person, ext, (g.get("category") or "top").lower())
+    if out is base:
+        return pp, rp
+    # FINAL CHECK again after the lace layer: kept only if it is not worse than the system result.
+    txt = "; ".join(f"{g.get('name') or g.get('category')} ({g.get('category')})" for g in (items or sheer))
+    pb = get_object(pp)[0]
+    q0, q1 = await asyncio.gather(tryon_quality.old_clothes_qc(pb, base, txt), tryon_quality.old_clothes_qc(pb, out, txt))
+    logger.info(f"lace layer final check: system bad={q0['bad']} with lace bad={q1['bad']} ({q1['issues'][:120]})")
+    if (q1.get("incomplete", 0), q1["bad"]) > (q0.get("incomplete", 0), q0["bad"]):
+        logger.info("lace layer worse than the system result: not applied")
+        return pp, rp
     path = f"{APP_NAME}/{kind}/{user_id}/{uuid.uuid4().hex}.jpg"
     put_object(path, out, "image/jpeg")
     logger.info(f"system + external lace -> {path}")
@@ -2437,7 +2448,7 @@ async def _half_body(person_path: str, cats) -> bool:
 TRYON_VARIANTS = 3
 
 
-async def _old_clothes_loop(person_path: str, garments_txt: str, once) -> str:
+async def _old_clothes_loop(person_path: str, garments_txt: str, once, shoe_path: str = None) -> str:
     """LIVE TRY-ON ENGINE: 3 variants in parallel, broken ones discarded, FINAL CHECK on each (old clothes, solid parts, sleeves, trousers,
     coverage, live pose, clean edges); the best is delivered. All fail the check -> one rebuild with the defects named. Never blocked."""
     person_bytes, _ = get_object(person_path)
@@ -2492,13 +2503,45 @@ async def _old_clothes_loop(person_path: str, garments_txt: str, once) -> str:
             if notes is not None:
                 notes["notice"] = KNEEL_SHOES_NOTICE
         logger.info(f"timing kneeling barefoot zone fix: {time.monotonic() - t0:.1f}s")
-    if best[1].get("artifacts") or best[1].get("shoes_wrong") or best[1].get("holes"):
-        # Holes / artifacts: closed locally (same fabric), never a full regeneration.
+    q = best[1]
+    if q.get("artifacts") or q.get("shoes_wrong") or q.get("holes") or q.get("sleeves"):
+        # Shoes / sleeves / holes / artifacts: corrected LOCALLY even when the outfit is complete, never a full regeneration.
+        # No zone found by the AI -> feet box (shoes) and arm / sleeve boxes from the keypoints.
         t0 = time.monotonic()
-        path = await _fix_artifacts(path)
-        logger.info(f"timing anti-artifact zone fix: {time.monotonic() - t0:.1f}s")
+        boxes = (await tryon_quality.artifact_boxes(get_object(path)[0]))[:2]
+        feet = await _feet_boxes(path) if q.get("shoes_wrong") else []
+        if feet and shoe_path:
+            # The shoe the user selected NOW is kept: its product photo guides the feet zone (never another model).
+            path = await _fix_artifacts(path, feet, None, get_object(shoe_path)[0])
+            fy0, fx0, fy1, fx1 = feet[0]
+            boxes = [b for b in boxes if b[2] < fy0 or b[0] > fy1 or b[3] < fx0 or b[1] > fx1]
+            feet = []
+        if not boxes:
+            boxes = feet + (await _arm_boxes(path) if q.get("sleeves") or q.get("holes") else [])
+        path = await _fix_artifacts(path, boxes[:3]) if boxes else path
+        logger.info(f"timing anti-artifact zone fix ({len(boxes)} zones): {time.monotonic() - t0:.1f}s")
     logger.info(f"timing try-on total: {time.monotonic() - t_loop:.1f}s")
     return path
+
+
+async def _kp_boxes(path: str, groups: list, margin: float) -> list:
+    """Boxes (0-1000) around groups of keypoints of the result."""
+    img = np.array(head_lock._open_small(get_object(path)[0], 1024).convert("RGB"))
+    kp = await run_in_threadpool(pose_lock.keypoints, img)
+    H, W = img.shape[:2]
+    m = margin * max(H, W)
+    out = []
+    for grp in groups:
+        pts = [kp[i, :2] for i in grp if kp is not None and kp[i, 2] > pose_lock.MIN_SCORE]
+        if len(pts) >= 1:
+            p = np.array(pts)
+            out.append([float(max(0, (p[:, 1].min() - m) / H * 1000)), float(max(0, (p[:, 0].min() - m) / W * 1000)),
+                        float(min(1000, (p[:, 1].max() + m) / H * 1000)), float(min(1000, (p[:, 0].max() + m) / W * 1000))])
+    return out
+
+
+async def _arm_boxes(path: str) -> list:
+    return await _kp_boxes(path, [(5, 7, 9), (6, 8, 10)], 0.05)
 
 
 async def _feet_boxes(path: str) -> list:
@@ -2515,7 +2558,7 @@ async def _feet_boxes(path: str) -> list:
              float(min(1000, (p[:, 1].max() + m) / H * 1000)), float(min(1000, (p[:, 0].max() + m) / W * 1000))]]
 
 
-async def _fix_artifacts(path: str, boxes: list = None, prompt: str = None) -> str:
+async def _fix_artifacts(path: str, boxes: list = None, prompt: str = None, ref: bytes = None) -> str:
     """ANTI-ARTEFATTO: local defects (feet, hands, shoes, holes) rebuilt in HD, ONE generation per zone (max 2), pasted only on the
     defect. The look is never regenerated."""
     img_b = get_object(path)[0]
@@ -2535,7 +2578,7 @@ async def _fix_artifacts(path: str, boxes: list = None, prompt: str = None) -> s
         buf = io.BytesIO()
         Image.fromarray(crop).save(buf, "PNG")
         try:
-            out = await tryon_quality.fix_zone(buf.getvalue(), "zonefix", prompt)
+            out = await tryon_quality.fix_zone(buf.getvalue(), "zonefix", prompt, ref)
         except Exception as e:
             logger.warning(f"anti-artifact zone fix failed: {e}")
             continue
@@ -2590,7 +2633,8 @@ async def _clean_floor(person_path: str, path: str) -> str:
 
 async def _render_single(user_id: str, person_path: str, garment_path: str, category_in: Optional[str], name: Optional[str], m_doc: dict, extra: str = "") -> str:
     txt = f"{name or category_in or 'garment'} ({category_in or ''})"
-    return await _old_clothes_loop(person_path, txt, lambda note: _render_single_once(user_id, person_path, garment_path, category_in, name, m_doc, extra + note))
+    return await _old_clothes_loop(person_path, txt, lambda note: _render_single_once(user_id, person_path, garment_path, category_in, name, m_doc, extra + note),
+                                   garment_path if (category_in or "").lower() == "shoes" else None)
 
 
 async def _render_single_once(user_id: str, person_path: str, garment_path: str, category_in: Optional[str], name: Optional[str], m_doc: dict, extra: str = "") -> str:
@@ -2691,7 +2735,7 @@ async def _tryon_generate(req: TryOnRequest, user: User):
                                                      _owner_extra(user, req.preserve_pose) + cov + await _pose_rules(req.person_path, [g]))
     notes = {}
     _NOTES.set(notes)
-    _, result_path = await _system_with_lace(user.user_id, req.person_path, sheer, "tryon", system())
+    _, result_path = await _system_with_lace(user.user_id, req.person_path, sheer, "tryon", system(), [g])
     notice = notes.get("notice")
 
     rec_size = recommend_size(m_doc, "top" if req.garment_category == "suit" else req.garment_category)
@@ -3951,7 +3995,7 @@ async def _compose_outfit(user: User, person_path: Optional[str], items: list, l
         return rp
     txt = "; ".join(f"{g.get('name') or g.get('category')} ({g.get('category')})" for g in items)
     person_path = await _resolve_person(user, person_path)
-    rp = await _old_clothes_loop(person_path, txt, once)
+    rp = await _old_clothes_loop(person_path, txt, once, next((g["image_path"] for g in items if (g.get("category") or "").lower() == "shoes"), None))
     return resolved.get("p", person_path), rp
 
 
@@ -4060,7 +4104,7 @@ async def _outfit_generate(req: OutfitGenerateRequest, user: User):
     cov, sheer = await _coverage(items)
     person_path, result_path = await _system_with_lace(user.user_id, req.person_path, sheer, "outfit",
                                                        _compose_outfit(user, req.person_path, items, _DEFAULT_LAYER_TEXT, _owner_extra(user, False) + cov
-                                                                       + await _pose_rules(req.person_path, items)))
+                                                                       + await _pose_rules(req.person_path, items)), items)
 
     total_price = sum((g.get("price") or 0) for g in items)
     outfit_id = str(uuid.uuid4())
@@ -4140,7 +4184,7 @@ async def _outfit_generate_from_uploads(req: GridOutfitRequest, user: User):
     _NOTES.set(notes)
     person_path, result_path = await _system_with_lace(user.user_id, req.person_path, sheer, "outfit",
                                                        _compose_outfit(user, req.person_path, items, _GRID_LAYER_TEXT, _owner_extra(user, req.preserve_pose) + cov
-                                                                       + await _pose_rules(req.person_path, items)))
+                                                                       + await _pose_rules(req.person_path, items)), items)
     notice = notes.get("notice")
     doc = {
         "id": str(uuid.uuid4()),
@@ -4384,7 +4428,71 @@ RETRY_WINDOW_H = 24
 
 
 class RetryIn(BaseModel):
-    reason: str = Field(pattern="^(sfondo|viso|capo|altro|mani_viso)$")
+    reason: str = Field("altro", pattern="^(sfondo|viso|capo|altro|mani_viso)$")
+    mode: Optional[str] = Field(None, pattern="^edit$")
+    zones: List[str] = []
+
+
+# MODALITÀ EDIT (owner): start from the previous RESULT, rebuild only the chosen zones, everything else copied pixel by pixel.
+EDIT_ZONES = {  # zone -> (keypoint groups, margin, garment categories used as reference, prompt)
+    "viso": ([(0, 1, 2, 3, 4)], 0.05, None,
+             "Rebuild ONLY the FACE in HD: the SAME woman, same identity as the reference, natural, sharp, same light, same head position "
+             "and hair. Change nothing else."),
+    "scarpe": ([(15, 16, 17, 18, 19, 20, 21, 22)], 0.06, ("shoes",),
+               "Rebuild ONLY the FEET / SHOES in HD: each shoe ONE piece with heel / sole attached, whole feet, both shoes the same model, "
+               "resting naturally on the ground. Change nothing else."),
+    "maniche": ([(5, 7, 9), (6, 8, 10)], 0.05, ("top", "outerwear", "dress", "suit"),
+                "Rebuild ONLY the SLEEVES in HD: attached to the shoulders, continuous, following the arms, no holes, no missing pieces, "
+                "same fabric and colour as the garment; same arms and hands. Change nothing else."),
+    "busto": ([(5, 6, 11, 12)], 0.04, ("top", "outerwear", "dress", "suit"),
+              "Rebuild ONLY the TORSO garment in HD: complete, continuous, no holes or cuts, hem closed down to the trousers, same fabric, "
+              "colour and print as the garment. Same body and pose. Change nothing else."),
+    "gambe": ([(11, 13, 15), (12, 14, 16)], 0.04, ("bottom", "dress", "suit"),
+              "Rebuild ONLY the LEGS garment in HD: complete, continuous, same fabric, colour and details as the garment, same leg pose, "
+              "no extra limbs. Change nothing else."),
+}
+
+
+async def _edit_zones(doc: dict, zones: list) -> str:
+    path = doc["result_path"]
+    items = doc.get("items") or [{"category": doc.get("garment_category"), "image_path": doc.get("garment_path")}]
+    for z in [z for z in EDIT_ZONES if z in zones]:
+        groups, margin, cats, prompt = EDIT_ZONES[z]
+        boxes = await _kp_boxes(path, groups, margin)
+        ref = None
+        if cats is None:
+            pb = (await _kp_boxes(doc["person_path"], groups, 0.08))[:1]
+            if pb:
+                im = head_lock._open_small(await _person_cropped(doc["person_path"]), 1024).convert("RGB")
+                y0, x0, y1, x1 = pb[0]
+                b = io.BytesIO()
+                im.crop((int(x0 * im.width / 1000), int(y0 * im.height / 1000), int(x1 * im.width / 1000), int(y1 * im.height / 1000))).save(b, "PNG")
+                ref = b.getvalue()
+        else:
+            g = next((i for i in items if (i.get("category") or "").lower() in cats and i.get("image_path")), None)
+            ref = get_object(g["image_path"])[0] if g else None
+        t0 = time.monotonic()
+        path = await _fix_artifacts(path, boxes, tryon_quality.EDIT_PROMPT + prompt, ref)
+        logger.info(f"edit zone {z}: {len(boxes)} boxes ({time.monotonic() - t0:.1f}s)")
+    return path
+
+
+async def _edit_retry(coll, kind: str, item_id: str, body: RetryIn, user: User):
+    if not _is_owner_email(user.email):
+        raise HTTPException(status_code=403, detail="Modalità edit riservata")
+    zones = [z for z in body.zones if z in EDIT_ZONES]
+    if not zones:
+        raise HTTPException(status_code=400, detail="Scegli almeno una zona")
+    doc = await coll.find_one({"id": item_id, "user_id": user.user_id}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Prova non trovata")
+    new_path = await _edit_zones(doc, zones)
+    now = datetime.now(timezone.utc).isoformat()
+    upd = {"previous_result_path": doc["result_path"], "result_path": new_path, "edited_zones": zones, "edited_at": now}
+    await coll.update_one({"id": item_id}, {"$set": upd})
+    await db.free_retries.insert_one({"id": str(uuid.uuid4()), "user_id": user.user_id, "email": user.email, "kind": kind, "item_id": item_id,
+                                      "reason": "edit:" + ",".join(zones), "previous_result_path": doc["result_path"], "result_path": new_path, "created_at": now})
+    return {**doc, **upd}
 
 
 def _retry_state(doc: dict) -> dict:
@@ -4454,6 +4562,8 @@ async def tryon_retry_state(tryon_id: str, user: User = Depends(get_current_user
 
 @api_router.post("/tryons/{tryon_id}/retry")
 async def tryon_retry(tryon_id: str, body: RetryIn, user: User = Depends(get_current_user)):
+    if body.mode == "edit":
+        return await _start_render_job(user, _edit_retry(db.tryons, "tryon", tryon_id, body, user))
     return await _start_render_job(user, _tryon_retry(tryon_id, body, user))
 
 
@@ -4501,6 +4611,8 @@ async def _tryon_retry(tryon_id: str, body: RetryIn, user: User):
 
 @api_router.post("/outfits/{outfit_id}/retry")
 async def outfit_retry(outfit_id: str, body: RetryIn, user: User = Depends(get_current_user)):
+    if body.mode == "edit":
+        return await _start_render_job(user, _edit_retry(db.outfits, "outfit", outfit_id, body, user))
     return await _start_render_job(user, _outfit_retry(outfit_id, body, user))
 
 

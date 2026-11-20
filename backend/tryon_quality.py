@@ -227,7 +227,8 @@ async def old_clothes_qc(person_bytes: bytes, result: bytes, garments_txt: str) 
         "double fingers or toes, deformed feet or hands, "
         "shoes / sandals fused with the floor — check feet, hands, shoes and the floor right around them.\n"
         "shoes_wrong: a shoe and its heel / sole are not ONE attached piece (detached, double, fake or random heel on the floor), a foot is "
-        "erased / faded / half gone, the two shoes differ (shape, heel height), a heel points against its own shoe, or (kneeling) shoes on "
+        "erased / faded / half gone, a heel MISSING (heeled shoe without heel), distorted shoes, a shoe model different from the requested "
+        "one, the two shoes differ (shape, heel height), a heel points against its own shoe, or (kneeling) shoes on "
         "top of the jeans / mid-leg / cutting or covering the jeans instead of on the feet under the knees.\n"
         "holes_or_gaps: holes, cuts, missing fabric or empty zones the product does not have (under the arms, on the hips, inside lace), "
         "open junctions between garments or sleeve-shoulder, loose flaps flying on their own.\n"
@@ -258,7 +259,7 @@ async def old_clothes_qc(person_bytes: bytes, result: bytes, garments_txt: str) 
                                           "pants_incomplete", "coverage_wrong", "not_fitting_pose", "edge_artifacts", "outfit_incomplete", "local_artifacts", "shoes_wrong", "holes_or_gaps"))
     # COMPLETE outfit first (top + trousers worn, full body, no inset): an incomplete photo always ranks below a complete one.
     inc = int(any(d.get(k) is True for k in ("outfit_incomplete", "pants_incomplete", "solid_parts_not_solid")))
-    return {"ok": bad == 0, "bad": bad, "incomplete": inc, "artifacts": d.get("local_artifacts") is True, "shoes_wrong": d.get("shoes_wrong") is True, "holes": d.get("holes_or_gaps") is True, "issues": str(d.get("issues") or "")[:400]}
+    return {"ok": bad == 0, "bad": bad, "incomplete": inc, "artifacts": d.get("local_artifacts") is True, "shoes_wrong": d.get("shoes_wrong") is True, "holes": d.get("holes_or_gaps") is True, "sleeves": d.get("sleeves_detached") is True, "issues": str(d.get("issues") or "")[:400]}
 
 
 async def transparent_qc(garment: bytes) -> str:
@@ -311,7 +312,8 @@ async def artifact_boxes(img: bytes) -> list:
     small = await run_in_threadpool(head_lock.downscale, img, 1024)
     prompt = ("Virtual try-on photo of ONE person. Find every LOCAL DEFECT: black or dark blurred smudges, locally blurred areas, doubled or "
               "ghost parts, EXTRA arms / hands / legs / feet (more than 2), double fingers or toes, deformed feet or hands, shoes / sandals fused "
-              "with the floor, a heel detached from its shoe, HOLES / gaps / missing fabric inside a garment (sleeve-shoulder, top-trousers, "
+              "with the floor, a heel detached from its shoe, HEEL MISSING / a heeled shoe without its heel, distorted shoes, a SLEEVE with a missing "
+              "piece or detached from the shoulder, HOLES / gaps / missing fabric inside a garment (sleeve-shoulder, top-trousers, "
               "elbow, inner elbow-hip), a "
               "double / fake / random heel, an erased or half-gone foot, two shoes that differ or a heel pointing against its shoe. Check feet, hands, shoes "
               "and the floor right around them first. Return ONLY JSON: {\"defects\": [{\"box_2d\": [ymin, xmin, ymax, xmax]}]} "
@@ -345,9 +347,20 @@ BAREFOOT_PROMPT = (
     "Jeans clean and intact, nothing on them. Change nothing else. Never draw a person, a face or a miniature. No text, no frame.")
 
 
-async def fix_zone(crop: bytes, tag: str, prompt: str = None) -> bytes:
-    return await _image_call("You are a high-end photo retoucher: minimal local HD repairs only.", prompt or ZONE_FIX_PROMPT,
-                             [ImageContent(base64.b64encode(crop).decode())], tag, "1:1")
+EDIT_PROMPT = ("IMAGE 1 is a square crop of a finished fashion photo of ONE person. Keep identical framing, scale, pose, light and "
+               "background; never draw a second person, a face elsewhere or a miniature. ")
+
+REF_NOTE = ("\nIMAGE 2 is the reference for this zone (the PRODUCT photo of the item worn here, or her original face): reference only, "
+            "never paste it, never draw a person from it. Keep EXACTLY this model / identity — same shape, colour, heel / sole, details — "
+            "never a different model. Return the crop of IMAGE 1.")
+
+
+async def fix_zone(crop: bytes, tag: str, prompt: str = None, ref: bytes = None) -> bytes:
+    contents = [ImageContent(base64.b64encode(crop).decode())]
+    if ref:
+        contents.append(ImageContent(base64.b64encode(await run_in_threadpool(head_lock.downscale, ref, 768)).decode()))
+    return await _image_call("You are a high-end photo retoucher: minimal local HD repairs only.", (prompt or ZONE_FIX_PROMPT) + (REF_NOTE if ref else ""),
+                             contents, tag, "1:1")
 
 
 def old_clothes_note(issues: str) -> str:

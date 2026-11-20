@@ -6,11 +6,55 @@ import TryOnProgress from "@/components/TryOnProgress";
 import { notifyTabReady } from "@/lib/tabNotify";
 import { postRender } from "@/lib/renderJob";
 import { askBook } from "@/components/PoseBook";
+import { useAuth } from "@/lib/auth";
 
 const REASONS = [["mani_viso", "Mani o volto strani"], ["sfondo", "Sfondo cambiato"], ["viso", "Viso diverso"], ["capo", "Capo sbagliato"], ["altro", "Altro"]];
 const DAY = 24 * 3600 * 1000;
 
-export default function FreeRetry({ kind, item, onDone }) {
+const ZONES = [["viso", "Viso"], ["scarpe", "Scarpe / piedi"], ["maniche", "Maniche"], ["busto", "Busto"], ["gambe", "Gambe"]];
+
+// MODALITÀ EDIT (owner): rebuild only the chosen zones of the current result, everything else stays pixel by pixel.
+function EditZones({ kind, item, onDone }) {
+  const [zones, setZones] = useState([]);
+  const [busy, setBusy] = useState(false);
+  const toggle = (z) => setZones((a) => (a.includes(z) ? a.filter((x) => x !== z) : [...a, z]));
+  const go = async () => {
+    setBusy(true);
+    try {
+      const { data } = await postRender(`/${kind}/${item.id}/retry`, { mode: "edit", zones });
+      toast.success("Zone rifatte, il resto è invariato");
+      notifyTabReady(); setZones([]); onDone(data);
+    } catch (e) { toast.error(e?.response?.data?.detail || "Modifica non riuscita"); }
+    finally { setBusy(false); }
+  };
+  return (
+    <div className="border hairline bg-white p-4 mb-3" data-testid="edit-zones-panel">
+      <div className="label-caps">Modalità edit · rifai solo le zone scelte</div>
+      <div className="mt-3 flex flex-wrap gap-2">
+        {ZONES.map(([k, l]) => (
+          <button key={k} onClick={() => toggle(k)} disabled={busy}
+            className={`px-3 py-1.5 text-xs border hairline ${zones.includes(k) ? "bg-[#0A0A0A] text-white" : "bg-white"}`} data-testid={`edit-zone-${k}`}>{l}</button>
+        ))}
+      </div>
+      <button onClick={go} disabled={!zones.length || busy} className="btn-primary mt-4 disabled:opacity-40" data-testid="edit-zones-confirm">
+        {busy ? "Rifaccio le zone…" : "Rifai solo queste zone"}
+      </button>
+      <TryOnProgress active={busy} className="mt-4" testid="edit-zones-progress" />
+    </div>
+  );
+}
+
+export default function FreeRetry(props) {
+  const isOwner = useAuth()?.user?.is_owner === true;
+  return (
+    <>
+      {isOwner && <EditZones {...props} />}
+      <FreeRetryInner {...props} />
+    </>
+  );
+}
+
+function FreeRetryInner({ kind, item, onDone }) {
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState(null);
   const [busy, setBusy] = useState(false);
