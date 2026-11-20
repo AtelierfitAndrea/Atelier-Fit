@@ -284,15 +284,15 @@ def coverage_rule(level: str, category: str, name: str) -> str:
         return head + ("• Waistband and hips SOLID OPAQUE fabric. The lace / sheer parts lie ON TOP of an OPAQUE lining "
                        f"({'nude skin-tone' if level == 'light' else 'same colour as the garment'}) that fully covers the legs under it: "
                        "no see-through to skin, underwear or old clothes.\n")
-    return head + ("• The lace sits DIRECTLY on the skin (REGOLA 13/11): NO opaque lining, NEVER black fabric under red lace, nothing of "
-                   "IMAGE 1 under it. If a lining is needed, only a sheer skin-tone one, never opaque, never black.\n"
+    return head + ("• The lace top has a SKIN-TONE (nude) lining INTEGRATED in the top, directly on the body (REGOLA 13/11): NEVER a black "
+                   "lining, NEVER black fabric or the original swimsuit under the red lace, nothing of IMAGE 1 under it.\n"
                    "• NEVER add a bra or any underwear. NO separate or detached black straps, NO floating straps: the top's own straps / "
                    "shoulders rest ON the shoulders, attached to the top, neckline exactly as the product.\n")
 
 
 OLD_ZONE_PROMPT = (
     "IMAGE 1 is a square crop of a try-on photo of ONE woman. The ORIGINAL swimsuit / bodysuit / underwear of the base photo is still "
-    "visible under or through the new lace garment: remove it 100%. The lace sits DIRECTLY on the skin, no black fabric under red lace, "
+    "visible under or through the new lace garment: remove it 100%. Under the lace only skin / its nude skin-tone lining, no black fabric, "
     "no other layer. Keep the lace pattern, colour, shape and length exactly as they are, same body, pose and light. Never draw a person, "
     "a face or a miniature. No text, no frame.")
 

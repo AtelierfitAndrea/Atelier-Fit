@@ -1715,8 +1715,8 @@ async def _system_with_lace(user_id: str, person_path: str, sheer: list, kind: s
             out = await run_in_threadpool(ext_lock.lace_layer, out, person, ext, (g.get("category") or "top").lower())
     if out is base:
         return pp, rp
-    # The external lace is kept as it is. ONLY exception (REGOLA FISSA): the original swimsuit / bodysuit still visible under the
-    # lace -> that zone alone is redone.
+    # The external lace is kept as it is. ONLY exception (REGOLA FISSA): the original swimsuit / bodysuit still visible -> the zone is
+    # redone on the SYSTEM result (under the lace) and the external lace is laid again on top, pixel for pixel: the lace is never touched.
     path = f"{APP_NAME}/{kind}/{user_id}/{uuid.uuid4().hex}.jpg"
     put_object(path, out, "image/jpeg")
     logger.info(f"system + external lace -> {path}")
@@ -1724,8 +1724,15 @@ async def _system_with_lace(user_id: str, person_path: str, sheer: list, kind: s
     q = await tryon_quality.old_clothes_qc(get_object(pp)[0], out, txt)
     if q.get("old"):
         boxes = await tryon_quality.old_clothes_boxes(out) or await _kp_boxes(path, [(5, 6, 11, 12)], 0.03)
-        logger.info(f"lace layer: original clothes still visible ({q['issues'][:100]}), {len(boxes)} zones redone")
-        path = await _fix_artifacts(path, boxes, tryon_quality.OLD_ZONE_PROMPT)
+        logger.info(f"lace layer: original clothes still visible ({q['issues'][:100]}), {len(boxes)} zones redone under the lace")
+        fixed_rp = await _fix_artifacts(rp, boxes, tryon_quality.OLD_ZONE_PROMPT)
+        if fixed_rp != rp:
+            out = get_object(fixed_rp)[0]
+            for g, ext in zip(sheer, exts):
+                if ext:
+                    out = await run_in_threadpool(ext_lock.lace_layer, out, person, ext, (g.get("category") or "top").lower())
+            path = f"{APP_NAME}/{kind}/{user_id}/{uuid.uuid4().hex}.jpg"
+            put_object(path, out, "image/jpeg")
     return pp, path
 
 
