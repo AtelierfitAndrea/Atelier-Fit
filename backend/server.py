@@ -1715,10 +1715,17 @@ async def _system_with_lace(user_id: str, person_path: str, sheer: list, kind: s
             out = await run_in_threadpool(ext_lock.lace_layer, out, person, ext, (g.get("category") or "top").lower())
     if out is base:
         return pp, rp
-    # The external lace / transparency is copied pixel by pixel as it is: never checked, corrected or reverted afterwards.
+    # The external lace is kept as it is. ONLY exception (REGOLA FISSA): the original swimsuit / bodysuit still visible under the
+    # lace -> that zone alone is redone.
     path = f"{APP_NAME}/{kind}/{user_id}/{uuid.uuid4().hex}.jpg"
     put_object(path, out, "image/jpeg")
     logger.info(f"system + external lace -> {path}")
+    txt = "; ".join(f"{g.get('name') or g.get('category')} ({g.get('category')})" for g in (items or sheer))
+    q = await tryon_quality.old_clothes_qc(get_object(pp)[0], out, txt)
+    if q.get("old"):
+        boxes = await tryon_quality.old_clothes_boxes(out) or await _kp_boxes(path, [(5, 6, 11, 12)], 0.03)
+        logger.info(f"lace layer: original clothes still visible ({q['issues'][:100]}), {len(boxes)} zones redone")
+        path = await _fix_artifacts(path, boxes, tryon_quality.OLD_ZONE_PROMPT)
     return pp, path
 
 
@@ -2315,7 +2322,11 @@ DRESSING_RULE = (
     "CONTINUITY — EVERY GARMENT, ALWAYS: never empty spaces, holes or openings that the product does not have. Every garment "
     "continuous: no holes, cuts or missing fabric under the arms, on the hips or between garments. No loose flaps flying on their own: "
     "every sleeve, edge and strip attached to its garment and falling naturally on the body. Sheer / lace / mesh: the fabric is always "
-    "there, continuous and complete, no empty zones. Junctions CLOSED: top-trousers, top-skirt, sleeve-shoulder, never a gap.\n"
+    "there, continuous and complete, no empty zones. Junctions CLOSED: sleeve-shoulder, never a gap; top-trousers / top-skirt closed ONLY "
+    "if the product reaches them.\n"
+    "EXACT LENGTH — ALWAYS: every garment keeps the EXACT length of its product image. A CROP top stays short: it ends exactly where the "
+    "product ends (e.g. at the front bow / knot); below it the bare belly / the trousers waistband show. NEVER lengthen a garment, never "
+    "add fabric under its hem, never cover the belly with fabric the product does not have.\n"
     "KNEELING POSE — EVERY KNEELING PHOTO, NO EXCEPTIONS: BOTH knees on the ground, folded under the body, feet BEHIND, never in front; "
     "NO raised knee, NO flat foot in front with the leg bent at 90 degrees, NO squat, NO lunge, NO leg forward; legs symmetric. If a knee "
     "comes up, redo the pose with both knees on the ground. BOTH knees on the ground, straight and symmetric; back straight, torso facing "
@@ -2476,8 +2487,8 @@ async def _old_clothes_loop(person_path: str, garments_txt: str, once, shoe_path
     rank = lambda r: (r[1].get("incomplete", 0), r[1]["bad"])  # noqa: E731
     best = min(results, key=rank)
     logger.info(f"timing {len(results)} variants + final check: {time.monotonic() - t_loop:.1f}s")
-    # SPEED (owner): rebuild ONLY when no variant is usable (incomplete outfit). Transparency / body under lace never triggers it.
-    if best[1].get("incomplete"):
+    # Rebuild ONLY when no variant is usable (incomplete outfit) or the ORIGINAL swimsuit / bodysuit is still visible (REGOLA FISSA).
+    if best[1].get("incomplete") or best[1].get("old"):
         try:
             again = await variant(tryon_quality.old_clothes_note(best[1]["issues"]))
             logger.info(f"final check rebuild ok={again[1]['ok']} bad={again[1]['bad']} issues={again[1]['issues'][:160]}")
@@ -4441,7 +4452,8 @@ EDIT_ZONES = {  # zone -> (keypoint groups, margin, garment categories used as r
                 "Rebuild ONLY the SLEEVES in HD: attached to the shoulders, continuous, following the arms, no holes, no missing pieces, "
                 "same fabric and colour as the garment; same arms and hands. Change nothing else."),
     "busto": ([(5, 6, 11, 12)], 0.04, ("top", "outerwear", "dress", "suit"),
-              "Rebuild ONLY the TORSO garment in HD: complete, continuous, no holes or cuts, hem closed down to the trousers, same fabric, "
+              "Rebuild ONLY the TORSO garment in HD: complete, continuous, no holes or cuts, EXACT length of the product (a crop top stays short), "
+              "same fabric, "
               "colour and print as the garment. Same body and pose. Change nothing else."),
     "gambe": ([(11, 13, 15), (12, 14, 16)], 0.04, ("bottom", "dress", "suit"),
               "Rebuild ONLY the LEGS garment in HD: complete, continuous, same fabric, colour and details as the garment, same leg pose, "

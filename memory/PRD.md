@@ -688,3 +688,13 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 - Punto 4 (avviso cambio outfit) ANNULLATO per sempre: nessun avviso, nessun outfit di riferimento vincolante (mai implementato)
 - Prompt EXACT SLOTS: esattamente i capi degli slot attuali, stesso modello, scarpe intere con tacco/suola, maniche/maglie complete
 - Pizzo/trasparenza del server esterno: copiato pixel per pixel, applicato DOPO tutte le correzioni; tolto il controllo/ripristino dopo lo strato di pizzo
+
+## 2026-11-16 (2) — LUNGHEZZA ESATTA del capo (DONE, solo prompt/controllo)
+- Causa: regola CONTINUITY "giunzione top-pantaloni sempre chiusa" allungava i crop top. Ora chiusa solo se il prodotto ci arriva
+- Prompt EXACT LENGTH (crop top resta corto, finisce dove finisce il prodotto, pancia/cintura visibili, mai tessuto aggiunto); edit "busto" idem
+- Controllo finale: flag length_wrong (conta come difetto nella scelta tra le 3 varianti); pancia scoperta di un crop top non è un buco. Nessuna correzione di zona automatica sul pizzo
+
+## 2026-11-16 (3) — Ricostruzione ripristinata SOLO per costume/body originale visibile (DONE, nessuna generazione)
+- `_old_clothes_loop`: ricostruzione se outfit incompleto OPPURE old_clothes_visible (REGOLA FISSA 13/11)
+- `_system_with_lace`: dopo lo strato di pizzo controllo finale; se il costume/body originale è visibile -> `old_clothes_boxes` (AI, fallback busto da keypoints) + zona rifatta con OLD_ZONE_PROMPT (pizzo direttamente sul corpo, vietato nero sotto rosso). Altrimenti pizzo intatto
+- Produzione resta alla versione del 15/11 (non ripubblicare senza OK)

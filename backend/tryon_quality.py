@@ -212,7 +212,7 @@ async def old_clothes_qc(person_bytes: bytes, result: bytes, garments_txt: str) 
         f"The ONLY garments allowed in IMAGE 2: {garments_txt}.\n"
         "Return ONLY JSON: {\"old_clothes_visible\": bool, \"extra_garments\": bool, \"double_layer\": bool, \"solid_parts_not_solid\": bool, "
         "\"sleeves_detached\": bool, \"pants_incomplete\": bool, \"coverage_wrong\": bool, \"not_fitting_pose\": bool, \"edge_artifacts\": bool, "
-        "\"outfit_incomplete\": bool, \"local_artifacts\": bool, \"shoes_wrong\": bool, \"holes_or_gaps\": bool, "
+        "\"outfit_incomplete\": bool, \"local_artifacts\": bool, \"shoes_wrong\": bool, \"holes_or_gaps\": bool, \"length_wrong\": bool, "
         "\"issues\": \"short English list\"}\n"
         "solid_parts_not_solid: waistband, hips, seams, buttons or hems are see-through or missing (a garment made only of transparency).\n"
         "sleeves_detached: a sleeve is floating, cut or not continuous with the top at the shoulder, or does not follow the arm.\n"
@@ -231,7 +231,10 @@ async def old_clothes_qc(person_bytes: bytes, result: bytes, garments_txt: str) 
         "one, the two shoes differ (shape, heel height), a heel points against its own shoe, or (kneeling) shoes on "
         "top of the jeans / mid-leg / cutting or covering the jeans instead of on the feet under the knees.\n"
         "holes_or_gaps: holes, cuts, missing fabric or empty zones the product does not have (under the arms, on the hips, inside lace), "
-        "open junctions between garments or sleeve-shoulder, loose flaps flying on their own.\n"
+        "open junctions between garments or sleeve-shoulder, loose flaps flying on their own. A crop top that shows the belly as in the "
+        "product is NOT a gap.\n"
+        "length_wrong: a garment is longer or shorter than in its product image (e.g. a crop top lengthened with extra fabric under the "
+        "hem / bow covering the belly).\n"
         "IGNORE fabric scraps, debris or objects on the floor outside the body: they are cleaned afterwards, never flag them.\n"
         "not_fitting_pose: the garment does not drape on the real pose (seated/standing), floats or is pasted flat.\n"
         "edge_artifacts: white patches, colour smudges or halos ON or right around the body (not on the floor).\n"
@@ -256,10 +259,10 @@ async def old_clothes_qc(person_bytes: bytes, result: bytes, garments_txt: str) 
         return {"ok": True, "bad": 0, "incomplete": 0, "issues": ""}
     d = _extract(reply)
     bad = sum(d.get(k) is True for k in ("old_clothes_visible", "extra_garments", "double_layer", "solid_parts_not_solid", "sleeves_detached",
-                                          "pants_incomplete", "coverage_wrong", "not_fitting_pose", "edge_artifacts", "outfit_incomplete", "local_artifacts", "shoes_wrong", "holes_or_gaps"))
+                                          "pants_incomplete", "coverage_wrong", "not_fitting_pose", "edge_artifacts", "outfit_incomplete", "local_artifacts", "shoes_wrong", "holes_or_gaps", "length_wrong"))
     # COMPLETE outfit first (top + trousers worn, full body, no inset): an incomplete photo always ranks below a complete one.
     inc = int(any(d.get(k) is True for k in ("outfit_incomplete", "pants_incomplete", "solid_parts_not_solid")))
-    return {"ok": bad == 0, "bad": bad, "incomplete": inc, "artifacts": d.get("local_artifacts") is True, "shoes_wrong": d.get("shoes_wrong") is True, "holes": d.get("holes_or_gaps") is True, "sleeves": d.get("sleeves_detached") is True, "issues": str(d.get("issues") or "")[:400]}
+    return {"ok": bad == 0, "bad": bad, "incomplete": inc, "artifacts": d.get("local_artifacts") is True, "shoes_wrong": d.get("shoes_wrong") is True, "holes": d.get("holes_or_gaps") is True, "old": d.get("old_clothes_visible") is True, "sleeves": d.get("sleeves_detached") is True, "issues": str(d.get("issues") or "")[:400]}
 
 
 async def transparent_qc(garment: bytes) -> str:
@@ -285,6 +288,31 @@ def coverage_rule(level: str, category: str, name: str) -> str:
                    "lace): no see-through to skin, nothing of IMAGE 1 under it.\n"
                    "• NEVER add a bra or any underwear. NO separate or detached black straps, NO floating straps: the top's own straps / "
                    "shoulders rest ON the shoulders, attached to the top, neckline exactly as the product.\n")
+
+
+OLD_ZONE_PROMPT = (
+    "IMAGE 1 is a square crop of a try-on photo of ONE woman. The ORIGINAL swimsuit / bodysuit / underwear of the base photo is still "
+    "visible under or through the new lace garment: remove it 100%. The lace sits DIRECTLY on the skin, no black fabric under red lace, "
+    "no other layer. Keep the lace pattern, colour, shape and length exactly as they are, same body, pose and light. Never draw a person, "
+    "a face or a miniature. No text, no frame.")
+
+
+async def old_clothes_boxes(img: bytes) -> list:
+    """Boxes (0-1000) where the ORIGINAL swimsuit / bodysuit is still visible under or through the new garments."""
+    small = await run_in_threadpool(head_lock.downscale, img, 1024)
+    prompt = ("Virtual try-on photo of ONE woman wearing new garments (some in lace / sheer fabric). Find every zone where an ORIGINAL "
+              "swimsuit, bodysuit, bra, briefs or straps from the base photo is still visible under or through the new garments (e.g. black "
+              "fabric under red lace). Return ONLY JSON: {\"zones\": [{\"box_2d\": [ymin, xmin, ymax, xmax]}]} normalised 0-1000. Empty list if none.")
+    try:
+        chat = LlmChat(api_key=os.environ["EMERGENT_LLM_KEY"], session_id=f"oldz-{uuid.uuid4().hex[:8]}",
+                       system_message="You are a precise photo retouch inspector. Reply with JSON only.")
+        chat.with_model("gemini", QC_MODEL)
+        reply = await chat.send_message(UserMessage(text=prompt, file_contents=[ImageContent(base64.b64encode(small).decode())]))
+    except Exception as e:
+        logger.warning(f"old clothes zones detection failed: {e}")
+        return []
+    d = _extract(reply)
+    return [b["box_2d"] for b in (d.get("zones") or [])[:2] if isinstance(b, dict) and isinstance(b.get("box_2d"), list) and len(b["box_2d"]) == 4]
 
 
 async def debris_boxes(img: bytes) -> list:
@@ -313,7 +341,7 @@ async def artifact_boxes(img: bytes) -> list:
     prompt = ("Virtual try-on photo of ONE person. Find every LOCAL DEFECT: black or dark blurred smudges, locally blurred areas, doubled or "
               "ghost parts, EXTRA arms / hands / legs / feet (more than 2), double fingers or toes, deformed feet or hands, shoes / sandals fused "
               "with the floor, a heel detached from its shoe, HEEL MISSING / a heeled shoe without its heel, distorted shoes, a SLEEVE with a missing "
-              "piece or detached from the shoulder, HOLES / gaps / missing fabric inside a garment (sleeve-shoulder, top-trousers, "
+              "piece or detached from the shoulder, HOLES / gaps / missing fabric inside a garment (sleeve-shoulder, top-trousers only if the product reaches them, "
               "elbow, inner elbow-hip), a "
               "double / fake / random heel, an erased or half-gone foot, two shoes that differ or a heel pointing against its shoe. Check feet, hands, shoes "
               "and the floor right around them first. Return ONLY JSON: {\"defects\": [{\"box_2d\": [ymin, xmin, ymax, xmax]}]} "
