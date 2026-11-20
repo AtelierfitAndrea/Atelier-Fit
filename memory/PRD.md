@@ -683,3 +683,8 @@ Fashion-savvy online shoppers who want to visualise clothing/shoes on themselves
 - `_system_with_lace`: se lace_layer non applica (registration/pose failed) -> risultato del sistema; altrimenti controllo finale su entrambe e pizzo tenuto solo se non peggiora
 - MODALITÀ EDIT (owner): POST /tryons|/outfits/{id}/retry {mode:"edit", zones:[viso,scarpe,maniche,busto,gambe]} -> parte dal result_path, rifà solo le zone (ref: viso originale / foto prodotto), resto copiato pixel per pixel; non consuma la riprova gratuita. UI: pannello "Modalità edit" in FreeRetry (testid edit-zones-panel, edit-zone-*, edit-zones-confirm)
 - Punto 4 (avviso capi diversi dalla prova di riferimento): IN ATTESA di chiarimento
+
+## 2026-11-16 — Regola EXACT SLOTS + pizzo intoccabile (DONE)
+- Punto 4 (avviso cambio outfit) ANNULLATO per sempre: nessun avviso, nessun outfit di riferimento vincolante (mai implementato)
+- Prompt EXACT SLOTS: esattamente i capi degli slot attuali, stesso modello, scarpe intere con tacco/suola, maniche/maglie complete
+- Pizzo/trasparenza del server esterno: copiato pixel per pixel, applicato DOPO tutte le correzioni; tolto il controllo/ripristino dopo lo strato di pizzo

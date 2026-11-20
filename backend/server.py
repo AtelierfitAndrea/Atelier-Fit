@@ -1715,14 +1715,7 @@ async def _system_with_lace(user_id: str, person_path: str, sheer: list, kind: s
             out = await run_in_threadpool(ext_lock.lace_layer, out, person, ext, (g.get("category") or "top").lower())
     if out is base:
         return pp, rp
-    # FINAL CHECK again after the lace layer: kept only if it is not worse than the system result.
-    txt = "; ".join(f"{g.get('name') or g.get('category')} ({g.get('category')})" for g in (items or sheer))
-    pb = get_object(pp)[0]
-    q0, q1 = await asyncio.gather(tryon_quality.old_clothes_qc(pb, base, txt), tryon_quality.old_clothes_qc(pb, out, txt))
-    logger.info(f"lace layer final check: system bad={q0['bad']} with lace bad={q1['bad']} ({q1['issues'][:120]})")
-    if (q1.get("incomplete", 0), q1["bad"]) > (q0.get("incomplete", 0), q0["bad"]):
-        logger.info("lace layer worse than the system result: not applied")
-        return pp, rp
+    # The external lace / transparency is copied pixel by pixel as it is: never checked, corrected or reverted afterwards.
     path = f"{APP_NAME}/{kind}/{user_id}/{uuid.uuid4().hex}.jpg"
     put_object(path, out, "image/jpeg")
     logger.info(f"system + external lace -> {path}")
@@ -2334,6 +2327,9 @@ DRESSING_RULE = (
     "POSE LOCKED — ALWAYS: never change, turn, move or invent the person's position on your own initiative: same position, same spot as "
     "IMAGE 1. ONE person only: ONE body, ONE head, never a second person, a miniature or a pasted copy; the body is ONE piece, whole, "
     "connected and proportioned (head, torso, legs, feet attached, no cuts, no seams, no overlaps).\n"
+    "EXACT SLOTS — ALWAYS: dress the person in EXACTLY the garments of the product images given now (any top, trousers, shoes: "
+    "sandals, pumps, boots...): same model, never replaced by another one; shoes whole with their heel / sole, never distorted; "
+    "sleeves and tops complete, no missing pieces.\n"
     "GLOBAL RULE — EVERY PHOTO, ALWAYS:\n"
     "• The garment stays ONLY on the body, never outside it. NO fabric scraps, NO pieces of clothing, NO red or lace pieces on the floor.\n"
     "• Floor always clean, empty and uniform as in IMAGE 1: no objects, no shadows of objects, no debris, no decorative fabric, no props.\n"
