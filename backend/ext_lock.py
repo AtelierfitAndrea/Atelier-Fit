@@ -103,19 +103,21 @@ def clean_floor(result: bytes, person: bytes, boxes=()):
         cv2.circle(core, tuple(np.int32(c)), int(0.9 * up_len), 255, -1)
     near = cv2.dilate(core, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (int(0.7 * up_len) | 1,) * 2)) > 0
     ch = cv2.morphologyEx((_blur_diff(G, O) > 28).astype(np.uint8), cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
-    n, lab = cv2.connectedComponents(ch)
-    touch = np.zeros(n, bool)
-    touch[np.unique(lab[(core > 0) & (ch > 0)])] = True
-    touch[0] = False
-    debris = (ch > 0) & (~touch[lab] | ~near)
-    tight = _tight_body(kp, G.shape)
+    # SAFE CLEANING: the wide protected zone (whole body + garments + margin) is never touched, whatever the AI boxes say.
+    protect = near | cv2.dilate(_tight_body(kp, G.shape).astype(np.uint8), np.ones((15, 15), np.uint8)).astype(bool)
+    debris = (ch > 0) & ~protect
     soft = cv2.dilate((_blur_diff(G, O) > 10).astype(np.uint8), np.ones((5, 5), np.uint8))  # AI-flagged boxes: faint outlines go too
     for y0, x0, y1, x1 in boxes:
         ys, xs = slice(int(y0 * H / 1000), int(y1 * H / 1000) + 1), slice(int(x0 * W / 1000), int(x1 * W / 1000) + 1)
-        debris[ys, xs] |= (soft[ys, xs] > 0) & ~tight[ys, xs]
+        debris[ys, xs] |= (soft[ys, xs] > 0) & ~protect[ys, xs]
     debris[int(0.9 * H):, int(0.5 * W):] = False  # signature
     debris = cv2.dilate(debris.astype(np.uint8), cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7)))
-    debris[tight] = 0
+    debris[protect] = 0
+    # Only SMALL spots: a large changed area is never floor debris, it is left as it is.
+    n, lab, stats, _ = cv2.connectedComponentsWithStats(debris)
+    small = np.zeros(n, bool)
+    small[1:] = stats[1:, cv2.CC_STAT_AREA] <= 0.005 * H * W
+    debris = small[lab].astype(np.uint8)
     if debris.sum() < 0.0005 * H * W:
         return cropped if cropped is not result else None
     bgm = ((ch == 0) & ~near).astype(np.float32)

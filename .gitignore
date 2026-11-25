@@ -103,3 +103,7 @@ frontend/node_modules/.cache/default-development/13.pack
 frontend/node_modules/.cache/default-development/4.pack
 frontend/node_modules/.cache/default-development/15.pack
 backend/models/dw-ll_ucoco_384.onnx
+.env
+.env.*
+*.env
+atelier.tar.gz
